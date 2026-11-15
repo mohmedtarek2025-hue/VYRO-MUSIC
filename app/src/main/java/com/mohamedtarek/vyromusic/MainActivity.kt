@@ -383,7 +383,6 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
@@ -627,7 +626,6 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
         }
     }
 
-    // مراقب تلقائي لمكتبة الموسيقى لاكتشاف أي أغنية يتم تحميلها فوراً
     DisposableEffect(permission, autoScanEnabled, autoPlayDownloaded) {
         if (!permission || !autoScanEnabled) return@DisposableEffect onDispose { }
         val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
@@ -652,7 +650,6 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
 
     val currentSong = songs.firstOrNull { it.id == currentSongId }
 
-    // استخراج ألوان غلاف الأغنية الشغالة تلقائياً وتحديد ما إذا كانت فاتحة أو غامقة
     LaunchedEffect(currentSong?.albumId) {
         if (currentSong == null) return@LaunchedEffect
         withContext(Dispatchers.IO) {
@@ -795,7 +792,6 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
         }
     }
 
-    // النوافذ المنبثقة الاحترافية (قائمة الثلاث نقاط، قاطع النغمات، المعلومات، الكلمات)
     songForMenu?.let { target ->
         val isLiked = likedIds.contains(target.id)
         AlertDialog(
@@ -871,7 +867,6 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
         )
     }
 
-    // نافذة قص وتعيين نغمة الرنين (Ringtone Cutter & Setter)
     songForRingtone?.let { target ->
         val totalSec = (target.duration / 1000L).coerceAtLeast(10L).toFloat()
         var startSec by remember { mutableFloatStateOf(0f) }
@@ -953,7 +948,6 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
         )
     }
 
-    // نافذة معلومات الملف التفصيلية
     songForInfo?.let { target ->
         val mb = "%.2f MB".format(target.sizeBytes / (1024f * 1024f))
         val ext = target.filePath?.substringAfterLast('.', "AUDIO")?.uppercase() ?: "AUDIO"
@@ -978,7 +972,6 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
         )
     }
 
-    // نافذة تأكيد حذف الأغنية من الجهاز
     songForDeleteConfirm?.let { target ->
         AlertDialog(
             onDismissRequest = { songForDeleteConfirm = null },
@@ -1164,7 +1157,6 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
             confirmButton = { TextButton(onClick = { showCrossfadeDialog = false }) { Text("Done", color = primaryAccent) } }
         )
     }
-
     CompositionLocalProvider(LocalLayoutDirection provides if (strings.isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr) {
         MaterialTheme(
             colorScheme = darkColorScheme(
@@ -1177,7 +1169,6 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
             )
         ) {
             Box(Modifier.fillMaxSize().background(bgNight)) {
-                // إذا اختار المستخدم خلفية شخصية من الموبايل تظهر بكامل الشاشة مع طبقة تعتيم فاخرة
                 if (!customBgUri.isNullOrBlank()) {
                     AsyncImage(
                         model = Uri.parse(customBgUri),
@@ -1265,7 +1256,6 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
                             .padding(padding)
                             .padding(horizontal = 16.dp)
                     ) {
-                        // الهيدر الملكي الرسمي لتطبيق VYRO MUSIC PRO
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -1680,7 +1670,6 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
     }
 }
 
-// شريط الـ Now Bar الديناميكي المتفاعل مع ألوان غلاف الأغنية (فاتح أو غامق)
 @Composable
 private fun DynamicNowBarCard(
     song: Song,
@@ -1773,8 +1762,6 @@ private fun DynamicNowBarCard(
         }
     }
 }
-
-// شاشة التشغيل الفاخرة بتصميم Behance "Midnight Echo" مع حلقة النيون والموجات الصوتية الحية
 @Composable
 private fun MidnightEchoNowPlaying(
     song: Song,
@@ -1816,7 +1803,6 @@ private fun MidnightEchoNowPlaying(
             .padding(top = 4.dp, bottom = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // شارة الجودة الفائقة وتفاعل الغلاف
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1842,7 +1828,6 @@ private fun MidnightEchoNowPlaying(
 
         Spacer(Modifier.height(10.dp))
 
-        // حلقة النيون المضيئة حول غلاف الأغنية (Behance Midnight Echo Circle)
         Box(
             Modifier
                 .size(255.dp)
@@ -1898,7 +1883,6 @@ private fun MidnightEchoNowPlaying(
 
         Spacer(Modifier.height(14.dp))
 
-        // موجات صوتية متحركة حية (Live Waveform Visualizer)
         Canvas(
             Modifier
                 .fillMaxWidth()
@@ -1954,7 +1938,6 @@ private fun MidnightEchoNowPlaying(
 
         Spacer(Modifier.height(10.dp))
 
-        // شريط التقدم بوضع LTR دائماً لضمان عدم انعكاس الوقت
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Column(Modifier.fillMaxWidth()) {
                 Slider(
@@ -2041,7 +2024,6 @@ private fun MidnightEchoNowPlaying(
     }
 }
 
-// شاشة استوديو الصوت الاحترافي (Behance EQ Studio)
 @Composable
 private fun BehanceEqStudioScreen(
     eqPreset: String,
@@ -2083,7 +2065,6 @@ private fun BehanceEqStudioScreen(
             }
         }
 
-        // 5-Band Equalizer Controls
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Column(
                 Modifier
@@ -2107,7 +2088,6 @@ private fun BehanceEqStudioScreen(
                 }
             }
 
-            // Bass Boost & 3D Spatial Virtualizer
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -2132,7 +2112,6 @@ private fun BehanceEqStudioScreen(
                 )
             }
 
-            // Speed, Pitch & Slowed + Reverb Mode
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -2175,7 +2154,6 @@ private fun BehanceEqStudioScreen(
     }
 }
 
-// شاشة الإعدادات والثيمات والخلفية الشخصية واللغات
 @Composable
 private fun VipSettingsScreen(
     strings: Strings,
@@ -2209,7 +2187,6 @@ private fun VipSettingsScreen(
             .padding(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // بطاقة نسخة المؤسس الفاخرة (VIP Founder Card)
         Box(
             Modifier
                 .fillMaxWidth()
@@ -2227,7 +2204,6 @@ private fun VipSettingsScreen(
             }
         }
 
-        // اختيار لغة التطبيق (مع خيار حسب لغة الجهاز افتراضياً)
         Column(
             Modifier
                 .fillMaxWidth()
@@ -2256,7 +2232,6 @@ private fun VipSettingsScreen(
             }
         }
 
-        // محرك الثيمات وإضافة خلفية من صور الموبايل
         Column(
             Modifier
                 .fillMaxWidth()
@@ -2311,7 +2286,6 @@ private fun VipSettingsScreen(
             }
         }
 
-        // إعدادات المراقب الذكي والتشغيل
         SettingsActionTile(
             title = strings.autoScanToggle,
             subtitle = if (autoScanEnabled) "ON • Active" else "OFF",
@@ -2527,7 +2501,6 @@ private fun EmptyState(message: String, accent: Color) {
     }
 }
 
-// دالة استخراج ألوان غلاف الأغنية وتحديد السطوع (فاتح أو غامق)
 private fun extractCoverPalette(context: Context, artUri: Uri): CoverPalette {
     return runCatching {
         val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
@@ -2569,7 +2542,6 @@ private fun extractCoverPalette(context: Context, artUri: Uri): CoverPalette {
     }.getOrDefault(CoverPalette())
 }
 
-// دالة قص وتعيين نغمة الرنين باستخدام MediaExtractor و MediaMuxer
 private fun cutAndSetRingtone(context: Context, song: Song, startMs: Long, endMs: Long): Boolean {
     return runCatching {
         val outFile = File(context.cacheDir, "vyro_ringtone_${song.id}.m4a")
