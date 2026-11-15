@@ -1,4 +1,3 @@
-
 name: Unpack VYRO MUSIC ZIP
 
 on:
@@ -29,7 +28,7 @@ jobs:
           import shutil
 
           root = pathlib.Path.cwd()
-          archives = list(root.glob("*.zip"))
+          archives = sorted(root.glob("*.zip"))
 
           if not archives:
               raise SystemExit("No ZIP file found in repository root")
@@ -47,8 +46,15 @@ jobs:
           entries = list(temp.iterdir())
           source = entries[0] if len(entries) == 1 and entries[0].is_dir() else temp
 
+          workflows_in_zip = source / ".github" / "workflows"
+          if workflows_in_zip.exists():
+              for wf in workflows_in_zip.iterdir():
+                  if wf.is_file():
+                      print(f"=== Found workflow in ZIP: {wf.name} ===")
+                      print(wf.read_text(encoding="utf-8", errors="replace"))
+
           for item in source.iterdir():
-              if item.name == ".git":
+              if item.name in {".git", ".github"}:
                   continue
 
               dest = root / item.name
