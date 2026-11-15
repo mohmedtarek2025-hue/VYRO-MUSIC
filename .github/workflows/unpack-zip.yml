@@ -1,0 +1,76 @@
+
+name: Unpack VYRO MUSIC ZIP
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "*.zip"
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract project ZIP
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import zipfile
+          import tempfile
+          import shutil
+
+          root = pathlib.Path.cwd()
+          archives = list(root.glob("*.zip"))
+
+          if not archives:
+              raise SystemExit("No ZIP file found in repository root")
+
+          archive = archives[-1]
+          temp = pathlib.Path(tempfile.mkdtemp())
+
+          with zipfile.ZipFile(archive) as z:
+              for item in z.infolist():
+                  target = (temp / item.filename).resolve()
+                  if not target.is_relative_to(temp.resolve()):
+                      raise SystemExit("Unsafe ZIP path")
+              z.extractall(temp)
+
+          entries = list(temp.iterdir())
+          source = entries[0] if len(entries) == 1 and entries[0].is_dir() else temp
+
+          for item in source.iterdir():
+              if item.name == ".git":
+                  continue
+
+              dest = root / item.name
+
+              if dest.exists():
+                  if dest.is_dir():
+                      shutil.rmtree(dest)
+                  else:
+                      dest.unlink()
+
+              if item.is_dir():
+                  shutil.copytree(item, dest)
+              else:
+                  shutil.copy2(item, dest)
+
+          print("VYRO MUSIC extracted successfully")
+          PY
+
+      - name: Commit extracted files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Extract VYRO MUSIC project" || echo "No changes"
+          git push
