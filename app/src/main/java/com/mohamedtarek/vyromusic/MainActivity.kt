@@ -10,27 +10,29 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.graphics.BitmapFactory
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.media.RingtoneManager
 import android.media.audiofx.AudioEffect
-import android.media.audiofx.BassBoost
-import android.media.audiofx.Equalizer
-import android.media.audiofx.Virtualizer
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import android.provider.Settings
+import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -41,6 +43,9 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -53,18 +58,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,7 +79,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
-import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -92,6 +96,7 @@ import java.nio.ByteBuffer
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 data class Song(
     val id: Long,
@@ -110,10 +115,12 @@ data class Song(
 }
 
 data class CoverPalette(
-    val dominant: Color = Color(0xFF9B6CFF),
-    val secondary: Color = Color(0xFF28194D),
+    val dominant: Color = Color(0xFFA87BFF),
+    val secondary: Color = Color(0xFF141122),
     val isLightCover: Boolean = false
 )
+
+data class LrcLine(val timeMs: Long, val text: String)
 
 data class Strings(
     val isRtl: Boolean,
@@ -127,6 +134,7 @@ data class Strings(
     val nowPlaying: String,
     val likedSongs: String,
     val recentlyPlayed: String,
+    val mostPlayed: String,
     val newPlaylist: String,
     val playNow: String,
     val playNext: String,
@@ -137,165 +145,106 @@ data class Strings(
     val shareSong: String,
     val fileInfo: String,
     val deleteDevice: String,
+    val uiStudioTitle: String,
+    val layoutSectionTitle: String,
     val themeTitle: String,
     val pickBgImage: String,
     val clearBgImage: String,
     val bgDimLevel: String,
     val langTitle: String,
     val langSystem: String,
-    val autoScanToggle: String,
-    val autoPlayNewToggle: String,
+    val shakeToSkip: String,
     val sleepTimer: String,
     val crossfade: String,
-    val backupRestore: String,
-    val vipEditionTitle: String
+    val backupRestore: String
 )
 
 private fun getAppStrings(langSetting: String): Strings {
-    val resolved = if (langSetting == "SYSTEM") {
-        Locale.getDefault().language.uppercase()
-    } else langSetting.uppercase()
-
+    val code = if (langSetting == "SYSTEM") Locale.getDefault().language.uppercase() else langSetting.uppercase()
     return when {
-        resolved.startsWith("AR") -> Strings(
-            isRtl = true,
-            songs = "الأغاني",
-            albums = "الألبومات",
-            playlists = "القوائم",
-            eqStudio = "استوديو الصوت",
-            settings = "الإعدادات",
-            searchHint = "ابحث عن أغنية، مطرب، أو ألبوم...",
-            tracksCount = "مقطع صوتي",
-            nowPlaying = "يعمل الآن",
-            likedSongs = "الأغاني المفضلة",
-            recentlyPlayed = "تم تشغيلها مؤخراً",
-            newPlaylist = "+ قائمة جديدة",
-            playNow = "تشغيل الآن",
-            playNext = "إضافة لطابور الانتظار (تشغيل التالي)",
-            favToggle = "إضافة / إزالة من المفضلة",
-            addToPlaylist = "إضافة إلى قائمة تشغيل...",
-            setRingtone = "قص وتعيين كنغمة رنين للهاتف",
-            viewLyrics = "عرض / تعديل كلمات الأغنية",
-            shareSong = "مشاركة الملف الصوتي",
-            fileInfo = "معلومات الملف التفصيلية",
-            deleteDevice = "حذف الأغنية من الجهاز",
-            themeTitle = "محرك الثيمات الفاخرة (Theme Engine)",
-            pickBgImage = "إضافة خلفية مخصصة من صور الهاتف",
-            clearBgImage = "إلغاء الخلفية الشخصية واستعادة الثيم",
-            bgDimLevel = "درجة تعتيم الخلفية ووضوح النصوص",
-            langTitle = "لغة التطبيق (Language)",
-            langSystem = "حسب لغة الجهاز (افتراضي)",
-            autoScanToggle = "مراقبة واكتشاف الأغاني المحملة تلقائياً",
-            autoPlayNewToggle = "تشغيل الأغنية تلقائياً فور تحميلها",
-            sleepTimer = "مؤقت النوم الذكي",
-            crossfade = "الدمج السلس بين الأغاني (Crossfade)",
-            backupRestore = "النسخ الاحتياطي والاستعادة (JSON)",
-            vipEditionTitle = "نسخة المؤسس والمطور • VIP PRO"
+        code.startsWith("AR") -> Strings(
+            true, "الأغاني", "الألبومات", "القوائم", "الصوت DSP", "الإعدادات",
+            "ابحث عن أغنية أو مطرب...", "مقطع", "المشغل", "الأغاني المفضلة", "تم تشغيلها مؤخراً", "الأكثر استماعاً",
+            "+ قائمة جديدة", "تشغيل الآن", "تشغيل كالتالي في الطابور", "إضافة / إزالة من المفضلة",
+            "إضافة إلى قائمة تشغيل...", "قص وتعيين كنغمة رنين", "كلمات الأغنية المتزامنة (LRC)",
+            "مشاركة الملف الصوتي", "معلومات الملف التفصيلية", "حذف من الجهاز",
+            "استوديو تخصيص الواجهة 360°", "شكل وتخطيط الواجهة (UI Layout)", "الثيم والألوان (Theme Engine)",
+            "اختيار خلفية من استوديو الهاتف", "إلغاء خلفية الهاتف", "درجة تعتيم الخلفية (لوضوح الصورة)",
+            "لغة التطبيق (10 لغات)", "لغة الجهاز", "هز الهاتف لتغيير الأغنية (Shake-to-Skip)",
+            "مؤقت النوم التدريجي (Fade-Out)", "الدمج السلس (Crossfade)", "النسخ الاحتياطي والاستعادة"
         )
-        resolved.startsWith("FR") -> Strings(
-            isRtl = false,
-            songs = "Titres",
-            albums = "Albums",
-            playlists = "Playlists",
-            eqStudio = "EQ Studio",
-            settings = "Options",
-            searchHint = "Rechercher titres, artistes, albums…",
-            tracksCount = "TITRES",
-            nowPlaying = "EN LECTURE",
-            likedSongs = "Titres likés",
-            recentlyPlayed = "Écoutés récemment",
-            newPlaylist = "+ Nouvelle",
-            playNow = "Lire maintenant",
-            playNext = "Lire ensuite (File d'attente)",
-            favToggle = "Ajouter / Retirer des favoris",
-            addToPlaylist = "Ajouter à une playlist...",
-            setRingtone = "Couper et définir comme sonnerie",
-            viewLyrics = "Paroles (Voir / Modifier)",
-            shareSong = "Partager le fichier audio",
-            fileInfo = "Détails du fichier",
-            deleteDevice = "Supprimer de l'appareil",
-            themeTitle = "Moteur de Thèmes VIP",
-            pickBgImage = "Choisir une image de fond de la galerie",
-            clearBgImage = "Réinitialiser l'image de fond",
-            bgDimLevel = "Opacité du fond",
-            langTitle = "Langue (Language)",
-            langSystem = "Langue de l'appareil (Défaut)",
-            autoScanToggle = "Détection auto des nouveaux titres",
-            autoPlayNewToggle = "Lecture auto après téléchargement",
-            sleepTimer = "Minuteur de mise en veille",
-            crossfade = "Fondu enchaîné (Crossfade)",
-            backupRestore = "Sauvegarde & Restauration (JSON)",
-            vipEditionTitle = "FOUNDER VIP EDITION"
+        code.startsWith("FR") -> Strings(
+            false, "Titres", "Albums", "Listes", "Audio DSP", "Options",
+            "Rechercher titres, artistes...", "TITRES", "Lecture", "Titres likés", "Récents", "Plus écoutés",
+            "+ Nouvelle", "Lire", "Lire ensuite", "Favoris", "Ajouter à la liste...", "Couper en sonnerie",
+            "Paroles synchronisées", "Partager", "Infos fichier", "Supprimer",
+            "Studio d'Interface 360°", "Style de Disposition (Layout)", "Thème & Couleurs",
+            "Image de fond (Galerie)", "Réinitialiser le fond", "Opacité du fond",
+            "Langue (10 Langues)", "Système", "Secouer pour passer", "Minuteur (Fade-Out)", "Fondu (Crossfade)", "Sauvegarde JSON"
         )
-        resolved.startsWith("ES") -> Strings(
-            isRtl = false,
-            songs = "Canciones",
-            albums = "Álbumes",
-            playlists = "Listas",
-            eqStudio = "EQ Studio",
-            settings = "Ajustes",
-            searchHint = "Buscar canciones, artistas, álbumes…",
-            tracksCount = "PISTAS",
-            nowPlaying = "REPRODUCIENDO",
-            likedSongs = "Canciones favoritas",
-            recentlyPlayed = "Reproducidas recientemente",
-            newPlaylist = "+ Nueva lista",
-            playNow = "Reproducir ahora",
-            playNext = "Reproducir siguiente en cola",
-            favToggle = "Añadir / Quitar de favoritos",
-            addToPlaylist = "Añadir a lista de reproducción...",
-            setRingtone = "Cortar y usar como tono de llamada",
-            viewLyrics = "Letras (Ver / Editar)",
-            shareSong = "Compartir archivo de audio",
-            fileInfo = "Información del archivo",
-            deleteDevice = "Eliminar del dispositivo",
-            themeTitle = "Motor de Temas VIP",
-            pickBgImage = "Elegir fondo desde la galería",
-            clearBgImage = "Restaurar fondo original",
-            bgDimLevel = "Oscurecimiento de fondo",
-            langTitle = "Idioma (Language)",
-            langSystem = "Idioma del dispositivo (Por defecto)",
-            autoScanToggle = "Detectar nuevas canciones automáticamente",
-            autoPlayNewToggle = "Reproducir automáticamente al descargar",
-            sleepTimer = "Temporizador de apagado",
-            crossfade = "Transición suave (Crossfade)",
-            backupRestore = "Copia de seguridad y restauración",
-            vipEditionTitle = "FOUNDER VIP EDITION"
+        code.startsWith("ES") -> Strings(
+            false, "Canciones", "Álbumes", "Listas", "Audio DSP", "Ajustes",
+            "Buscar canciones, artistas...", "PISTAS", "Sonando", "Favoritas", "Recientes", "Más escuchadas",
+            "+ Nueva lista", "Reproducir", "Siguiente en cola", "Favorito", "Añadir a lista...", "Cortar como tono",
+            "Letras sincronizadas", "Compartir", "Info del archivo", "Eliminar",
+            "Estudio de Interfaz 360°", "Diseño de Pantalla (Layout)", "Tema y Colores",
+            "Fondo desde galería", "Quitar fondo", "Oscurecimiento de fondo",
+            "Idioma (10 Idiomas)", "Sistema", "Agitar para saltar", "Temporizador", "Transición Crossfade", "Copia de seguridad"
+        )
+        code.startsWith("DE") -> Strings(
+            false, "Titel", "Alben", "Listen", "DSP Studio", "Optionen",
+            "Songs, Künstler suchen...", "TITEL", "Player", "Favoriten", "Verlauf", "Meistgespielt",
+            "+ Neue Liste", "Abspielen", "Als Nächstes", "Favorit", "Zur Liste...", "Als Klingelton",
+            "Songtext (LRC)", "Teilen", "Datei-Info", "Löschen",
+            "360° UI-Design Studio", "Oberflächen-Layout", "Farbthema",
+            "Hintergrundbild wählen", "Hintergrund zurücksetzen", "Hintergrund-Abdunkelung",
+            "Sprache (10 Sprachen)", "System", "Schütteln zum Überspringen", "Schlaftimer", "Crossfade", "Backup & Restore"
+        )
+        code.startsWith("IT") -> Strings(
+            false, "Brani", "Album", "Playlist", "DSP Audio", "Impostazioni",
+            "Cerca brani, artisti...", "BRANI", "Player", "Preferiti", "Recenti", "Più ascoltati",
+            "+ Nuova", "Riproduci", "Riproduci successivo", "Preferito", "Aggiungi a playlist...", "Taglia come suoneria",
+            "Testi sincronizzati", "Condividi", "Info file", "Elimina",
+            "Studio Interfaccia 360°", "Stile Layout UI", "Tema e Colori",
+            "Sfondo dalla galleria", "Rimuovi sfondo", "Oscuramento sfondo",
+            "Lingua (10 Lingue)", "Sistema", "Scuoti per cambiare brano", "Sleep Timer", "Crossfade", "Backup JSON"
+        )
+        code.startsWith("TR") -> Strings(
+            false, "Şarkılar", "Albümler", "Listeler", "DSP Ses", "Ayarlar",
+            "Şarkı veya sanatçı ara...", "PARÇA", "Çalıyor", "Beğenilenler", "Son Çalınanlar", "En Çok Dinlenenler",
+            "+ Yeni Liste", "Şimdi Çal", "Sıradaki Çal", "Favori", "Listeye Ekle...", "Zil Sesi Yap",
+            "Senkronize Sözler", "Paylaş", "Dosya Bilgisi", "Sil",
+            "360° Arayüz Stüdyosu", "Arayüz Düzeni (Layout)", "Tema ve Renkler",
+            "Galeriden Arka Plan Seç", "Arka Planı Sıfırla", "Arka Plan Karartma",
+            "Dil (10 Dil)", "Sistem", "Geçmek İçin Salla", "Uyku Zamanlayıcı", "Crossfade Geçiş", "Yedekleme (JSON)"
+        )
+        code.startsWith("RU") -> Strings(
+            false, "Треки", "Альбомы", "Плейлисты", "DSP Звук", "Настройки",
+            "Поиск треков, артистов...", "ТРЕКОВ", "Плеер", "Любимые", "Недавние", "Популярные",
+            "+ Новый", "Играть", "Следующий", "В избранное", "В плейлист...", "На рингтон",
+            "Синхронный текст", "Поделиться", "О файле", "Удалить",
+            "Студия Интерфейса 360°", "Макет интерфейса (Layout)", "Тема и Цвета",
+            "Фон из галереи", "Сбросить фон", "Затемнение фона",
+            "Язык (10 языков)", "Системный", "Встряхнуть для переключения", "Таймер сна", "Кроссфейд", "Резервная копия"
+        )
+        code.startsWith("HI") -> Strings(
+            false, "गाने", "एल्बम", "प्लेलिस्ट", "DSP ऑडियो", "सेटिंग्स",
+            "गाने या कलाकार खोजें...", "गाने", "प्लेयर", "पसंदीदा", "हाल ही में", "सबसे ज़्यादा सुने गए",
+            "+ नई प्लेलिस्ट", "अभी चलाएं", "अगला चलाएं", "पसंदीदा", "प्लेलिस्ट में जोड़ें...", "रिंगटोन बनाएं",
+            "सिंक किए गए बोल", "शेयर करें", "फ़ाइल जानकारी", "हटाएं",
+            "360° UI कस्टमाइज़ स्टूडियो", "UI लेआउट स्टाइल", "थीम और रंग",
+            "गैलरी से वॉलपेपर चुनें", "वॉलपेपर हटाएं", "वॉलपेपर ब्राइटनेस/डिम",
+            "भाषा (10 भाषाएं)", "सिस्टम", "गाना बदलने के लिए फ़ोन हिलाएं", "स्लीप टाइमर", "क्रॉसफ़ेड", "बैकअप और रीस्टोर"
         )
         else -> Strings(
-            isRtl = false,
-            songs = "Songs",
-            albums = "Albums",
-            playlists = "Playlists",
-            eqStudio = "EQ Studio",
-            settings = "Settings",
-            searchHint = "Search songs, artists, albums…",
-            tracksCount = "TRACKS",
-            nowPlaying = "NOW PLAYING",
-            likedSongs = "Liked Songs",
-            recentlyPlayed = "Recently Played",
-            newPlaylist = "+ New Playlist",
-            playNow = "Play Now",
-            playNext = "Play Next in Queue",
-            favToggle = "Add / Remove from Favorites",
-            addToPlaylist = "Add to Playlist...",
-            setRingtone = "Trim & Set as Phone Ringtone",
-            viewLyrics = "View / Edit Offline Lyrics",
-            shareSong = "Share Audio File",
-            fileInfo = "Detailed File Information",
-            deleteDevice = "Delete from Device",
-            themeTitle = "VIP Theme & Background Engine",
-            pickBgImage = "Set Custom Background from Gallery",
-            clearBgImage = "Reset Custom Background Image",
-            bgDimLevel = "Background Dim & Contrast Level",
-            langTitle = "App Language",
-            langSystem = "Device Language (Default)",
-            autoScanToggle = "Smart Auto-Detect Downloaded Music",
-            autoPlayNewToggle = "Auto-Play Newly Downloaded Tracks",
-            sleepTimer = "Smart Sleep Timer",
-            crossfade = "Smooth Crossfade Transition",
-            backupRestore = "Backup & Restore Library (JSON)",
-            vipEditionTitle = "FOUNDER & DEVELOPER VIP EDITION"
+            false, "Songs", "Albums", "Playlists", "DSP Studio", "Settings",
+            "Search tracks, artists, albums...", "TRACKS", "Playing", "Liked Songs", "Recently Played", "Most Played",
+            "+ New List", "Play Now", "Play Next in Queue", "Toggle Favorite", "Add to Playlist...", "Trim & Set as Ringtone",
+            "Synced Lyrics Studio (LRC)", "Share Audio", "File Info", "Delete from Device",
+            "360° UI Layout & Theme Studio", "UI Layout Structure (360°)", "Color Theme & Aura",
+            "Pick Custom Wallpaper from Phone", "Clear Custom Wallpaper", "Wallpaper Dim Level (Clarity)",
+            "App Language (10 Languages)", "System Default", "Shake Phone to Skip Track",
+            "Smart Fade-Out Sleep Timer", "Smooth Crossfade", "Backup & Restore (JSON)"
         )
     }
 }
@@ -306,20 +255,21 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = android.graphics.Color.BLACK
+        window.navigationBarColor = android.graphics.Color.BLACK
+
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync()
         controllerFuture?.addListener({
             try {
                 controller = controllerFuture?.get()
                 setContent {
-                    controller?.let { VyroMasterApp(it, ::loadSongs) }
+                    controller?.let { VyroUltraApp(it, ::loadSongs) }
                 }
-            } catch (error: Exception) {
+            } catch (e: Exception) {
                 setContent {
-                    MaterialTheme(colorScheme = darkColorScheme()) {
-                        Box(Modifier.fillMaxSize().background(Color(0xFF06070C)), contentAlignment = Alignment.Center) {
-                            Text("Unable to connect to VYRO Audio Engine. Please restart.", color = Color.White)
-                        }
+                    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+                        Text("VYRO Audio Engine Initializing...", color = Color.White)
                     }
                 }
             }
@@ -361,7 +311,7 @@ class MainActivity : ComponentActivity() {
                 val path = if (dataCol >= 0) c.getString(dataCol) else null
                 list += Song(
                     id = id,
-                    title = c.getString(titleCol) ?: "Unknown Title",
+                    title = c.getString(titleCol) ?: "Unknown Track",
                     artist = c.getString(artistCol) ?: "Unknown Artist",
                     album = c.getString(albumCol) ?: "Unknown Album",
                     albumId = c.getLong(albumIdCol),
@@ -383,9 +333,10 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
+fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vyro_prefs", Context.MODE_PRIVATE) }
     val appScope = rememberCoroutineScope()
@@ -393,9 +344,16 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
     var langSetting by remember { mutableStateOf(prefs.getString("lang_setting", "SYSTEM") ?: "SYSTEM") }
     val strings = remember(langSetting) { getAppStrings(langSetting) }
 
-    var themeName by remember { mutableStateOf(prefs.getString("theme_name", "Midnight Echo") ?: "Midnight Echo") }
+    var uiLayout by remember { mutableStateOf(prefs.getString("ui_layout", "AMOLED Pure") ?: "AMOLED Pure") }
+    var themeName by remember { mutableStateOf(prefs.getString("theme_name", "Pitch Black Neon") ?: "Pitch Black Neon") }
+    var discStyle by remember { mutableStateOf(prefs.getString("disc_style", "Vinyl Spin") ?: "Vinyl Spin") }
+    var waveStyle by remember { mutableStateOf(prefs.getString("wave_style", "Smooth Wave") ?: "Smooth Wave") }
+    var cornerRadiusDp by remember { mutableIntStateOf(prefs.getInt("corner_radius_dp", 18)) }
+    var cardOpacity by remember { mutableFloatStateOf(prefs.getFloat("card_opacity", 0.0f)) }
+    var fontScale by remember { mutableFloatStateOf(prefs.getFloat("font_scale", 1.0f)) }
+
     var customBgUri by remember { mutableStateOf(prefs.getString("custom_bg_uri", null)) }
-    var bgDimAlpha by remember { mutableFloatStateOf(prefs.getFloat("bg_dim_alpha", 0.78f)) }
+    var bgDimAlpha by remember { mutableFloatStateOf(prefs.getFloat("bg_dim_alpha", 0.35f)) }
 
     var songs by remember { mutableStateOf(emptyList<Song>()) }
     var permission by remember { mutableStateOf(false) }
@@ -407,27 +365,31 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
     var repeatMode by remember { mutableIntStateOf(player.repeatMode) }
 
     var query by remember { mutableStateOf("") }
+    var searchExpanded by remember { mutableStateOf(false) }
     var sortBy by remember { mutableStateOf(prefs.getString("sort_by", "TITLE") ?: "TITLE") }
     var tab by remember { mutableStateOf("Songs") }
 
     var likedIds by remember { mutableStateOf(loadIdSet(prefs.getString("liked_ids", "[]"))) }
     var recentIds by remember { mutableStateOf(loadIdList(prefs.getString("recent_ids", "[]"))) }
+    var playCounts by remember { mutableStateOf(loadPlayCounts(prefs.getString("play_counts", "{}"))) }
     var playlists by remember { mutableStateOf(loadPlaylists(prefs.getString("playlists", "{}"))) }
     var customLyrics by remember { mutableStateOf(loadLyricsMap(prefs.getString("lyrics_map", "{}"))) }
 
     var crossfadeSec by remember { mutableIntStateOf(prefs.getInt("crossfade_sec", 0)) }
-    var gesturesEnabled by remember { mutableStateOf(prefs.getBoolean("gestures_enabled", true)) }
+    var shakeSkipEnabled by remember { mutableStateOf(prefs.getBoolean("shake_skip_enabled", true)) }
     var autoScanEnabled by remember { mutableStateOf(prefs.getBoolean("auto_scan_enabled", true)) }
-    var autoPlayDownloaded by remember { mutableStateOf(prefs.getBoolean("auto_play_downloaded", false)) }
+    var isDriveMode by remember { mutableStateOf(false) }
+
+    var loopPointA by remember { mutableStateOf<Long?>(null) }
+    var loopPointB by remember { mutableStateOf<Long?>(null) }
 
     var eqPreset by remember { mutableStateOf(prefs.getString("eq_preset", "Phonk Master") ?: "Phonk Master") }
     var bandGains by remember {
-        mutableStateOf(
-            loadFloatList(prefs.getString("band_gains", null)) ?: listOf(0.75f, 0.35f, -0.10f, 0.45f, 0.80f)
-        )
+        mutableStateOf(loadFloatList(prefs.getString("band_gains", null)) ?: listOf(0.80f, 0.45f, -0.10f, 0.50f, 0.85f))
     }
-    var bassStrength by remember { mutableIntStateOf(prefs.getInt("bass_strength", 65)) }
-    var virtualizerStrength by remember { mutableIntStateOf(prefs.getInt("virtualizer_strength", 50)) }
+    var bassStrength by remember { mutableIntStateOf(prefs.getInt("bass_strength", 75)) }
+    var virtualizerStrength by remember { mutableIntStateOf(prefs.getInt("virtualizer_strength", 55)) }
+    var loudnessGain by remember { mutableIntStateOf(prefs.getInt("loudness_gain", 40)) }
     var playbackSpeed by remember { mutableFloatStateOf(prefs.getFloat("playback_speed", 1f)) }
     var playbackPitch by remember { mutableFloatStateOf(prefs.getFloat("playback_pitch", 1f)) }
 
@@ -435,6 +397,7 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
     var sleepTimerRemainingSec by remember { mutableIntStateOf(0) }
 
     var activePlaylistView by remember { mutableStateOf<String?>(null) }
+    var showUiStudioSheet by remember { mutableStateOf(false) }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var songForMenu by remember { mutableStateOf<Song?>(null) }
     var songForAddToPlaylist by remember { mutableStateOf<Song?>(null) }
@@ -443,32 +406,51 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
     var songForRingtone by remember { mutableStateOf<Song?>(null) }
     var songForDeleteConfirm by remember { mutableStateOf<Song?>(null) }
     var showSleepDialog by remember { mutableStateOf(false) }
-    var showCrossfadeDialog by remember { mutableStateOf(false) }
 
     var coverPalette by remember { mutableStateOf(CoverPalette()) }
 
     fun saveState() {
         prefs.edit()
             .putString("lang_setting", langSetting)
+            .putString("ui_layout", uiLayout)
             .putString("theme_name", themeName)
+            .putString("disc_style", discStyle)
+            .putString("wave_style", waveStyle)
+            .putInt("corner_radius_dp", cornerRadiusDp)
+            .putFloat("card_opacity", cardOpacity)
+            .putFloat("font_scale", fontScale)
             .putString("custom_bg_uri", customBgUri)
             .putFloat("bg_dim_alpha", bgDimAlpha)
             .putString("sort_by", sortBy)
             .putString("liked_ids", JSONArray(likedIds.toList()).toString())
             .putString("recent_ids", JSONArray(recentIds).toString())
+            .putString("play_counts", encodePlayCounts(playCounts))
             .putString("playlists", encodePlaylists(playlists))
             .putString("lyrics_map", encodeLyricsMap(customLyrics))
             .putInt("crossfade_sec", crossfadeSec)
-            .putBoolean("gestures_enabled", gesturesEnabled)
+            .putBoolean("shake_skip_enabled", shakeSkipEnabled)
             .putBoolean("auto_scan_enabled", autoScanEnabled)
-            .putBoolean("auto_play_downloaded", autoPlayDownloaded)
             .putString("eq_preset", eqPreset)
             .putString("band_gains", JSONArray(bandGains).toString())
             .putInt("bass_strength", bassStrength)
             .putInt("virtualizer_strength", virtualizerStrength)
+            .putInt("loudness_gain", loudnessGain)
             .putFloat("playback_speed", playbackSpeed)
             .putFloat("playback_pitch", playbackPitch)
             .apply()
+    }
+
+    val voiceSearchLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { res ->
+        if (res.resultCode == Activity.RESULT_OK) {
+            val spoken = res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spoken.isNullOrBlank()) {
+                query = spoken
+                searchExpanded = true
+                tab = "Songs"
+            }
+        }
     }
 
     val deleteResultLauncher = rememberLauncherForActivityResult(
@@ -476,7 +458,7 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
     ) { res ->
         if (res.resultCode == Activity.RESULT_OK) {
             songs = loadSongs()
-            Toast.makeText(context, "Deleted successfully", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Deleted", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -486,6 +468,8 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
                 context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             customBgUri = uri.toString()
+            bgDimAlpha = 0.30f
+            if (cardOpacity > 0.40f) cardOpacity = 0.22f
             saveState()
         }
     }
@@ -494,17 +478,20 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
         if (uri != null) {
             runCatching {
                 val root = JSONObject().apply {
-                    put("version", "2.0.0-PRO")
+                    put("version", "3.0.0-ULTRA")
                     put("liked_ids", JSONArray(likedIds.toList()))
                     put("recent_ids", JSONArray(recentIds))
                     put("playlists", JSONObject(encodePlaylists(playlists)))
                     put("lyrics_map", JSONObject(encodeLyricsMap(customLyrics)))
-                    put("crossfade_sec", crossfadeSec)
+                    put("ui_layout", uiLayout)
                     put("theme_name", themeName)
                     put("eq_preset", eqPreset)
+                    put("band_gains", JSONArray(bandGains))
+                    put("bass_strength", bassStrength)
+                    put("loudness_gain", loudnessGain)
                 }
                 context.contentResolver.openOutputStream(uri)?.use { it.write(root.toString(2).toByteArray()) }
-                Toast.makeText(context, "VYRO PRO Backup Saved!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Backup Saved!", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -518,11 +505,12 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
                 if (root.has("recent_ids")) recentIds = loadIdList(root.getJSONArray("recent_ids").toString())
                 if (root.has("playlists")) playlists = loadPlaylists(root.getJSONObject("playlists").toString())
                 if (root.has("lyrics_map")) customLyrics = loadLyricsMap(root.getJSONObject("lyrics_map").toString())
-                if (root.has("crossfade_sec")) crossfadeSec = root.getInt("crossfade_sec")
+                if (root.has("ui_layout")) uiLayout = root.getString("ui_layout")
                 if (root.has("theme_name")) themeName = root.getString("theme_name")
-                if (root.has("eq_preset")) eqPreset = root.getString("eq_preset")
+                if (root.has("bass_strength")) bassStrength = root.getInt("bass_strength")
+                if (root.has("loudness_gain")) loudnessGain = root.getInt("loudness_gain")
                 saveState()
-                Toast.makeText(context, "VYRO PRO Backup Restored!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Restored!", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -547,6 +535,8 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
     fun playQueue(queue: List<Song>, startIndex: Int, startPosMs: Long = 0L, autoPlay: Boolean = true) {
         if (queue.isEmpty() || startIndex !in queue.indices) return
         val chosen = queue[startIndex]
+        loopPointA = null
+        loopPointB = null
         if (currentSongId == chosen.id && player.mediaItemCount > 0 && startPosMs == 0L) {
             if (autoPlay) {
                 if (player.isPlaying) player.pause() else player.play()
@@ -554,7 +544,8 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
             return
         }
         currentSongId = chosen.id
-        recentIds = (listOf(chosen.id) + recentIds.filter { it != chosen.id }).take(50)
+        recentIds = (listOf(chosen.id) + recentIds.filter { it != chosen.id }).take(60)
+        playCounts = playCounts + (chosen.id to ((playCounts[chosen.id] ?: 0) + 1))
         prefs.edit()
             .putLong("last_song_id", chosen.id)
             .putLong("last_position_ms", startPosMs)
@@ -572,7 +563,6 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
         VyroWidgetProvider.updateAllWidgets(context)
     }
 
-    val permissionName = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
     val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         permission = granted
@@ -585,20 +575,16 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
                 position = player.currentPosition.coerceAtLeast(0L)
             } else if (currentSongId != -1L) {
                 val idx = loaded.indexOfFirst { it.id == currentSongId }
-                if (idx >= 0) {
-                    playQueue(loaded, idx, prefs.getLong("last_position_ms", 0L), autoPlay = false)
-                }
+                if (idx >= 0) playQueue(loaded, idx, prefs.getLong("last_position_ms", 0L), autoPlay = false)
             }
         }
-        if (Build.VERSION.SDK_INT >= 33 &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
     LaunchedEffect(Unit) {
-        permission = ContextCompat.checkSelfPermission(context, permissionName) == PackageManager.PERMISSION_GRANTED
+        permission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
         if (permission) {
             val loaded = loadSongs()
             songs = loaded
@@ -610,41 +596,55 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
                 playing = player.isPlaying
             } else if (currentSongId != -1L) {
                 val idx = loaded.indexOfFirst { it.id == currentSongId }
-                if (idx >= 0) {
-                    playQueue(loaded, idx, prefs.getLong("last_position_ms", 0L), autoPlay = false)
-                }
+                if (idx >= 0) playQueue(loaded, idx, prefs.getLong("last_position_ms", 0L), autoPlay = false)
             } else if (loaded.isNotEmpty()) {
                 currentSongId = loaded.first().id
             }
-            if (Build.VERSION.SDK_INT >= 33 &&
-                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-            ) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         } else {
-            launcher.launch(permissionName)
+            launcher.launch(Manifest.permission.READ_MEDIA_AUDIO)
         }
     }
 
-    DisposableEffect(permission, autoScanEnabled, autoPlayDownloaded) {
+    DisposableEffect(shakeSkipEnabled, player) {
+        if (!shakeSkipEnabled) return@DisposableEffect onDispose { }
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        val accel = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        var lastShakeTime = 0L
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) {
+                val v = event?.values ?: return
+                val gX = v[0] / SensorManager.GRAVITY_EARTH
+                val gY = v[1] / SensorManager.GRAVITY_EARTH
+                val gZ = v[2] / SensorManager.GRAVITY_EARTH
+                val gForce = sqrt(gX * gX + gY * gY + gZ * gZ)
+                if (gForce > 2.65f) {
+                    val now = System.currentTimeMillis()
+                    if (now - lastShakeTime > 1200L && player.isPlaying) {
+                        lastShakeTime = now
+                        player.seekToNext()
+                        Toast.makeText(context, "⏭ Shake Skip!", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+        if (accel != null) {
+            sensorManager.registerListener(listener, accel, SensorManager.SENSOR_DELAY_UI)
+        }
+        onDispose { sensorManager?.unregisterListener(listener) }
+    }
+
+    DisposableEffect(permission, autoScanEnabled) {
         if (!permission || !autoScanEnabled) return@DisposableEffect onDispose { }
         val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
-                val oldIds = songs.map { it.id }.toSet()
-                val updated = loadSongs()
-                songs = updated
-                val newlyAdded = updated.firstOrNull { it.id !in oldIds }
-                if (newlyAdded != null && autoPlayDownloaded) {
-                    val idx = updated.indexOf(newlyAdded)
-                    if (idx >= 0) playQueue(updated, idx, 0L, autoPlay = true)
-                }
+                songs = loadSongs()
             }
         }
-        context.contentResolver.registerContentObserver(
-            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-            true,
-            observer
-        )
+        context.contentResolver.registerContentObserver(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, true, observer)
         onDispose { context.contentResolver.unregisterContentObserver(observer) }
     }
 
@@ -654,36 +654,8 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
         if (currentSong == null) return@LaunchedEffect
         withContext(Dispatchers.IO) {
             val extracted = extractCoverPalette(context, currentSong.albumArtUri)
-            withContext(Dispatchers.Main) {
-                coverPalette = extracted
-            }
+            withContext(Dispatchers.Main) { coverPalette = extracted }
         }
-    }
-
-    LaunchedEffect(bandGains, bassStrength, virtualizerStrength, playbackSpeed, playbackPitch) {
-        runCatching {
-            player.playbackParameters = PlaybackParameters(playbackSpeed.coerceIn(0.5f, 2.0f), playbackPitch.coerceIn(0.5f, 2.0f))
-        }
-        runCatching {
-            val eq = Equalizer(0, 0)
-            eq.enabled = true
-            val bands = eq.numberOfBands.toInt()
-            val range = eq.bandLevelRange
-            val minLvl = range[0]
-            val maxLvl = range[1]
-            for (b in 0 until minOf(bands, bandGains.size)) {
-                val target = (bandGains[b].coerceIn(-1f, 1f) * (maxLvl - minLvl) / 2f).toInt().toShort()
-                eq.setBandLevel(b.toShort(), target)
-            }
-            val bass = BassBoost(0, 0)
-            bass.enabled = bassStrength > 0
-            if (bass.strengthSupported) bass.setStrength((bassStrength * 10).coerceIn(0, 1000).toShort())
-
-            val virt = Virtualizer(0, 0)
-            virt.enabled = virtualizerStrength > 0
-            if (virt.strengthSupported) virt.setStrength((virtualizerStrength * 10).coerceIn(0, 1000).toShort())
-        }
-        saveState()
     }
 
     DisposableEffect(player) {
@@ -691,12 +663,14 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 playing = isPlaying
             }
-
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 val id = mediaItem?.mediaId?.toLongOrNull()
                 if (id != null) {
                     currentSongId = id
-                    recentIds = (listOf(id) + recentIds.filter { it != id }).take(50)
+                    loopPointA = null
+                    loopPointB = null
+                    recentIds = (listOf(id) + recentIds.filter { it != id }).take(60)
+                    playCounts = playCounts + (id to ((playCounts[id] ?: 0) + 1))
                     saveState()
                 }
             }
@@ -705,13 +679,20 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
         onDispose { player.removeListener(listener) }
     }
 
-    LaunchedEffect(player, crossfadeSec) {
+    LaunchedEffect(player, crossfadeSec, loopPointA, loopPointB) {
         var tick = 0
         while (true) {
+            val realDur = player.duration
             if (player.isPlaying || player.mediaItemCount > 0) {
                 position = player.currentPosition.coerceAtLeast(0L)
-                val dur = player.duration
-                duration = if (dur > 0) dur else (currentSong?.duration ?: 0L)
+                duration = if (realDur > 0) realDur else (currentSong?.duration ?: 0L)
+
+                val a = loopPointA
+                val b = loopPointB
+                if (a != null && b != null && b > a + 1000L && position >= b) {
+                    player.seekTo(a)
+                }
+
                 if (player.isPlaying) {
                     tick++
                     if (tick % 6 == 0) {
@@ -722,50 +703,51 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
                     }
                 }
             }
-            if (crossfadeSec > 0 && duration > crossfadeSec * 2000L && player.isPlaying) {
-                val fadeWindow = crossfadeSec * 1000L
-                val remaining = duration - position
-                player.volume = when {
-                    remaining in 1..fadeWindow -> (remaining.toFloat() / fadeWindow.toFloat()).coerceIn(0.15f, 1f)
-                    position in 0..fadeWindow -> (position.toFloat() / fadeWindow.toFloat()).coerceIn(0.25f, 1f)
-                    else -> 1f
+            if (sleepTimerRemainingSec <= 0) {
+                if (crossfadeSec > 0 && realDur > crossfadeSec * 2500L && player.isPlaying) {
+                    val fadeWindow = crossfadeSec * 1000L
+                    val remaining = realDur - position
+                    player.volume = if (remaining in 1..fadeWindow) {
+                        (remaining.toFloat() / fadeWindow.toFloat()).coerceIn(0.25f, 1f)
+                    } else 1f
+                } else {
+                    player.volume = 1f
                 }
-            } else {
-                player.volume = 1f
             }
-            delay(350)
+            delay(300)
         }
     }
 
     val primaryAccent by animateColorAsState(
         targetValue = when (themeName) {
-            "Dynamic Album Art" -> coverPalette.dominant
-            "VIP Cyber Gold" -> Color(0xFFFFC857)
-            "Crimson Phonk" -> Color(0xFFFF3864)
-            "Emerald Matrix" -> Color(0xFF00F59B)
-            else -> Color(0xFF9B6CFF)
+            "Dynamic Cover Aura" -> coverPalette.dominant
+            "Cyber Gold VIP" -> Color(0xFFFFC857)
+            "Blood Phonk Crimson" -> Color(0xFFFF2A54)
+            "Matrix Emerald" -> Color(0xFF00F59B)
+            "Oceanic Ice" -> Color(0xFF00D2FF)
+            else -> Color(0xFFA87BFF)
         },
         label = "accent"
     )
 
-    val bgNight = when (themeName) {
-        "AMOLED Pure" -> Color(0xFF000000)
-        "VIP Cyber Gold" -> Color(0xFF090806)
-        "Dynamic Album Art" -> if (coverPalette.isLightCover) Color(0xFF12101B) else Color(0xFF07080F)
-        else -> Color(0xFF06070D)
+    val bgNight = when {
+        uiLayout == "AMOLED Pure" -> Color(0xFF000000)
+        themeName == "Dynamic Cover Aura" -> Color(0xFF05040A)
+        else -> Color(0xFF030408)
     }
 
-    val surfacePanel = when (themeName) {
-        "AMOLED Pure" -> Color(0xFF0E0F14)
-        "VIP Cyber Gold" -> Color(0xFF191610)
-        "Dynamic Album Art" -> coverPalette.secondary.copy(alpha = 0.55f)
-        else -> Color(0xFF131524)
+    val effectiveCardAlpha = when {
+        !customBgUri.isNullOrBlank() -> cardOpacity.coerceIn(0.10f, 0.42f)
+        uiLayout == "AMOLED Pure" -> cardOpacity.coerceIn(0.0f, 0.22f)
+        uiLayout == "Cyber Glass" -> cardOpacity.coerceAtLeast(0.22f)
+        else -> cardOpacity.coerceAtLeast(0.16f)
     }
+    val surfacePanel = Color(0xFF141626).copy(alpha = effectiveCardAlpha)
+    val mutedText = Color(0xFFA5A9C0)
 
-    val mutedText = Color(0xFFA0A3B8)
-
-    val sortedSongs = remember(songs, query, sortBy) {
-        val filtered = songs.filter {
+    val sortedSongs = remember(songs, query, sortBy, likedIds) {
+        val base = if (sortBy == "FAV") songs.filter { likedIds.contains(it.id) } else songs
+        val filtered = base.filter {
             it.title.contains(query, true) || it.artist.contains(query, true) || it.album.contains(query, true)
         }
         when (sortBy) {
@@ -780,23 +762,149 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
         sleepTimerJob?.cancel()
         if (minutes <= 0) {
             sleepTimerRemainingSec = 0
+            player.volume = 1f
         } else {
             sleepTimerRemainingSec = minutes * 60
             sleepTimerJob = appScope.launch {
                 while (sleepTimerRemainingSec > 0) {
                     delay(1000L)
                     sleepTimerRemainingSec--
+                    if (sleepTimerRemainingSec in 1..15) {
+                        player.volume = (sleepTimerRemainingSec / 15f).coerceIn(0.08f, 1f)
+                    }
                 }
                 player.pause()
+                player.volume = 1f
             }
         }
+    }
+
+    if (showUiStudioSheet) {
+        AlertDialog(
+            onDismissRequest = { showUiStudioSheet = false },
+            containerColor = Color(0xFF0C0E18),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Palette, null, tint = primaryAccent)
+                    Spacer(Modifier.width(8.dp))
+                    Text(strings.uiStudioTitle, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                }
+            },
+            text = {
+                Column(
+                    Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(strings.layoutSectionTitle, color = primaryAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            "AMOLED Pure" to "AMOLED مسطح",
+                            "Cyber Glass" to "زجاجي عصري",
+                            "Bento Grid" to "شبكي 2x2",
+                            "Compact Pro" to "مدمج استوديو"
+                        ).forEach { (id, label) ->
+                            FilterChip(
+                                selected = uiLayout == id,
+                                onClick = {
+                                    uiLayout = id
+                                    cardOpacity = when (id) {
+                                        "AMOLED Pure" -> 0.0f
+                                        "Cyber Glass" -> 0.28f
+                                        else -> 0.20f
+                                    }
+                                    saveState()
+                                },
+                                label = { Text(label, fontSize = 11.sp) }
+                            )
+                        }
+                    }
+
+                    Text(strings.themeTitle, color = primaryAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            "Pitch Black Neon",
+                            "Dynamic Cover Aura",
+                            "Cyber Gold VIP",
+                            "Blood Phonk Crimson",
+                            "Matrix Emerald",
+                            "Oceanic Ice"
+                        ).forEach { th ->
+                            FilterChip(
+                                selected = themeName == th,
+                                onClick = { themeName = th; saveState() },
+                                label = { Text(th, fontSize = 11.sp) }
+                            )
+                        }
+                    }
+
+                    Text("شكل مشغل الأغنية (Now Playing Disc)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            "Vinyl Spin" to "أسطوانة دوارة",
+                            "Square Studio" to "بوستر مربع",
+                            "Neon Ring" to "حلقة نيون"
+                        ).forEach { (id, label) ->
+                            FilterChip(
+                                selected = discStyle == id,
+                                onClick = { discStyle = id; saveState() },
+                                label = { Text(label, fontSize = 11.sp) }
+                            )
+                        }
+                    }
+
+                    Text("شكل الموجات الصوتية (Visualizer)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            "Smooth Wave" to "موجة ليزر",
+                            "Spectrum Bars" to "أعمدة طيفية",
+                            "Pulse Dots" to "نقاط نبضية",
+                            "Hidden" to "إخفاء"
+                        ).forEach { (id, label) ->
+                            FilterChip(
+                                selected = waveStyle == id,
+                                onClick = { waveStyle = id; saveState() },
+                                label = { Text(label, fontSize = 11.sp) }
+                            )
+                        }
+                    }
+
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Column {
+                            Text("Corner Radius (${cornerRadiusDp}dp)", color = mutedText, fontSize = 11.sp)
+                            Slider(
+                                value = cornerRadiusDp.toFloat(),
+                                onValueChange = { cornerRadiusDp = it.toInt(); saveState() },
+                                valueRange = 4f..30f
+                            )
+                            Text("Song Card Opacity (${(cardOpacity * 100).toInt()}% • 0% = Pure AMOLED)", color = mutedText, fontSize = 11.sp)
+                            Slider(
+                                value = cardOpacity,
+                                onValueChange = { cardOpacity = it; saveState() },
+                                valueRange = 0f..0.75f
+                            )
+                            Text("Font Scale (${"%.1f".format(fontScale)}x)", color = mutedText, fontSize = 11.sp)
+                            Slider(
+                                value = fontScale,
+                                onValueChange = { fontScale = it; saveState() },
+                                valueRange = 0.85f..1.25f
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showUiStudioSheet = false }) {
+                    Text("تم", color = primaryAccent, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 
     songForMenu?.let { target ->
         val isLiked = likedIds.contains(target.id)
         AlertDialog(
             onDismissRequest = { songForMenu = null },
-            containerColor = Color(0xFF151728),
+            containerColor = Color(0xFF0E101C),
             title = {
                 Column {
                     Text(target.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -804,10 +912,7 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
                 }
             },
             text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     MenuActionRow(Icons.Default.PlayArrow, strings.playNow, primaryAccent) {
                         val idx = songs.indexOfFirst { it.id == target.id }
                         if (idx >= 0) playQueue(songs, idx, 0L, true)
@@ -819,11 +924,7 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
                         Toast.makeText(context, strings.playNext, Toast.LENGTH_SHORT).show()
                         songForMenu = null
                     }
-                    MenuActionRow(
-                        if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        strings.favToggle,
-                        Color.White
-                    ) {
+                    MenuActionRow(if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, strings.favToggle, Color.White) {
                         likedIds = if (isLiked) likedIds - target.id else likedIds + target.id
                         saveState()
                         songForMenu = null
@@ -855,64 +956,56 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
                         songForInfo = target
                         songForMenu = null
                     }
-                    MenuActionRow(Icons.Default.DeleteForever, strings.deleteDevice, Color(0xFFFF6B6B)) {
+                    MenuActionRow(Icons.Default.DeleteForever, strings.deleteDevice, Color(0xFFFF5C5C)) {
                         songForDeleteConfirm = target
                         songForMenu = null
                     }
                 }
             },
-            confirmButton = {
-                TextButton(onClick = { songForMenu = null }) { Text("OK", color = primaryAccent) }
-            }
+            confirmButton = { TextButton(onClick = { songForMenu = null }) { Text("OK", color = primaryAccent) } }
         )
     }
 
     songForRingtone?.let { target ->
-        val totalSec = (target.duration / 1000L).coerceAtLeast(10L).toFloat()
+        val safeTotal = (target.duration / 1000L).coerceAtLeast(6L).toFloat()
         var startSec by remember { mutableFloatStateOf(0f) }
-        var endSec by remember { mutableFloatStateOf(minOf(30f, totalSec)) }
+        var endSec by remember { mutableFloatStateOf(minOf(30f, safeTotal)) }
         var cutting by remember { mutableStateOf(false) }
 
         AlertDialog(
             onDismissRequest = { if (!cutting) songForRingtone = null },
-            containerColor = Color(0xFF151728),
-            title = { Text(strings.setRingtone, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+            containerColor = Color(0xFF0E101C),
+            title = { Text(strings.setRingtone, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(target.title, color = primaryAccent, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(target.title, color = primaryAccent, maxLines = 1)
                     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                         Column {
-                            Text("Start: ${formatTime((startSec * 1000).toLong())}   •   End: ${formatTime((endSec * 1000).toLong())}", color = Color.White, fontSize = 12.sp)
+                            Text("${formatTime((startSec * 1000).toLong())}  →  ${formatTime((endSec * 1000).toLong())}", color = Color.White, fontSize = 12.sp)
                             Slider(
                                 value = startSec,
-                                onValueChange = { startSec = it.coerceAtMost(endSec - 3f).coerceAtLeast(0f) },
-                                valueRange = 0f..totalSec
+                                onValueChange = { startSec = it.coerceIn(0f, (endSec - 2f).coerceAtLeast(0f)) },
+                                valueRange = 0f..safeTotal
                             )
                             Slider(
                                 value = endSec,
-                                onValueChange = { endSec = it.coerceAtLeast(startSec + 3f).coerceAtMost(totalSec) },
-                                valueRange = 0f..totalSec
+                                onValueChange = { endSec = it.coerceIn((startSec + 2f).coerceAtMost(safeTotal), safeTotal) },
+                                valueRange = 0f..safeTotal
                             )
                         }
                     }
                     Button(
                         onClick = {
                             if (!Settings.System.canWrite(context)) {
-                                val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}"))
-                                context.startActivity(intent)
-                                Toast.makeText(context, "يرجى تفعيل إذن تعديل إعدادات النظام لتعيين النغمة", Toast.LENGTH_LONG).show()
+                                context.startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}")))
                             } else {
                                 cutting = true
                                 appScope.launch {
-                                    val ok = withContext(Dispatchers.IO) {
+                                    withContext(Dispatchers.IO) {
                                         cutAndSetRingtone(context, target, (startSec * 1000).toLong(), (endSec * 1000).toLong())
                                     }
                                     cutting = false
-                                    Toast.makeText(
-                                        context,
-                                        if (ok) "تم تعيين المقطع كنغمة رنين للهاتف بنجاح!" else "تم تعيين الأغنية كنغمة رنين!",
-                                        Toast.LENGTH_LONG
-                                    ).show()
+                                    Toast.makeText(context, "تم تعيين النغمة بنجاح!", Toast.LENGTH_SHORT).show()
                                     songForRingtone = null
                                 }
                             }
@@ -921,87 +1014,58 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = primaryAccent)
                     ) {
-                        Text(if (cutting) "..." else "قص وتعيين المقطع المحدد كنغمة", color = Color.Black, fontWeight = FontWeight.Bold)
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            if (!Settings.System.canWrite(context)) {
-                                val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}"))
-                                context.startActivity(intent)
-                            } else {
-                                runCatching {
-                                    RingtoneManager.setActualDefaultRingtoneUri(context, RingtoneManager.TYPE_RINGTONE, target.uri)
-                                    Toast.makeText(context, "تم تعيين الأغنية كاملة كنغمة رنين!", Toast.LENGTH_SHORT).show()
-                                }
-                                songForRingtone = null
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("تعيين الأغنية بالكامل بدون قص", color = Color.White)
+                        Text(if (cutting) "..." else "قص وتعيين المقطع كنغمة", color = Color.Black, fontWeight = FontWeight.Bold)
                     }
                 }
             },
-            confirmButton = {
-                TextButton(onClick = { songForRingtone = null }) { Text("إغلاق", color = mutedText) }
-            }
+            confirmButton = { TextButton(onClick = { songForRingtone = null }) { Text("إغلاق", color = mutedText) } }
         )
     }
 
     songForInfo?.let { target ->
         val mb = "%.2f MB".format(target.sizeBytes / (1024f * 1024f))
-        val ext = target.filePath?.substringAfterLast('.', "AUDIO")?.uppercase() ?: "AUDIO"
+        val plays = playCounts[target.id] ?: 0
         AlertDialog(
             onDismissRequest = { songForInfo = null },
-            containerColor = Color(0xFF151728),
+            containerColor = Color(0xFF0E101C),
             title = { Text(strings.fileInfo, color = primaryAccent, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     InfoItem("Title", target.title)
                     InfoItem("Artist", target.artist)
                     InfoItem("Album", target.album)
-                    InfoItem("Duration", formatTime(target.duration))
-                    InfoItem("Size", mb)
-                    InfoItem("Format", "$ext • Hi-Res 24-Bit Engine")
+                    InfoItem("Duration / Size", "${formatTime(target.duration)} • $mb")
+                    InfoItem("Play Count", "$plays times")
                     InfoItem("Path", target.filePath ?: target.uri.toString())
                 }
             },
-            confirmButton = {
-                TextButton(onClick = { songForInfo = null }) { Text("OK", color = primaryAccent) }
-            }
+            confirmButton = { TextButton(onClick = { songForInfo = null }) { Text("OK", color = primaryAccent) } }
         )
     }
 
     songForDeleteConfirm?.let { target ->
         AlertDialog(
             onDismissRequest = { songForDeleteConfirm = null },
-            containerColor = Color(0xFF151728),
-            title = { Text(strings.deleteDevice, color = Color(0xFFFF6B6B), fontWeight = FontWeight.Bold) },
+            containerColor = Color(0xFF0E101C),
+            title = { Text(strings.deleteDevice, color = Color(0xFFFF5C5C), fontWeight = FontWeight.Bold) },
             text = { Text(target.title, color = Color.White) },
             confirmButton = {
                 TextButton(onClick = {
                     runCatching {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                            val pi = MediaStore.createDeleteRequest(context.contentResolver, listOf(target.uri))
-                            deleteResultLauncher.launch(IntentSenderRequest.Builder(pi.intentSender).build())
-                        } else {
-                            context.contentResolver.delete(target.uri, null, null)
-                            songs = loadSongs()
-                        }
+                        val pi = MediaStore.createDeleteRequest(context.contentResolver, listOf(target.uri))
+                        deleteResultLauncher.launch(IntentSenderRequest.Builder(pi.intentSender).build())
                     }
                     songForDeleteConfirm = null
-                }) { Text("Delete", color = Color(0xFFFF6B6B), fontWeight = FontWeight.Bold) }
+                }) { Text("Delete", color = Color(0xFFFF5C5C), fontWeight = FontWeight.Bold) }
             },
-            dismissButton = {
-                TextButton(onClick = { songForDeleteConfirm = null }) { Text("Cancel", color = Color.White) }
-            }
+            dismissButton = { TextButton(onClick = { songForDeleteConfirm = null }) { Text("Cancel", color = Color.White) } }
         )
     }
 
     songForAddToPlaylist?.let { targetSong ->
         AlertDialog(
             onDismissRequest = { songForAddToPlaylist = null },
-            containerColor = Color(0xFF151728),
+            containerColor = Color(0xFF0E101C),
             title = { Text(strings.addToPlaylist, color = Color.White) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1036,13 +1100,13 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
         var newName by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showCreatePlaylistDialog = false },
-            containerColor = Color(0xFF151728),
+            containerColor = Color(0xFF0E101C),
             title = { Text(strings.newPlaylist, color = Color.White) },
             text = {
                 OutlinedTextField(
                     value = newName,
                     onValueChange = { newName = it },
-                    placeholder = { Text("Gym Phonk / VIP Mix") },
+                    placeholder = { Text("Gym Phonk / Favorites") },
                     singleLine = true
                 )
             },
@@ -1061,34 +1125,43 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
     }
 
     songForLyrics?.let { targetSong ->
-        val initialLyrics = remember(targetSong.id) {
-            customLyrics[targetSong.id] ?: readSidecarLyrics(targetSong.filePath) ?: ""
+        val rawLyrics = remember(targetSong.id, customLyrics) {
+            customLyrics[targetSong.id] ?: readRawSidecarLyrics(targetSong.filePath) ?: ""
         }
-        var editingMode by remember { mutableStateOf(initialLyrics.isBlank()) }
-        var draftText by remember { mutableStateOf(initialLyrics) }
+        val parsedLrc = remember(rawLyrics) { parseLrcLines(rawLyrics) }
+        var editingMode by remember { mutableStateOf(rawLyrics.isBlank()) }
+        var draftText by remember { mutableStateOf(rawLyrics) }
+
         AlertDialog(
             onDismissRequest = { songForLyrics = null },
-            containerColor = Color(0xFF151728),
-            title = { Text("${strings.viewLyrics} • ${targetSong.title}", color = Color.White, maxLines = 1) },
+            containerColor = Color(0xFF0C0E18),
+            title = { Text("${strings.viewLyrics} • ${targetSong.title}", color = Color.White, fontSize = 15.sp, maxLines = 1) },
             text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (editingMode) {
                         OutlinedTextField(
                             value = draftText,
                             onValueChange = { draftText = it },
-                            placeholder = { Text("Paste song lyrics or synced LRC lines here...") },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp)
+                            placeholder = { Text("[00:12.00] Paste synced LRC or normal lyrics...") },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp)
                         )
+                    } else if (parsedLrc.isNotEmpty()) {
+                        val activeIdx = parsedLrc.indexOfLast { it.timeMs <= position }.coerceAtLeast(0)
+                        parsedLrc.forEachIndexed { idx, line ->
+                            val isCurrent = idx == activeIdx
+                            Text(
+                                text = line.text,
+                                color = if (isCurrent) primaryAccent else Color.White.copy(alpha = 0.55f),
+                                fontWeight = if (isCurrent) FontWeight.ExtraBold else FontWeight.Normal,
+                                fontSize = if (isCurrent) 16.sp else 13.sp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { player.seekTo(line.timeMs) }
+                                    .padding(vertical = 3.dp)
+                            )
+                        }
                     } else {
-                        Text(
-                            text = draftText.ifBlank { "No offline lyrics saved for this track yet." },
-                            color = Color.White,
-                            lineHeight = 24.sp,
-                            fontSize = 15.sp
-                        )
+                        Text(draftText.ifBlank { "No lyrics saved yet. Tap Edit to paste." }, color = Color.White, lineHeight = 22.sp)
                     }
                 }
             },
@@ -1110,21 +1183,21 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
     if (showSleepDialog) {
         AlertDialog(
             onDismissRequest = { showSleepDialog = false },
-            containerColor = Color(0xFF151728),
+            containerColor = Color(0xFF0E101C),
             title = { Text(strings.sleepTimer, color = Color.White) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     listOf(5, 10, 15, 30, 45, 60).forEach { mins ->
                         TextButton(
                             onClick = { startSleepTimer(mins); showSleepDialog = false },
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text("$mins min", color = Color.White) }
+                        ) { Text("$mins min (Smooth Fade-Out)", color = Color.White) }
                     }
                     if (sleepTimerRemainingSec > 0) {
                         TextButton(
                             onClick = { startSleepTimer(0); showSleepDialog = false },
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text("Cancel Timer", color = Color(0xFFFF6B6B)) }
+                        ) { Text("Cancel Timer", color = Color(0xFFFF5C5C)) }
                     }
                 }
             },
@@ -1132,31 +1205,6 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
         )
     }
 
-    if (showCrossfadeDialog) {
-        AlertDialog(
-            onDismissRequest = { showCrossfadeDialog = false },
-            containerColor = Color(0xFF151728),
-            title = { Text(strings.crossfade, color = Color.White) },
-            text = {
-                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            if (crossfadeSec == 0) "Off (Gapless Instant)" else "$crossfadeSec sec Smooth Mix",
-                            color = primaryAccent,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Slider(
-                            value = crossfadeSec.toFloat(),
-                            onValueChange = { crossfadeSec = it.toInt(); saveState() },
-                            valueRange = 0f..12f,
-                            steps = 11
-                        )
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showCrossfadeDialog = false }) { Text("Done", color = primaryAccent) } }
-        )
-    }
     CompositionLocalProvider(LocalLayoutDirection provides if (strings.isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr) {
         MaterialTheme(
             colorScheme = darkColorScheme(
@@ -1179,485 +1227,506 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
                     Box(
                         Modifier
                             .fillMaxSize()
-                            .background(bgNight.copy(alpha = bgDimAlpha.coerceIn(0.35f, 0.95f)))
+                            .background(Color.Black.copy(alpha = bgDimAlpha.coerceIn(0.05f, 0.88f)))
                     )
                 }
 
-                Scaffold(
-                    containerColor = Color.Transparent,
-                    bottomBar = {
-                        Column(Modifier.background(bgNight.copy(alpha = 0.92f))) {
-                            if (currentSong != null && tab != "Now Playing") {
-                                DynamicNowBarCard(
-                                    song = currentSong,
-                                    playing = playing,
-                                    position = position,
-                                    duration = duration,
-                                    palette = coverPalette,
-                                    accent = primaryAccent,
-                                    onToggle = {
-                                        if (player.mediaItemCount == 0) {
-                                            val idx = songs.indexOfFirst { it.id == currentSong.id }.coerceAtLeast(0)
-                                            playQueue(songs, idx, position, true)
-                                        } else if (player.isPlaying) {
-                                            player.pause()
-                                        } else {
-                                            player.play()
-                                        }
-                                    },
-                                    onNext = { player.seekToNext() },
-                                    onPrevious = { player.seekToPrevious() },
-                                    onOpen = { tab = "Now Playing" }
+                if (isDriveMode && currentSong != null) {
+                    DriveGymModeScreen(
+                        song = currentSong,
+                        playing = playing,
+                        position = position,
+                        duration = duration.coerceAtLeast(currentSong.duration),
+                        accent = primaryAccent,
+                        onTogglePlay = { if (player.isPlaying) player.pause() else player.play() },
+                        onNext = { player.seekToNext() },
+                        onPrev = { player.seekToPrevious() },
+                        onExit = { isDriveMode = false }
+                    )
+                } else {
+                    Scaffold(
+                        containerColor = Color.Transparent,
+                        bottomBar = {
+                            Column(
+                                Modifier.background(
+                                    Brush.verticalGradient(
+                                        listOf(Color.Transparent, bgNight.copy(alpha = 0.85f), bgNight.copy(alpha = 0.96f))
+                                    )
                                 )
-                            }
-                            NavigationBar(containerColor = surfacePanel.copy(alpha = 0.96f)) {
-                                listOf(
-                                    "Songs" to strings.songs,
-                                    "Now Playing" to strings.nowPlaying,
-                                    "EQ Studio" to strings.eqStudio,
-                                    "Playlists" to strings.playlists,
-                                    "Settings" to strings.settings
-                                ).forEach { (key, label) ->
-                                    NavigationBarItem(
-                                        selected = tab == key,
-                                        onClick = {
-                                            tab = key
-                                            activePlaylistView = null
-                                        },
-                                        icon = {
-                                            Icon(
-                                                when (key) {
-                                                    "Songs" -> Icons.Default.LibraryMusic
-                                                    "Now Playing" -> Icons.Default.Album
-                                                    "EQ Studio" -> Icons.Default.Equalizer
-                                                    "Playlists" -> Icons.Default.QueueMusic
-                                                    else -> Icons.Default.Tune
-                                                },
-                                                contentDescription = label
-                                            )
-                                        },
-                                        label = { Text(label, fontSize = 10.sp, maxLines = 1) },
-                                        colors = NavigationBarItemDefaults.colors(
-                                            selectedIconColor = primaryAccent,
-                                            selectedTextColor = primaryAccent,
-                                            indicatorColor = primaryAccent.copy(alpha = 0.18f),
-                                            unselectedTextColor = mutedText,
-                                            unselectedIconColor = mutedText
-                                        )
-                                    )
-                                }
-                            }
-                        }
-                    }
-                ) { padding ->
-                    Column(
-                        Modifier
-                            .fillMaxSize()
-                            .padding(padding)
-                            .padding(horizontal = 16.dp)
-                    ) {
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(top = 12.dp, bottom = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        "VYRO",
-                                        color = Color.White,
-                                        fontSize = 25.sp,
-                                        fontWeight = FontWeight.Black,
-                                        letterSpacing = 3.sp
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        "MUSIC",
-                                        color = primaryAccent,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        letterSpacing = 2.sp
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Box(
-                                        Modifier
-                                            .background(
-                                                Brush.horizontalGradient(listOf(Color(0xFFFFC857), primaryAccent)),
-                                                RoundedCornerShape(6.dp)
-                                            )
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                    ) {
-                                        Text("PRO VIP", color = Color.Black, fontSize = 9.sp, fontWeight = FontWeight.Black)
-                                    }
-                                }
-                                Text(
-                                    "CRAFTED & DEVELOPED BY MOHAMED TAREK",
-                                    color = mutedText,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.2.sp
-                                )
-                            }
-                            IconButton(
-                                onClick = { tab = "EQ Studio" },
-                                modifier = Modifier.semantics { contentDescription = strings.eqStudio }
                             ) {
-                                Icon(Icons.Default.GraphicEq, strings.eqStudio, tint = primaryAccent)
-                            }
-                            IconButton(
-                                onClick = {
-                                    songs = loadSongs()
-                                    Toast.makeText(context, "Refreshed (${songs.size})", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.semantics { contentDescription = "تحديث المكتبة" }
-                            ) {
-                                Icon(Icons.Default.Refresh, "Refresh", tint = Color.White)
-                            }
-                        }
-
-                        when (tab) {
-                            "Now Playing" -> {
-                                if (currentSong != null) {
-                                    MidnightEchoNowPlaying(
+                                if (currentSong != null && tab != "Now Playing") {
+                                    SleekMiniPlayerPill(
                                         song = currentSong,
                                         playing = playing,
                                         position = position,
-                                        duration = duration.coerceAtLeast(currentSong.duration),
-                                        isLiked = likedIds.contains(currentSong.id),
-                                        shuffle = shuffle,
-                                        repeatMode = repeatMode,
-                                        sleepRemainingSec = sleepTimerRemainingSec,
-                                        eqPreset = eqPreset,
+                                        duration = duration,
                                         accent = primaryAccent,
-                                        palette = coverPalette,
-                                        gesturesEnabled = gesturesEnabled,
-                                        onTogglePlay = {
+                                        cornerDp = cornerRadiusDp,
+                                        onToggle = {
                                             if (player.mediaItemCount == 0) {
                                                 val idx = songs.indexOfFirst { it.id == currentSong.id }.coerceAtLeast(0)
                                                 playQueue(songs, idx, position, true)
-                                            } else if (player.isPlaying) {
-                                                player.pause()
-                                            } else {
-                                                player.play()
-                                            }
+                                            } else if (player.isPlaying) player.pause() else player.play()
                                         },
-                                        onSeek = {
-                                            position = it
-                                            player.seekTo(it)
-                                            prefs.edit().putLong("last_position_ms", it).apply()
-                                        },
-                                        onPrevious = { player.seekToPrevious() },
                                         onNext = { player.seekToNext() },
-                                        onToggleLike = {
-                                            likedIds = if (likedIds.contains(currentSong.id)) likedIds - currentSong.id else likedIds + currentSong.id
-                                            saveState()
-                                        },
-                                        onToggleShuffle = {
-                                            shuffle = !shuffle
-                                            player.shuffleModeEnabled = shuffle
-                                        },
-                                        onCycleRepeat = {
-                                            repeatMode = when (repeatMode) {
-                                                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-                                                Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-                                                else -> Player.REPEAT_MODE_OFF
-                                            }
-                                            player.repeatMode = repeatMode
-                                        },
-                                        onOpenSleep = { showSleepDialog = true },
-                                        onOpenLyrics = { songForLyrics = currentSong },
-                                        onOpenEq = { tab = "EQ Studio" },
-                                        onOpenMenu = { songForMenu = currentSong }
+                                        onPrevious = { player.seekToPrevious() },
+                                        onOpen = { tab = "Now Playing" }
                                     )
-                                } else {
-                                    EmptyState("اختر أغنية من مكتبتك لبدء التجربة السينمائية", primaryAccent)
                                 }
-                            }
-
-                            "EQ Studio" -> {
-                                BehanceEqStudioScreen(
-                                    eqPreset = eqPreset,
-                                    bandGains = bandGains,
-                                    bassStrength = bassStrength,
-                                    virtualizerStrength = virtualizerStrength,
-                                    playbackSpeed = playbackSpeed,
-                                    playbackPitch = playbackPitch,
-                                    accent = primaryAccent,
-                                    panelColor = surfacePanel,
-                                    onSelectPreset = { preset ->
-                                        eqPreset = preset
-                                        bandGains = when (preset) {
-                                            "Bass Extreme" -> listOf(0.95f, 0.70f, 0.05f, 0.20f, 0.45f)
-                                            "Phonk Master" -> listOf(0.90f, 0.45f, -0.15f, 0.55f, 0.85f)
-                                            "VIP Studio" -> listOf(0.50f, 0.30f, 0.15f, 0.40f, 0.65f)
-                                            "Rock" -> listOf(0.65f, 0.35f, -0.10f, 0.45f, 0.75f)
-                                            "Vocal Crystal" -> listOf(-0.20f, 0.25f, 0.85f, 0.60f, 0.20f)
-                                            else -> listOf(0f, 0f, 0f, 0f, 0f)
-                                        }
-                                    },
-                                    onBandChange = { idx, value ->
-                                        eqPreset = "Custom"
-                                        bandGains = bandGains.toMutableList().also { it[idx] = value }
-                                    },
-                                    onBassChange = { bassStrength = it },
-                                    onVirtChange = { virtualizerStrength = it },
-                                    onSpeedChange = { playbackSpeed = it },
-                                    onPitchChange = { playbackPitch = it },
-                                    onOpenSystemEq = {
-                                        runCatching {
-                                            val intent = Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL).apply {
-                                                putExtra(AudioEffect.EXTRA_PACKAGE_NAME, context.packageName)
-                                                putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
-                                            }
-                                            context.startActivity(intent)
-                                        }.onFailure {
-                                            Toast.makeText(context, "VYRO Hardware DSP Active", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                )
-                            }
-
-                            "Playlists" -> {
-                                val currentPlaylistName = activePlaylistView
-                                if (currentPlaylistName == null) {
-                                    Row(
-                                        Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(strings.playlists, color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                                        Row {
-                                            TextButton(onClick = { activePlaylistView = "__ALBUMS__" }) {
-                                                Text(strings.albums, color = Color.White)
-                                            }
-                                            TextButton(onClick = { showCreatePlaylistDialog = true }) {
-                                                Text(strings.newPlaylist, color = primaryAccent, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                    }
-                                    Spacer(Modifier.height(8.dp))
-                                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        item {
-                                            FeatureTile(
-                                                title = strings.likedSongs,
-                                                subtitle = "${likedIds.size} ${strings.tracksCount}",
-                                                icon = Icons.Default.Favorite,
-                                                accent = primaryAccent,
-                                                panel = surfacePanel,
-                                                onClick = { activePlaylistView = "__LIKED__" }
-                                            )
-                                        }
-                                        item {
-                                            FeatureTile(
-                                                title = strings.recentlyPlayed,
-                                                subtitle = "${recentIds.size} ${strings.tracksCount}",
-                                                icon = Icons.Default.History,
-                                                accent = primaryAccent,
-                                                panel = surfacePanel,
-                                                onClick = { activePlaylistView = "__RECENT__" }
-                                            )
-                                        }
-                                        item {
-                                            FeatureTile(
-                                                title = strings.albums,
-                                                subtitle = "${songs.map { it.album }.distinct().size} ${strings.albums}",
-                                                icon = Icons.Default.Album,
-                                                accent = primaryAccent,
-                                                panel = surfacePanel,
-                                                onClick = { activePlaylistView = "__ALBUMS__" }
-                                            )
-                                        }
-                                        itemsIndexed(playlists.entries.toList()) { _, entry ->
-                                            Row(
-                                                Modifier
-                                                    .fillMaxWidth()
-                                                    .background(surfacePanel, RoundedCornerShape(16.dp))
-                                                    .clickable { activePlaylistView = entry.key }
-                                                    .padding(16.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Icon(Icons.Default.QueueMusic, null, tint = primaryAccent)
-                                                Spacer(Modifier.width(12.dp))
-                                                Column(Modifier.weight(1f)) {
-                                                    Text(entry.key, color = Color.White, fontWeight = FontWeight.Bold)
-                                                    Text("${entry.value.size} ${strings.tracksCount}", color = mutedText, fontSize = 12.sp)
-                                                }
-                                                IconButton(onClick = {
-                                                    playlists = playlists - entry.key
-                                                    saveState()
-                                                }) {
-                                                    Icon(Icons.Default.Delete, "Delete", tint = mutedText)
-                                                }
-                                            }
-                                        }
-                                    }
-                                } else if (currentPlaylistName == "__ALBUMS__") {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        IconButton(onClick = { activePlaylistView = null }) {
-                                            Icon(Icons.Default.ArrowBack, "Back", tint = Color.White)
-                                        }
-                                        Text(strings.albums, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                    val albums = songs.groupBy { it.album }.entries.toList()
-                                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        itemsIndexed(albums) { _, entry ->
-                                            Row(
-                                                Modifier
-                                                    .fillMaxWidth()
-                                                    .background(surfacePanel, RoundedCornerShape(16.dp))
-                                                    .clickable {
-                                                        query = entry.key
-                                                        tab = "Songs"
-                                                    }
-                                                    .padding(12.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                AlbumArtThumb(entry.value.firstOrNull(), primaryAccent)
-                                                Spacer(Modifier.width(12.dp))
-                                                Column(Modifier.weight(1f)) {
-                                                    Text(entry.key, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
-                                                    Text("${entry.value.size} ${strings.tracksCount}", color = mutedText, fontSize = 12.sp)
-                                                }
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    val title = when (currentPlaylistName) {
-                                        "__LIKED__" -> strings.likedSongs
-                                        "__RECENT__" -> strings.recentlyPlayed
-                                        else -> currentPlaylistName
-                                    }
-                                    val listSongs = when (currentPlaylistName) {
-                                        "__LIKED__" -> songs.filter { likedIds.contains(it.id) }
-                                        "__RECENT__" -> recentIds.mapNotNull { id -> songs.firstOrNull { it.id == id } }
-                                        else -> (playlists[currentPlaylistName] ?: emptyList()).mapNotNull { id -> songs.firstOrNull { it.id == id } }
-                                    }
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        IconButton(onClick = { activePlaylistView = null }) {
-                                            Icon(Icons.Default.ArrowBack, "Back", tint = Color.White)
-                                        }
-                                        Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                    Spacer(Modifier.height(8.dp))
-                                    LazyColumn(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                                        itemsIndexed(listSongs) { idx, song ->
-                                            SongRow(
-                                                song = song,
-                                                active = currentSongId == song.id,
-                                                playing = playing,
-                                                isLiked = likedIds.contains(song.id),
-                                                accent = primaryAccent,
-                                                panel = surfacePanel,
-                                                onClick = { playQueue(listSongs, idx, 0L, true) },
-                                                onMore = { songForMenu = song }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            "Settings" -> {
-                                VipSettingsScreen(
-                                    strings = strings,
-                                    themeName = themeName,
-                                    langSetting = langSetting,
-                                    customBgUri = customBgUri,
-                                    bgDimAlpha = bgDimAlpha,
-                                    autoScanEnabled = autoScanEnabled,
-                                    autoPlayDownloaded = autoPlayDownloaded,
-                                    crossfadeSec = crossfadeSec,
-                                    sleepRemainingSec = sleepTimerRemainingSec,
-                                    tracksPlayedStat = prefs.getInt("stat_tracks_played", 0),
-                                    accent = primaryAccent,
-                                    panel = surfacePanel,
-                                    onSelectTheme = { themeName = it; saveState() },
-                                    onSelectLang = { langSetting = it; saveState() },
-                                    onPickBg = { bgImagePicker.launch(arrayOf("image/*")) },
-                                    onClearBg = { customBgUri = null; saveState() },
-                                    onChangeDim = { bgDimAlpha = it; saveState() },
-                                    onToggleAutoScan = { autoScanEnabled = !autoScanEnabled; saveState() },
-                                    onToggleAutoPlayNew = { autoPlayDownloaded = !autoPlayDownloaded; saveState() },
-                                    onOpenCrossfade = { showCrossfadeDialog = true },
-                                    onOpenSleep = { showSleepDialog = true },
-                                    onBackup = { backupLauncher.launch("vyro_music_pro_backup.json") },
-                                    onRestore = { restoreLauncher.launch(arrayOf("application/json", "*/*")) }
-                                )
-                            }
-
-                            else -> {
-                                OutlinedTextField(
-                                    value = query,
-                                    onValueChange = { query = it },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    placeholder = { Text(strings.searchHint, color = mutedText, fontSize = 13.sp) },
-                                    leadingIcon = { Icon(Icons.Default.Search, null, tint = primaryAccent) },
-                                    trailingIcon = {
-                                        if (query.isNotEmpty()) {
-                                            IconButton(onClick = { query = "" }) {
-                                                Icon(Icons.Default.Close, "Clear", tint = mutedText)
-                                            }
-                                        }
-                                    },
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(18.dp),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = primaryAccent,
-                                        unfocusedBorderColor = surfacePanel,
-                                        focusedContainerColor = surfacePanel.copy(alpha = 0.85f),
-                                        unfocusedContainerColor = surfacePanel.copy(alpha = 0.85f),
-                                        cursorColor = primaryAccent
-                                    )
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                NavigationBar(
+                                    containerColor = Color.Black.copy(alpha = if (customBgUri != null) 0.55f else 0.92f),
+                                    tonalElevation = 0.dp
                                 ) {
                                     listOf(
-                                        "TITLE" to "A-Z",
-                                        "ARTIST" to "Artist",
-                                        "DURATION" to "Duration",
-                                        "NEWEST" to "Newest"
+                                        "Songs" to strings.songs,
+                                        "Now Playing" to strings.nowPlaying,
+                                        "EQ Studio" to strings.eqStudio,
+                                        "Playlists" to strings.playlists,
+                                        "Settings" to strings.settings
                                     ).forEach { (key, label) ->
-                                        FilterChip(
-                                            selected = sortBy == key,
-                                            onClick = { sortBy = key; saveState() },
-                                            label = { Text(label, fontSize = 11.sp) }
+                                        NavigationBarItem(
+                                            selected = tab == key,
+                                            onClick = {
+                                                tab = key
+                                                activePlaylistView = null
+                                            },
+                                            icon = {
+                                                Icon(
+                                                    when (key) {
+                                                        "Songs" -> Icons.Default.LibraryMusic
+                                                        "Now Playing" -> Icons.Default.Album
+                                                        "EQ Studio" -> Icons.Default.GraphicEq
+                                                        "Playlists" -> Icons.Default.QueueMusic
+                                                        else -> Icons.Default.Tune
+                                                    },
+                                                    contentDescription = label
+                                                )
+                                            },
+                                            label = { Text(label, fontSize = 10.sp, maxLines = 1) },
+                                            colors = NavigationBarItemDefaults.colors(
+                                                selectedIconColor = primaryAccent,
+                                                selectedTextColor = primaryAccent,
+                                                indicatorColor = primaryAccent.copy(alpha = 0.16f),
+                                                unselectedTextColor = mutedText,
+                                                unselectedIconColor = mutedText
+                                            )
                                         )
                                     }
-                                    Spacer(Modifier.width(6.dp))
+                                }
+                            }
+                        }
+                    ) { padding ->
+                        Column(
+                            Modifier
+                                .fillMaxSize()
+                                .padding(padding)
+                                .padding(horizontal = 14.dp)
+                        ) {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 10.dp, bottom = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(34.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(Brush.linearGradient(listOf(primaryAccent, Color(0xFF4A25AA)))),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.GraphicEq, null, tint = Color.Black, modifier = Modifier.size(20.dp))
+                                }
+                                Spacer(Modifier.width(9.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            "VYRO",
+                                            color = Color.White,
+                                            fontSize = 19.sp,
+                                            fontWeight = FontWeight.Black,
+                                            letterSpacing = 2.sp
+                                        )
+                                        Spacer(Modifier.width(5.dp))
+                                        Text(
+                                            "ULTRA",
+                                            color = primaryAccent,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            letterSpacing = 1.5.sp
+                                        )
+                                    }
                                     Text(
-                                        "${sortedSongs.size} ${strings.tracksCount}",
-                                        color = primaryAccent,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
+                                        "BY MOHAMED TAREK • ${songs.size} ${strings.tracksCount}",
+                                        color = mutedText,
+                                        fontSize = 9.sp,
+                                        maxLines = 1
                                     )
                                 }
-                                Spacer(Modifier.height(6.dp))
-                                if (!permission) {
-                                    EmptyState("يرجى منح إذن الوصول للملفات الصوتية لعرض مكتبتك", primaryAccent)
-                                } else if (sortedSongs.isEmpty()) {
-                                    EmptyState("لا توجد ملفات صوتية مطابقة", primaryAccent)
-                                } else {
-                                    LazyColumn(
-                                        verticalArrangement = Arrangement.spacedBy(7.dp),
-                                        contentPadding = PaddingValues(bottom = 16.dp)
+
+                                IconButton(
+                                    onClick = {
+                                        tab = "Songs"
+                                        searchExpanded = !searchExpanded
+                                    },
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(
+                                            if (searchExpanded || query.isNotEmpty()) primaryAccent.copy(alpha = 0.22f)
+                                            else Color.White.copy(alpha = 0.06f),
+                                            CircleShape
+                                        )
+                                ) {
+                                    Icon(Icons.Default.Search, "Search", tint = if (searchExpanded) primaryAccent else Color.White, modifier = Modifier.size(18.dp))
+                                }
+                                Spacer(Modifier.width(6.dp))
+                                IconButton(
+                                    onClick = { showUiStudioSheet = true },
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(primaryAccent.copy(alpha = 0.18f), CircleShape)
+                                ) {
+                                    Icon(Icons.Default.Palette, "UI Studio", tint = primaryAccent, modifier = Modifier.size(18.dp))
+                                }
+                                Spacer(Modifier.width(6.dp))
+                                IconButton(
+                                    onClick = {
+                                        if (currentSong != null) isDriveMode = true
+                                    },
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(Color.White.copy(alpha = 0.06f), CircleShape)
+                                ) {
+                                    Icon(Icons.Default.DirectionsCar, "Drive Mode", tint = Color.White, modifier = Modifier.size(18.dp))
+                                }
+                            }
+
+                            when (tab) {
+                                "Now Playing" -> {
+                                    if (currentSong != null) {
+                                        UltraNowPlayingScreen(
+                                            song = currentSong,
+                                            playing = playing,
+                                            position = position,
+                                            duration = duration.coerceAtLeast(currentSong.duration),
+                                            isLiked = likedIds.contains(currentSong.id),
+                                            shuffle = shuffle,
+                                            repeatMode = repeatMode,
+                                            sleepRemainingSec = sleepTimerRemainingSec,
+                                            discStyle = discStyle,
+                                            waveStyle = waveStyle,
+                                            cornerDp = cornerRadiusDp,
+                                            loopA = loopPointA,
+                                            loopB = loopPointB,
+                                            accent = primaryAccent,
+                                            palette = coverPalette,
+                                            onTogglePlay = {
+                                                if (player.mediaItemCount == 0) {
+                                                    val idx = songs.indexOfFirst { it.id == currentSong.id }.coerceAtLeast(0)
+                                                    playQueue(songs, idx, position, true)
+                                                } else if (player.isPlaying) player.pause() else player.play()
+                                            },
+                                            onSeek = {
+                                                position = it
+                                                player.seekTo(it)
+                                                prefs.edit().putLong("last_position_ms", it).apply()
+                                            },
+                                            onPrevious = { player.seekToPrevious() },
+                                            onNext = { player.seekToNext() },
+                                            onToggleLike = {
+                                                likedIds = if (likedIds.contains(currentSong.id)) likedIds - currentSong.id else likedIds + currentSong.id
+                                                saveState()
+                                            },
+                                            onToggleShuffle = {
+                                                shuffle = !shuffle
+                                                player.shuffleModeEnabled = shuffle
+                                            },
+                                            onCycleRepeat = {
+                                                repeatMode = when (repeatMode) {
+                                                    Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                                                    Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                                                    else -> Player.REPEAT_MODE_OFF
+                                                }
+                                                player.repeatMode = repeatMode
+                                            },
+                                            onToggleABLoop = {
+                                                when {
+                                                    loopPointA == null -> {
+                                                        loopPointA = position
+                                                        Toast.makeText(context, "Point A: ${formatTime(position)}", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                    loopPointB == null && position > (loopPointA ?: 0L) + 1000L -> {
+                                                        loopPointB = position
+                                                        Toast.makeText(context, "A-B Loop Active!", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                    else -> {
+                                                        loopPointA = null
+                                                        loopPointB = null
+                                                    }
+                                                }
+                                            },
+                                            onOpenSleep = { showSleepDialog = true },
+                                            onOpenLyrics = { songForLyrics = currentSong },
+                                            onOpenUiStudio = { showUiStudioSheet = true },
+                                            onOpenMenu = { songForMenu = currentSong }
+                                        )
+                                    } else {
+                                        EmptyState("اختر مقطعا صوتيا لبدء الاستماع", primaryAccent)
+                                    }
+                                }
+
+                                "EQ Studio" -> {
+                                    UltraDspStudioScreen(
+                                        eqPreset = eqPreset,
+                                        bandGains = bandGains,
+                                        bassStrength = bassStrength,
+                                        virtualizerStrength = virtualizerStrength,
+                                        loudnessGain = loudnessGain,
+                                        playbackSpeed = playbackSpeed,
+                                        playbackPitch = playbackPitch,
+                                        accent = primaryAccent,
+                                        cornerDp = cornerRadiusDp,
+                                        onSelectPreset = { preset ->
+                                            eqPreset = preset
+                                            bandGains = when (preset) {
+                                                "Bass Extreme" -> listOf(1.0f, 0.80f, 0.05f, 0.25f, 0.50f)
+                                                "Phonk Master" -> listOf(0.95f, 0.55f, -0.15f, 0.60f, 0.90f)
+                                                "VIP Studio" -> listOf(0.55f, 0.35f, 0.15f, 0.45f, 0.70f)
+                                                "Vocal Crystal" -> listOf(-0.15f, 0.30f, 0.90f, 0.65f, 0.25f)
+                                                else -> listOf(0f, 0f, 0f, 0f, 0f)
+                                            }
+                                            saveState()
+                                        },
+                                        onBandChange = { idx, value ->
+                                            eqPreset = "Custom"
+                                            bandGains = bandGains.toMutableList().also { it[idx] = value }
+                                            saveState()
+                                        },
+                                        onBassChange = { bassStrength = it; saveState() },
+                                        onVirtChange = { virtualizerStrength = it; saveState() },
+                                        onLoudnessChange = { loudnessGain = it; saveState() },
+                                        onSpeedChange = { playbackSpeed = it; saveState() },
+                                        onPitchChange = { playbackPitch = it; saveState() },
+                                        onOpenSystemEq = {
+                                            runCatching {
+                                                val intent = Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL).apply {
+                                                    putExtra(AudioEffect.EXTRA_PACKAGE_NAME, context.packageName)
+                                                    putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
+                                                }
+                                                context.startActivity(intent)
+                                            }
+                                        }
+                                    )
+                                }
+
+                                "Playlists" -> {
+                                    SmartPlaylistsScreen(
+                                        strings = strings,
+                                        songs = songs,
+                                        likedIds = likedIds,
+                                        recentIds = recentIds,
+                                        playCounts = playCounts,
+                                        playlists = playlists,
+                                        activeView = activePlaylistView,
+                                        currentSongId = currentSongId,
+                                        playing = playing,
+                                        accent = primaryAccent,
+                                        panel = surfacePanel,
+                                        cornerDp = cornerRadiusDp,
+                                        fontScale = fontScale,
+                                        onChangeView = { activePlaylistView = it },
+                                        onCreateNew = { showCreatePlaylistDialog = true },
+                                        onDeletePlaylist = { playlists = playlists - it; saveState() },
+                                        onPlayList = { list, idx -> playQueue(list, idx, 0L, true) },
+                                        onMoreSong = { songForMenu = it },
+                                        onSelectAlbum = { alb ->
+                                            query = alb
+                                            searchExpanded = true
+                                            tab = "Songs"
+                                        }
+                                    )
+                                }
+
+                                "Settings" -> {
+                                    UltraSettingsScreen(
+                                        strings = strings,
+                                        uiLayout = uiLayout,
+                                        themeName = themeName,
+                                        langSetting = langSetting,
+                                        customBgUri = customBgUri,
+                                        bgDimAlpha = bgDimAlpha,
+                                        shakeSkipEnabled = shakeSkipEnabled,
+                                        crossfadeSec = crossfadeSec,
+                                        sleepRemainingSec = sleepTimerRemainingSec,
+                                        tracksPlayedStat = prefs.getInt("stat_tracks_played", 0),
+                                        accent = primaryAccent,
+                                        cornerDp = cornerRadiusDp,
+                                        onOpenUiStudio = { showUiStudioSheet = true },
+                                        onSelectLayout = {
+                                            uiLayout = it
+                                            cardOpacity = if (it == "AMOLED Pure") 0f else 0.25f
+                                            saveState()
+                                        },
+                                        onSelectTheme = { themeName = it; saveState() },
+                                        onSelectLang = { langSetting = it; saveState() },
+                                        onPickBg = { bgImagePicker.launch(arrayOf("image/*")) },
+                                        onClearBg = { customBgUri = null; saveState() },
+                                        onChangeDim = { bgDimAlpha = it; saveState() },
+                                        onToggleShake = { shakeSkipEnabled = !shakeSkipEnabled; saveState() },
+                                        onChangeCrossfade = { crossfadeSec = it; saveState() },
+                                        onOpenSleep = { showSleepDialog = true },
+                                        onBackup = { backupLauncher.launch("vyro_ultra_backup.json") },
+                                        onRestore = { restoreLauncher.launch(arrayOf("application/json", "*/*")) }
+                                    )
+                                }
+
+                                else -> {
+                                    AnimatedVisibility(visible = searchExpanded || query.isNotEmpty()) {
+                                        Column(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .padding(bottom = 8.dp)
+                                                .clip(RoundedCornerShape(cornerRadiusDp.dp))
+                                                .background(Color(0xFF10121E).copy(alpha = 0.90f))
+                                                .border(1.dp, primaryAccent.copy(alpha = 0.35f), RoundedCornerShape(cornerRadiusDp.dp))
+                                                .padding(10.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Default.Search, null, tint = primaryAccent, modifier = Modifier.size(18.dp))
+                                                Spacer(Modifier.width(8.dp))
+                                                OutlinedTextField(
+                                                    value = query,
+                                                    onValueChange = { query = it },
+                                                    modifier = Modifier.weight(1f),
+                                                    placeholder = { Text(strings.searchHint, color = mutedText, fontSize = 12.sp) },
+                                                    singleLine = true,
+                                                    shape = RoundedCornerShape(12.dp)
+                                                )
+                                                IconButton(onClick = {
+                                                    runCatching {
+                                                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                                        }
+                                                        voiceSearchLauncher.launch(intent)
+                                                    }
+                                                }) {
+                                                    Icon(Icons.Default.Mic, "Voice Search", tint = primaryAccent)
+                                                }
+                                                IconButton(onClick = {
+                                                    query = ""
+                                                    searchExpanded = false
+                                                }) {
+                                                    Icon(Icons.Default.Close, "Close", tint = mutedText)
+                                                }
+                                            }
+                                            Row(
+                                                Modifier.horizontalScroll(rememberScrollState()),
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                listOf(
+                                                    "TITLE" to "A-Z",
+                                                    "ARTIST" to "Artist",
+                                                    "DURATION" to "Duration",
+                                                    "NEWEST" to "Newest",
+                                                    "FAV" to "❤ Favorites"
+                                                ).forEach { (key, label) ->
+                                                    FilterChip(
+                                                        selected = sortBy == key,
+                                                        onClick = { sortBy = key; saveState() },
+                                                        label = { Text(label, fontSize = 11.sp) }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // شريط اختيار شكل الواجهة بجانب زر الثيمات مباشرة في أعلى القائمة
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(bottom = 6.dp)
+                                            .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        itemsIndexed(sortedSongs) { idx, song ->
-                                            SongRow(
-                                                song = song,
-                                                active = currentSongId == song.id,
-                                                playing = playing,
-                                                isLiked = likedIds.contains(song.id),
-                                                accent = primaryAccent,
-                                                panel = surfacePanel,
-                                                onClick = { playQueue(sortedSongs, idx, 0L, true) },
-                                                onMore = { songForMenu = song }
-                                            )
+                                        listOf("AMOLED Pure", "Cyber Glass", "Bento Grid", "Compact Pro").forEach { layoutMode ->
+                                            val active = uiLayout == layoutMode
+                                            Box(
+                                                Modifier
+                                                    .clip(RoundedCornerShape(50))
+                                                    .background(if (active) primaryAccent.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.05f))
+                                                    .border(1.dp, if (active) primaryAccent else Color.Transparent, RoundedCornerShape(50))
+                                                    .clickable {
+                                                        uiLayout = layoutMode
+                                                        cardOpacity = if (layoutMode == "AMOLED Pure") 0f else 0.25f
+                                                        saveState()
+                                                    }
+                                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                                            ) {
+                                                Text(
+                                                    layoutMode,
+                                                    color = if (active) primaryAccent else mutedText,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                        Box(
+                                            Modifier
+                                                .clip(RoundedCornerShape(50))
+                                                .background(Color(0xFFFFC857).copy(alpha = 0.16f))
+                                                .border(1.dp, Color(0xFFFFC857).copy(alpha = 0.5f), RoundedCornerShape(50))
+                                                .clickable { showUiStudioSheet = true }
+                                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                                        ) {
+                                            Text("🎨 الثيمات والتخصيص", color = Color(0xFFFFC857), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+
+                                    if (!permission) {
+                                        EmptyState("يرجى منح إذن الوصول للملفات الصوتية لعرض مكتبتك", primaryAccent)
+                                    } else if (sortedSongs.isEmpty()) {
+                                        EmptyState("لا توجد مقاطع صوتية مطابقة", primaryAccent)
+                                    } else if (uiLayout == "Bento Grid") {
+                                        LazyVerticalGrid(
+                                            columns = GridCells.Fixed(2),
+                                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            contentPadding = PaddingValues(bottom = 16.dp)
+                                        ) {
+                                            gridItemsIndexed(sortedSongs) { idx, song ->
+                                                BentoSongCard(
+                                                    song = song,
+                                                    active = currentSongId == song.id,
+                                                    isLiked = likedIds.contains(song.id),
+                                                    accent = primaryAccent,
+                                                    cornerDp = cornerRadiusDp,
+                                                    fontScale = fontScale,
+                                                    onClick = { playQueue(sortedSongs, idx, 0L, true) },
+                                                    onMore = { songForMenu = song }
+                                                )
+                                            }
+                                        }
+                                    } else {
+                                        LazyColumn(
+                                            verticalArrangement = Arrangement.spacedBy(if (uiLayout == "AMOLED Pure") 2.dp else 7.dp),
+                                            contentPadding = PaddingValues(bottom = 16.dp)
+                                        ) {
+                                            itemsIndexed(sortedSongs) { idx, song ->
+                                                SongRow(
+                                                    song = song,
+                                                    active = currentSongId == song.id,
+                                                    isLiked = likedIds.contains(song.id),
+                                                    uiLayout = uiLayout,
+                                                    accent = primaryAccent,
+                                                    panel = surfacePanel,
+                                                    cornerDp = cornerRadiusDp,
+                                                    fontScale = fontScale,
+                                                    onClick = { playQueue(sortedSongs, idx, 0L, true) },
+                                                    onMore = { songForMenu = song }
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -1671,99 +1740,67 @@ fun VyroMasterApp(player: Player, loadSongs: () -> List<Song>) {
 }
 
 @Composable
-private fun DynamicNowBarCard(
+private fun SleekMiniPlayerPill(
     song: Song,
     playing: Boolean,
     position: Long,
     duration: Long,
-    palette: CoverPalette,
     accent: Color,
+    cornerDp: Int,
     onToggle: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
     onOpen: () -> Unit
 ) {
-    val barBgStart = palette.dominant.copy(alpha = if (palette.isLightCover) 0.42f else 0.32f)
-    val barBgEnd = Color(0xFF0E101C)
     val progress = if (duration > 0) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
-
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(24.dp))
-            .background(Brush.horizontalGradient(listOf(barBgStart, barBgEnd)))
-            .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(24.dp))
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(cornerDp.dp))
+            .background(Color(0xFF0A0C16).copy(alpha = 0.88f))
+            .border(1.dp, accent.copy(alpha = 0.40f), RoundedCornerShape(cornerDp.dp))
             .clickable(onClick = onOpen)
-            .padding(horizontal = 12.dp, vertical = 9.dp)
+            .padding(horizontal = 10.dp, vertical = 7.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            AlbumArtThumb(song, accent, sizeDp = 48)
+            AlbumArtThumb(song, accent, sizeDp = 42, cornerDp = (cornerDp - 4).coerceAtLeast(8))
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier
-                            .size(7.dp)
-                            .background(if (playing) Color(0xFF00F59B) else accent, CircleShape)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        song.title,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Text(
-                    "${song.artist} • ${formatTime(position)} / ${formatTime(duration.coerceAtLeast(song.duration))}",
-                    color = Color(0xFFD0C8E8),
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Text(song.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${song.artist} • ${formatTime(position)}", color = Color(0xFFB5B9D0), fontSize = 11.sp, maxLines = 1)
             }
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onPrevious, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.SkipPrevious, "Previous", tint = Color.White)
+                    IconButton(onClick = onPrevious, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.SkipPrevious, "Prev", tint = Color.White)
                     }
                     IconButton(
                         onClick = onToggle,
-                        modifier = Modifier
-                            .size(38.dp)
-                            .background(accent, CircleShape)
+                        modifier = Modifier.size(34.dp).background(accent, CircleShape)
                     ) {
-                        Icon(
-                            if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            "Play/Pause",
-                            tint = Color.Black
-                        )
+                        Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play", tint = Color.Black, modifier = Modifier.size(18.dp))
                     }
-                    IconButton(onClick = onNext, modifier = Modifier.size(32.dp)) {
+                    IconButton(onClick = onNext, modifier = Modifier.size(30.dp)) {
                         Icon(Icons.Default.SkipNext, "Next", tint = Color.White)
                     }
                 }
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(5.dp))
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             LinearProgressIndicator(
                 progress = { progress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(3.dp)
-                    .clip(RoundedCornerShape(2.dp)),
+                modifier = Modifier.fillMaxWidth().height(2.dp),
                 color = accent,
-                trackColor = Color.White.copy(alpha = 0.15f)
+                trackColor = Color.White.copy(alpha = 0.12f)
             )
         }
     }
 }
+
 @Composable
-private fun MidnightEchoNowPlaying(
+private fun UltraNowPlayingScreen(
     song: Song,
     playing: Boolean,
     position: Long,
@@ -1772,10 +1809,13 @@ private fun MidnightEchoNowPlaying(
     shuffle: Boolean,
     repeatMode: Int,
     sleepRemainingSec: Int,
-    eqPreset: String,
+    discStyle: String,
+    waveStyle: String,
+    cornerDp: Int,
+    loopA: Long?,
+    loopB: Long?,
     accent: Color,
     palette: CoverPalette,
-    gesturesEnabled: Boolean,
     onTogglePlay: () -> Unit,
     onSeek: (Long) -> Unit,
     onPrevious: () -> Unit,
@@ -1783,24 +1823,31 @@ private fun MidnightEchoNowPlaying(
     onToggleLike: () -> Unit,
     onToggleShuffle: () -> Unit,
     onCycleRepeat: () -> Unit,
+    onToggleABLoop: () -> Unit,
     onOpenSleep: () -> Unit,
     onOpenLyrics: () -> Unit,
-    onOpenEq: () -> Unit,
+    onOpenUiStudio: () -> Unit,
     onOpenMenu: () -> Unit
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "echo")
+    val infiniteTransition = rememberInfiniteTransition(label = "ultra_anim")
     val pulsePhase by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 6.283f,
-        animationSpec = infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart),
+        animationSpec = infiniteRepeatable(tween(2400, easing = LinearEasing), RepeatMode.Restart),
         label = "wave"
+    )
+    val spinAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(12000, easing = LinearEasing), RepeatMode.Restart),
+        label = "vinyl_spin"
     )
 
     Column(
         Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(top = 4.dp, bottom = 18.dp),
+            .padding(top = 4.dp, bottom = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
@@ -1808,21 +1855,20 @@ private fun MidnightEchoNowPlaying(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
+            Row(
                 Modifier
-                    .background(palette.dominant.copy(alpha = 0.22f), RoundedCornerShape(50))
-                    .border(1.dp, accent.copy(alpha = 0.5f), RoundedCornerShape(50))
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = 0.06f))
+                    .clickable(onClick = onOpenUiStudio)
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    if (palette.isLightCover) "MIDNIGHT ECHO • LIGHT AURA" else "MIDNIGHT ECHO • DARK AURA",
-                    color = accent,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Icon(Icons.Default.AutoAwesome, null, tint = accent, modifier = Modifier.size(13.dp))
+                Spacer(Modifier.width(5.dp))
+                Text(discStyle.uppercase(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
-            IconButton(onClick = onOpenMenu) {
-                Icon(Icons.Default.MoreVert, "خيارات الأغنية", tint = Color.White)
+            IconButton(onClick = onOpenMenu, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.MoreVert, "More", tint = Color.White)
             }
         }
 
@@ -1830,80 +1876,138 @@ private fun MidnightEchoNowPlaying(
 
         Box(
             Modifier
-                .size(255.dp)
-                .pointerInput(gesturesEnabled) {
-                    if (gesturesEnabled) {
-                        var totalDrag = 0f
-                        detectHorizontalDragGestures(
-                            onHorizontalDrag = { _, dragAmount -> totalDrag += dragAmount },
-                            onDragEnd = {
-                                if (totalDrag > 85f) onPrevious()
-                                else if (totalDrag < -85f) onNext()
-                                totalDrag = 0f
-                            }
-                        )
-                    }
+                .size(235.dp)
+                .pointerInput(Unit) {
+                    var totalDrag = 0f
+                    detectHorizontalDragGestures(
+                        onHorizontalDrag = { _, dragAmount -> totalDrag += dragAmount },
+                        onDragEnd = {
+                            if (totalDrag > 80f) onPrevious()
+                            else if (totalDrag < -80f) onNext()
+                            totalDrag = 0f
+                        }
+                    )
                 },
             contentAlignment = Alignment.Center
         ) {
-            Canvas(Modifier.fillMaxSize()) {
-                val radius = size.minDimension / 2f
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        listOf(
-                            palette.dominant.copy(alpha = if (playing) 0.48f else 0.22f),
-                            accent.copy(alpha = 0.12f),
-                            Color.Transparent
+            when (discStyle) {
+                "Square Studio" -> {
+                    Box(
+                        Modifier
+                            .size(220.dp)
+                            .clip(RoundedCornerShape(cornerDp.dp))
+                            .background(Color(0xFF121422))
+                            .border(1.5.dp, accent.copy(alpha = 0.55f), RoundedCornerShape(cornerDp.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.MusicNote, null, tint = accent, modifier = Modifier.size(64.dp))
+                        AsyncImage(
+                            model = song.albumArtUri,
+                            contentDescription = song.title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
                         )
-                    ),
-                    radius = radius
-                )
-                drawCircle(
-                    color = accent.copy(alpha = 0.85f),
-                    radius = radius * 0.88f,
-                    style = Stroke(width = 5f)
-                )
-            }
-            Box(
-                Modifier
-                    .size(210.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF17192B)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Default.GraphicEq, null, tint = accent, modifier = Modifier.size(72.dp))
-                AsyncImage(
-                    model = song.albumArtUri,
-                    contentDescription = song.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
+                    }
+                }
+                "Vinyl Spin" -> {
+                    Box(
+                        Modifier
+                            .size(225.dp)
+                            .rotate(if (playing) spinAngle else 0f)
+                            .clip(CircleShape)
+                            .background(Color(0xFF0B0C12))
+                            .border(6.dp, Color(0xFF1E2030), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AsyncImage(
+                            model = song.albumArtUri,
+                            contentDescription = song.title,
+                            modifier = Modifier.size(165.dp).clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                        Box(
+                            Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black)
+                                .border(3.dp, accent, CircleShape)
+                        )
+                    }
+                }
+                else -> {
+                    Canvas(Modifier.fillMaxSize()) {
+                        val r = size.minDimension / 2f
+                        drawCircle(
+                            brush = Brush.radialGradient(listOf(palette.dominant.copy(alpha = 0.42f), Color.Transparent)),
+                            radius = r
+                        )
+                        drawCircle(color = accent, radius = r * 0.88f, style = Stroke(width = 4f))
+                    }
+                    Box(Modifier.size(195.dp).clip(CircleShape).background(Color(0xFF121422)), contentAlignment = Alignment.Center) {
+                        AsyncImage(
+                            model = song.albumArtUri,
+                            contentDescription = song.title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                }
             }
         }
 
         Spacer(Modifier.height(14.dp))
 
-        Canvas(
-            Modifier
-                .fillMaxWidth()
-                .height(34.dp)
-                .padding(horizontal = 12.dp)
-        ) {
-            val bars = 38
-            val space = size.width / bars
-            for (i in 0 until bars) {
-                val animFactor = if (playing) abs(sin(pulsePhase + i * 0.42f)) else 0.22f
-                val barH = (size.height * (0.20f + 0.78f * animFactor)).coerceAtLeast(6f)
-                drawRoundRect(
-                    color = if (i % 2 == 0) accent else palette.dominant,
-                    topLeft = Offset(i * space + 3f, (size.height - barH) / 2f),
-                    size = Size((space - 6f).coerceAtLeast(3f), barH),
-                    cornerRadius = CornerRadius(8f, 8f)
-                )
+        if (waveStyle != "Hidden") {
+            Canvas(
+                Modifier
+                    .fillMaxWidth()
+                    .height(30.dp)
+                    .padding(horizontal = 12.dp)
+            ) {
+                when (waveStyle) {
+                    "Smooth Wave" -> {
+                        val path = Path()
+                        val midY = size.height / 2f
+                        path.moveTo(0f, midY)
+                        val steps = 60
+                        val dx = size.width / steps
+                        for (i in 0..steps) {
+                            val x = i * dx
+                            val amp = if (playing) (size.height * 0.42f * sin(pulsePhase + i * 0.25f)) else 2f
+                            path.lineTo(x, midY + amp)
+                        }
+                        drawPath(path, color = accent, style = Stroke(width = 4f))
+                    }
+                    "Pulse Dots" -> {
+                        val dots = 28
+                        val space = size.width / dots
+                        for (i in 0 until dots) {
+                            val f = if (playing) abs(sin(pulsePhase + i * 0.35f)) else 0.25f
+                            drawCircle(
+                                color = if (i % 2 == 0) accent else palette.dominant,
+                                radius = (4f + 6f * f),
+                                center = Offset(i * space + space / 2f, size.height / 2f)
+                            )
+                        }
+                    }
+                    else -> {
+                        val bars = 36
+                        val space = size.width / bars
+                        for (i in 0 until bars) {
+                            val animFactor = if (playing) abs(sin(pulsePhase + i * 0.42f)) else 0.20f
+                            val barH = (size.height * (0.18f + 0.78f * animFactor)).coerceAtLeast(5f)
+                            drawRoundRect(
+                                color = if (i % 2 == 0) accent else palette.dominant,
+                                topLeft = Offset(i * space + 2f, (size.height - barH) / 2f),
+                                size = Size((space - 4f).coerceAtLeast(3f), barH),
+                                cornerRadius = CornerRadius(6f, 6f)
+                            )
+                        }
+                    }
+                }
             }
+            Spacer(Modifier.height(10.dp))
         }
-
-        Spacer(Modifier.height(12.dp))
 
         Row(
             Modifier.fillMaxWidth(),
@@ -1911,32 +2015,15 @@ private fun MidnightEchoNowPlaying(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(Modifier.weight(1f)) {
-                Text(
-                    song.title,
-                    color = Color.White,
-                    fontSize = 21.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    "${song.artist} • ${song.album}",
-                    color = Color(0xFFB5B8CE),
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Text(song.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${song.artist} • ${song.album}", color = Color(0xFFA5A9C0), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             IconButton(onClick = onToggleLike) {
-                Icon(
-                    if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = "المفضلة",
-                    tint = if (isLiked) accent else Color.White
-                )
+                Icon(if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Like", tint = if (isLiked) accent else Color.White)
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
 
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Column(Modifier.fillMaxWidth()) {
@@ -1947,9 +2034,14 @@ private fun MidnightEchoNowPlaying(
                     colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent)
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(formatTime(position), color = Color(0xFFB5B8CE), fontSize = 12.sp)
-                    Text("24-BIT / HI-RES DSP", color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    Text(formatTime(duration), color = Color(0xFFB5B8CE), fontSize = 12.sp)
+                    Text(formatTime(position), color = Color(0xFFA5A9C0), fontSize = 11.sp)
+                    val abStatus = when {
+                        loopA != null && loopB != null -> "A-B LOOP (${formatTime(loopA)}-${formatTime(loopB)})"
+                        loopA != null -> "A SET (${formatTime(loopA)}) • TAP FOR B"
+                        else -> "HI-RES 24-BIT DSP"
+                    }
+                    Text(abStatus, color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(formatTime(duration), color = Color(0xFFA5A9C0), fontSize = 11.sp)
                 }
             }
         }
@@ -1963,104 +2055,107 @@ private fun MidnightEchoNowPlaying(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onToggleShuffle) {
-                    Icon(Icons.Default.Shuffle, "تبديل عشوائي", tint = if (shuffle) accent else Color.White.copy(alpha = 0.6f))
+                    Icon(Icons.Default.Shuffle, "Shuffle", tint = if (shuffle) accent else Color.White.copy(alpha = 0.5f))
                 }
                 IconButton(onClick = onPrevious) {
-                    Icon(Icons.Default.SkipPrevious, "السابق", tint = Color.White, modifier = Modifier.size(36.dp))
+                    Icon(Icons.Default.SkipPrevious, "Previous", tint = Color.White, modifier = Modifier.size(34.dp))
                 }
                 IconButton(
                     onClick = onTogglePlay,
                     modifier = Modifier
-                        .size(72.dp)
+                        .size(68.dp)
                         .background(Brush.linearGradient(listOf(accent, palette.dominant)), CircleShape)
                 ) {
                     Icon(
                         if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        if (playing) "إيقاف مؤقت" else "تشغيل",
+                        "Play/Pause",
                         tint = Color.Black,
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(34.dp)
                     )
                 }
                 IconButton(onClick = onNext) {
-                    Icon(Icons.Default.SkipNext, "التالي", tint = Color.White, modifier = Modifier.size(36.dp))
+                    Icon(Icons.Default.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(34.dp))
                 }
                 IconButton(onClick = onCycleRepeat) {
                     Icon(
                         if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                        "التكرار",
-                        tint = if (repeatMode != Player.REPEAT_MODE_OFF) accent else Color.White.copy(alpha = 0.6f)
+                        "Repeat",
+                        tint = if (repeatMode != Player.REPEAT_MODE_OFF) accent else Color.White.copy(alpha = 0.5f)
                     )
                 }
             }
         }
 
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(12.dp))
 
         Row(
             Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             AssistChip(
-                onClick = onOpenSleep,
-                label = {
-                    Text(
-                        if (sleepRemainingSec > 0) "SLEEP • ${sleepRemainingSec / 60}:${"%02d".format(sleepRemainingSec % 60)}"
-                        else "SLEEP TIMER"
-                    )
-                },
-                leadingIcon = { Icon(Icons.Default.Bedtime, null, tint = accent, modifier = Modifier.size(16.dp)) }
+                onClick = onToggleABLoop,
+                label = { Text(if (loopA != null) "A-B Active" else "A-B Loop", fontSize = 11.sp) },
+                leadingIcon = { Icon(Icons.Default.Repeat, null, tint = accent, modifier = Modifier.size(15.dp)) }
             )
             AssistChip(
                 onClick = onOpenLyrics,
-                label = { Text("LYRICS STUDIO") },
-                leadingIcon = { Icon(Icons.Default.Lyrics, null, tint = accent, modifier = Modifier.size(16.dp)) }
+                label = { Text("Lyrics LRC", fontSize = 11.sp) },
+                leadingIcon = { Icon(Icons.Default.Lyrics, null, tint = accent, modifier = Modifier.size(15.dp)) }
             )
             AssistChip(
-                onClick = onOpenEq,
-                label = { Text("EQ • $eqPreset") },
-                leadingIcon = { Icon(Icons.Default.Equalizer, null, tint = accent, modifier = Modifier.size(16.dp)) }
+                onClick = onOpenSleep,
+                label = {
+                    Text(
+                        if (sleepRemainingSec > 0) "${sleepRemainingSec / 60}:${"%02d".format(sleepRemainingSec % 60)}"
+                        else "Sleep Timer",
+                        fontSize = 11.sp
+                    )
+                },
+                leadingIcon = { Icon(Icons.Default.Bedtime, null, tint = accent, modifier = Modifier.size(15.dp)) }
             )
         }
     }
 }
 
 @Composable
-private fun BehanceEqStudioScreen(
+private fun UltraDspStudioScreen(
     eqPreset: String,
     bandGains: List<Float>,
     bassStrength: Int,
     virtualizerStrength: Int,
+    loudnessGain: Int,
     playbackSpeed: Float,
     playbackPitch: Float,
     accent: Color,
-    panelColor: Color,
+    cornerDp: Int,
     onSelectPreset: (String) -> Unit,
     onBandChange: (Int, Float) -> Unit,
     onBassChange: (Int) -> Unit,
     onVirtChange: (Int) -> Unit,
+    onLoudnessChange: (Int) -> Unit,
     onSpeedChange: (Float) -> Unit,
     onPitchChange: (Float) -> Unit,
     onOpenSystemEq: () -> Unit
 ) {
     val freqLabels = listOf("60Hz", "230Hz", "910Hz", "3.6kHz", "14kHz")
+    val cardBg = Color(0xFF0E101C).copy(alpha = 0.72f)
+
     Column(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(bottom = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text("EQ STUDIO • MASTERING DSP", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
-
         Row(
             Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf("Phonk Master", "Bass Extreme", "VIP Studio", "Rock", "Vocal Crystal", "Flat").forEach { preset ->
+            listOf("Phonk Master", "Bass Extreme", "VIP Studio", "Vocal Crystal", "Flat").forEach { preset ->
                 FilterChip(
                     selected = eqPreset == preset,
                     onClick = { onSelectPreset(preset) },
-                    label = { Text(preset, fontWeight = FontWeight.Bold) }
+                    label = { Text(preset, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
                 )
             }
         }
@@ -2069,13 +2164,14 @@ private fun BehanceEqStudioScreen(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .background(panelColor, RoundedCornerShape(20.dp))
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .background(cardBg, RoundedCornerShape(cornerDp.dp))
+                    .border(1.dp, accent.copy(alpha = 0.22f), RoundedCornerShape(cornerDp.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 bandGains.forEachIndexed { idx, gain ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(freqLabels.getOrElse(idx) { "Band" }, color = Color.White, fontSize = 12.sp, modifier = Modifier.width(52.dp))
+                        Text(freqLabels.getOrElse(idx) { "Band" }, color = Color.White, fontSize = 11.sp, modifier = Modifier.width(48.dp))
                         Slider(
                             value = gain,
                             onValueChange = { onBandChange(idx, it) },
@@ -2083,7 +2179,7 @@ private fun BehanceEqStudioScreen(
                             modifier = Modifier.weight(1f),
                             colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent)
                         )
-                        Text("${(gain * 15).toInt()} dB", color = accent, fontSize = 11.sp, modifier = Modifier.width(44.dp), textAlign = TextAlign.End)
+                        Text("${(gain * 15).toInt()}dB", color = accent, fontSize = 11.sp, modifier = Modifier.width(40.dp), textAlign = TextAlign.End)
                     }
                 }
             }
@@ -2091,11 +2187,12 @@ private fun BehanceEqStudioScreen(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .background(panelColor, RoundedCornerShape(20.dp))
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .background(cardBg, RoundedCornerShape(cornerDp.dp))
+                    .border(1.dp, accent.copy(alpha = 0.22f), RoundedCornerShape(cornerDp.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text("BASS BOOST EXTREME (${bassStrength}%)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("SUB-BASS OVERDRIVE ($bassStrength%)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 Slider(
                     value = bassStrength.toFloat(),
                     onValueChange = { onBassChange(it.toInt()) },
@@ -2103,7 +2200,15 @@ private fun BehanceEqStudioScreen(
                     colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent)
                 )
 
-                Text("3D SPATIAL VIRTUALIZER (${virtualizerStrength}%)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("3D PRE-AMP LOUDNESS BOOST (+${(loudnessGain * 0.1f).toInt()} dB)", color = Color(0xFFFFC857), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Slider(
+                    value = loudnessGain.toFloat(),
+                    onValueChange = { onLoudnessChange(it.toInt()) },
+                    valueRange = 0f..100f,
+                    colors = SliderDefaults.colors(thumbColor = Color(0xFFFFC857), activeTrackColor = Color(0xFFFFC857))
+                )
+
+                Text("SPATIAL 3D VIRTUALIZER ($virtualizerStrength%)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 Slider(
                     value = virtualizerStrength.toFloat(),
                     onValueChange = { onVirtChange(it.toInt()) },
@@ -2115,225 +2220,361 @@ private fun BehanceEqStudioScreen(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .background(panelColor, RoundedCornerShape(20.dp))
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .background(cardBg, RoundedCornerShape(cornerDp.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("SPEED (${"%.2f".format(playbackSpeed)}x) & PITCH (${"%.2f".format(playbackPitch)}x)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Text(
-                        "Reset 1.0x",
-                        color = accent,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable { onSpeedChange(1f); onPitchChange(1f) }
-                    )
+                    Text("SPEED (${"%.2f".format(playbackSpeed)}x) • PITCH (${"%.2f".format(playbackPitch)}x)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("Reset 1.0x", color = accent, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onSpeedChange(1f); onPitchChange(1f) })
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { onSpeedChange(0.85f); onPitchChange(0.88f) }) {
+                    OutlinedButton(onClick = { onSpeedChange(0.84f); onPitchChange(0.86f) }) {
                         Text("Slowed + Phonk", color = accent, fontSize = 11.sp)
                     }
-                    OutlinedButton(onClick = { onSpeedChange(1.18f); onPitchChange(1.12f) }) {
-                        Text("Nightcore / Speed", color = Color.White, fontSize = 11.sp)
+                    OutlinedButton(onClick = { onSpeedChange(1.18f); onPitchChange(1.14f) }) {
+                        Text("Nightcore", color = Color.White, fontSize = 11.sp)
                     }
                 }
-                Slider(
-                    value = playbackSpeed,
-                    onValueChange = onSpeedChange,
-                    valueRange = 0.6f..1.6f,
-                    colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent)
-                )
+                Slider(value = playbackSpeed, onValueChange = onSpeedChange, valueRange = 0.6f..1.6f)
             }
         }
 
         OutlinedButton(onClick = onOpenSystemEq, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Default.Speaker, null, tint = accent)
             Spacer(Modifier.width(8.dp))
-            Text("فتح معادل صوت النظام الأصلي (Dolby Atmos / System EQ)", color = Color.White)
+            Text("Dolby Atmos / System Audio Panel", color = Color.White, fontSize = 12.sp)
         }
     }
 }
 
 @Composable
-private fun VipSettingsScreen(
+private fun SmartPlaylistsScreen(
     strings: Strings,
+    songs: List<Song>,
+    likedIds: Set<Long>,
+    recentIds: List<Long>,
+    playCounts: Map<Long, Int>,
+    playlists: Map<String, List<Long>>,
+    activeView: String?,
+    currentSongId: Long,
+    playing: Boolean,
+    accent: Color,
+    panel: Color,
+    cornerDp: Int,
+    fontScale: Float,
+    onChangeView: (String?) -> Unit,
+    onCreateNew: () -> Unit,
+    onDeletePlaylist: (String) -> Unit,
+    onPlayList: (List<Song>, Int) -> Unit,
+    onMoreSong: (Song) -> Unit,
+    onSelectAlbum: (String) -> Unit
+) {
+    if (activeView == null) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(strings.playlists, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
+            TextButton(onClick = onCreateNew) { Text(strings.newPlaylist, color = accent, fontWeight = FontWeight.Bold) }
+        }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            item {
+                FeatureTile(strings.likedSongs, "${likedIds.size} ${strings.tracksCount}", Icons.Default.Favorite, accent, cornerDp) {
+                    onChangeView("__LIKED__")
+                }
+            }
+            item {
+                FeatureTile(strings.mostPlayed, "${playCounts.size} ${strings.tracksCount}", Icons.Default.Star, Color(0xFFFFC857), cornerDp) {
+                    onChangeView("__MOST_PLAYED__")
+                }
+            }
+            item {
+                FeatureTile(strings.recentlyPlayed, "${recentIds.size} ${strings.tracksCount}", Icons.Default.History, accent, cornerDp) {
+                    onChangeView("__RECENT__")
+                }
+            }
+            item {
+                FeatureTile(strings.albums, "${songs.map { it.album }.distinct().size} ${strings.albums}", Icons.Default.Album, accent, cornerDp) {
+                    onChangeView("__ALBUMS__")
+                }
+            }
+            itemsIndexed(playlists.entries.toList()) { _, entry ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF0E101C).copy(alpha = 0.72f), RoundedCornerShape(cornerDp.dp))
+                        .clickable { onChangeView(entry.key) }
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.QueueMusic, null, tint = accent)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(entry.key, color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("${entry.value.size} ${strings.tracksCount}", color = Color(0xFFA5A9C0), fontSize = 11.sp)
+                    }
+                    IconButton(onClick = { onDeletePlaylist(entry.key) }) {
+                        Icon(Icons.Default.Delete, "Delete", tint = Color(0xFFA5A9C0))
+                    }
+                }
+            }
+        }
+    } else if (activeView == "__ALBUMS__") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { onChangeView(null) }) { Icon(Icons.Default.ArrowBack, "Back", tint = Color.White) }
+            Text(strings.albums, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        }
+        val albums = songs.groupBy { it.album }.entries.toList()
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            itemsIndexed(albums) { _, entry ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF0E101C).copy(alpha = 0.72f), RoundedCornerShape(cornerDp.dp))
+                        .clickable { onSelectAlbum(entry.key) }
+                        .padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AlbumArtThumb(entry.value.firstOrNull(), accent, 46, cornerDp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(entry.key, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Text("${entry.value.size} ${strings.tracksCount}", color = Color(0xFFA5A9C0), fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+    } else {
+        val listSongs = when (activeView) {
+            "__LIKED__" -> songs.filter { likedIds.contains(it.id) }
+            "__MOST_PLAYED__" -> songs.filter { (playCounts[it.id] ?: 0) > 0 }.sortedByDescending { playCounts[it.id] ?: 0 }
+            "__RECENT__" -> recentIds.mapNotNull { id -> songs.firstOrNull { it.id == id } }
+            else -> (playlists[activeView] ?: emptyList()).mapNotNull { id -> songs.firstOrNull { it.id == id } }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { onChangeView(null) }) { Icon(Icons.Default.ArrowBack, "Back", tint = Color.White) }
+            Text(activeView.removePrefix("__"), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            itemsIndexed(listSongs) { idx, song ->
+                SongRow(
+                    song = song,
+                    active = currentSongId == song.id,
+                    isLiked = likedIds.contains(song.id),
+                    uiLayout = "AMOLED Pure",
+                    accent = accent,
+                    panel = panel,
+                    cornerDp = cornerDp,
+                    fontScale = fontScale,
+                    onClick = { onPlayList(listSongs, idx) },
+                    onMore = { onMoreSong(song) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun UltraSettingsScreen(
+    strings: Strings,
+    uiLayout: String,
     themeName: String,
     langSetting: String,
     customBgUri: String?,
     bgDimAlpha: Float,
-    autoScanEnabled: Boolean,
-    autoPlayDownloaded: Boolean,
+    shakeSkipEnabled: Boolean,
     crossfadeSec: Int,
     sleepRemainingSec: Int,
     tracksPlayedStat: Int,
     accent: Color,
-    panel: Color,
+    cornerDp: Int,
+    onOpenUiStudio: () -> Unit,
+    onSelectLayout: (String) -> Unit,
     onSelectTheme: (String) -> Unit,
     onSelectLang: (String) -> Unit,
     onPickBg: () -> Unit,
     onClearBg: () -> Unit,
     onChangeDim: (Float) -> Unit,
-    onToggleAutoScan: () -> Unit,
-    onToggleAutoPlayNew: () -> Unit,
-    onOpenCrossfade: () -> Unit,
+    onToggleShake: () -> Unit,
+    onChangeCrossfade: (Int) -> Unit,
     onOpenSleep: () -> Unit,
     onBackup: () -> Unit,
     onRestore: () -> Unit
 ) {
+    val cardBg = Color(0xFF0E101C).copy(alpha = 0.72f)
     Column(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.linearGradient(listOf(Color(0xFF2B1954), Color(0xFF121324))),
-                    RoundedCornerShape(22.dp)
-                )
-                .border(1.dp, Color(0xFFFFC857), RoundedCornerShape(22.dp))
-                .padding(16.dp)
+        Button(
+            onClick = onOpenUiStudio,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(cornerDp.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = accent)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("VYRO MUSIC ULTRA PRO • LIFETIME VIP", color = Color(0xFFFFC857), fontSize = 11.sp, fontWeight = FontWeight.Black)
-                Text("CRAFTED & DEVELOPED BY MOHAMED TAREK", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
-                Text("${strings.vipEditionTitle} • Tracks Played: $tracksPlayedStat", color = Color(0xFFD0C8E8), fontSize = 12.sp)
+            Icon(Icons.Default.Palette, null, tint = Color.Black)
+            Spacer(Modifier.width(8.dp))
+            Text(strings.uiStudioTitle, color = Color.Black, fontWeight = FontWeight.Black)
+        }
+
+        Column(
+            Modifier.fillMaxWidth().background(cardBg, RoundedCornerShape(cornerDp.dp)).padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(strings.layoutSectionTitle, color = accent, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("AMOLED Pure", "Cyber Glass", "Bento Grid", "Compact Pro").forEach { ly ->
+                    FilterChip(selected = uiLayout == ly, onClick = { onSelectLayout(ly) }, label = { Text(ly, fontSize = 11.sp) })
+                }
+            }
+
+            Text(strings.themeTitle, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Pitch Black Neon", "Dynamic Cover Aura", "Cyber Gold VIP", "Blood Phonk Crimson", "Matrix Emerald", "Oceanic Ice").forEach { th ->
+                    FilterChip(selected = themeName == th, onClick = { onSelectTheme(th) }, label = { Text(th, fontSize = 11.sp) })
+                }
+            }
+
+            Button(
+                onClick = onPickBg,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.12f))
+            ) {
+                Icon(Icons.Default.Wallpaper, null, tint = accent)
+                Spacer(Modifier.width(8.dp))
+                Text(strings.pickBgImage, color = Color.White, fontSize = 12.sp)
+            }
+            if (!customBgUri.isNullOrBlank()) {
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    Column {
+                        Text("${strings.bgDimLevel}: ${(bgDimAlpha * 100).toInt()}%", color = Color.White, fontSize = 11.sp)
+                        Slider(value = bgDimAlpha, onValueChange = onChangeDim, valueRange = 0.05f..0.85f)
+                    }
+                }
+                OutlinedButton(onClick = onClearBg, modifier = Modifier.fillMaxWidth()) {
+                    Text(strings.clearBgImage, color = Color(0xFFFF5C5C), fontSize = 12.sp)
+                }
             }
         }
 
         Column(
-            Modifier
-                .fillMaxWidth()
-                .background(panel, RoundedCornerShape(18.dp))
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            Modifier.fillMaxWidth().background(cardBg, RoundedCornerShape(cornerDp.dp)).padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(strings.langTitle, color = Color.White, fontWeight = FontWeight.Bold)
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            Text(strings.langTitle, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(
                     "SYSTEM" to strings.langSystem,
                     "AR" to "العربية",
                     "EN" to "English",
                     "FR" to "Français",
-                    "ES" to "Español"
+                    "ES" to "Español",
+                    "DE" to "Deutsch",
+                    "IT" to "Italiano",
+                    "TR" to "Türkçe",
+                    "RU" to "Русский",
+                    "HI" to "हिन्दी"
                 ).forEach { (code, name) ->
-                    FilterChip(
-                        selected = langSetting == code,
-                        onClick = { onSelectLang(code) },
-                        label = { Text(name) }
-                    )
+                    FilterChip(selected = langSetting == code, onClick = { onSelectLang(code) }, label = { Text(name, fontSize = 11.sp) })
                 }
             }
         }
 
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .background(panel, RoundedCornerShape(18.dp))
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(strings.themeTitle, color = Color.White, fontWeight = FontWeight.Bold)
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf(
-                    "Midnight Echo",
-                    "Dynamic Album Art",
-                    "VIP Cyber Gold",
-                    "Crimson Phonk",
-                    "Emerald Matrix",
-                    "AMOLED Pure"
-                ).forEach { th ->
-                    FilterChip(
-                        selected = themeName == th,
-                        onClick = { onSelectTheme(th) },
-                        label = { Text(th) }
-                    )
-                }
-            }
-            Button(
-                onClick = onPickBg,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = accent)
-            ) {
-                Icon(Icons.Default.Wallpaper, null, tint = Color.Black)
-                Spacer(Modifier.width(8.dp))
-                Text(strings.pickBgImage, color = Color.Black, fontWeight = FontWeight.Bold)
-            }
-            if (!customBgUri.isNullOrBlank()) {
-                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                    Column {
-                        Text(strings.bgDimLevel, color = Color.White, fontSize = 12.sp)
-                        Slider(
-                            value = bgDimAlpha,
-                            onValueChange = onChangeDim,
-                            valueRange = 0.35f..0.95f,
-                            colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent)
-                        )
-                    }
-                }
-                OutlinedButton(onClick = onClearBg, modifier = Modifier.fillMaxWidth()) {
-                    Text(strings.clearBgImage, color = Color(0xFFFF6B6B))
-                }
-            }
-        }
+        FeatureTile(
+            title = strings.shakeToSkip,
+            subtitle = if (shakeSkipEnabled) "ON • هز الموبايل يقلب الأغنية" else "OFF",
+            icon = Icons.Default.Vibration,
+            accent = accent,
+            cornerDp = cornerDp,
+            onClick = onToggleShake
+        )
 
-        SettingsActionTile(
-            title = strings.autoScanToggle,
-            subtitle = if (autoScanEnabled) "ON • Active" else "OFF",
-            icon = Icons.Default.Radar,
-            accent = accent,
-            panel = panel,
-            onClick = onToggleAutoScan
-        )
-        SettingsActionTile(
-            title = strings.autoPlayNewToggle,
-            subtitle = if (autoPlayDownloaded) "ON" else "OFF (Recommended)",
-            icon = Icons.Default.DownloadDone,
-            accent = accent,
-            panel = panel,
-            onClick = onToggleAutoPlayNew
-        )
-        SettingsActionTile(
-            title = strings.crossfade,
-            subtitle = if (crossfadeSec == 0) "Off" else "$crossfadeSec sec",
-            icon = Icons.Default.SwapHoriz,
-            accent = accent,
-            panel = panel,
-            onClick = onOpenCrossfade
-        )
-        SettingsActionTile(
+        FeatureTile(
             title = strings.sleepTimer,
-            subtitle = if (sleepRemainingSec > 0) "${sleepRemainingSec / 60}m active" else "Tap to set",
+            subtitle = if (sleepRemainingSec > 0) "${sleepRemainingSec / 60}m active" else "Fade-Out Timer",
             icon = Icons.Default.Bedtime,
             accent = accent,
-            panel = panel,
+            cornerDp = cornerDp,
             onClick = onOpenSleep
         )
-        SettingsActionTile(
-            title = "${strings.backupRestore} (Export)",
-            subtitle = "Save playlists, favorites & settings to JSON",
-            icon = Icons.Default.CloudUpload,
-            accent = accent,
-            panel = panel,
-            onClick = onBackup
+
+        Column(Modifier.fillMaxWidth().background(cardBg, RoundedCornerShape(cornerDp.dp)).padding(12.dp)) {
+            Text("${strings.crossfade}: ${if (crossfadeSec == 0) "Off" else "$crossfadeSec sec"}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Slider(value = crossfadeSec.toFloat(), onValueChange = { onChangeCrossfade(it.toInt()) }, valueRange = 0f..10f, steps = 9)
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onBackup, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Default.CloudUpload, null, tint = accent, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Export JSON", color = Color.White, fontSize = 11.sp)
+            }
+            OutlinedButton(onClick = onRestore, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Default.CloudDownload, null, tint = accent, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Import JSON", color = Color.White, fontSize = 11.sp)
+            }
+        }
+
+        Text(
+            "VYRO MUSIC 3.0.0-ULTRA • ANDROID 13+ EXCLUSIVE • PLAYED: $tracksPlayedStat",
+            color = Color(0xFF7E8299),
+            fontSize = 10.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
         )
-        SettingsActionTile(
-            title = "${strings.backupRestore} (Import)",
-            subtitle = "Restore from VYRO JSON file",
-            icon = Icons.Default.CloudDownload,
-            accent = accent,
-            panel = panel,
-            onClick = onRestore
-        )
+    }
+}
+
+@Composable
+private fun DriveGymModeScreen(
+    song: Song,
+    playing: Boolean,
+    position: Long,
+    duration: Long,
+    accent: Color,
+    onTogglePlay: () -> Unit,
+    onNext: () -> Unit,
+    onPrev: () -> Unit,
+    onExit: () -> Unit
+) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .padding(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("DRIVE & GYM MODE", color = accent, fontWeight = FontWeight.Black, fontSize = 16.sp)
+            OutlinedButton(onClick = onExit) { Text("Exit", color = Color.White) }
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            AlbumArtThumb(song, accent, sizeDp = 150, cornerDp = 24)
+            Spacer(Modifier.height(16.dp))
+            Text(song.title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, maxLines = 2, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(6.dp))
+            Text(song.artist, color = accent, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Spacer(Modifier.height(8.dp))
+            Text("${formatTime(position)} / ${formatTime(duration)}", color = Color.White.copy(alpha = 0.7f), fontSize = 15.sp)
+        }
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onPrev, modifier = Modifier.size(76.dp).background(Color(0xFF161826), CircleShape)) {
+                    Icon(Icons.Default.SkipPrevious, "Prev", tint = Color.White, modifier = Modifier.size(42.dp))
+                }
+                IconButton(onClick = onTogglePlay, modifier = Modifier.size(98.dp).background(accent, CircleShape)) {
+                    Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play", tint = Color.Black, modifier = Modifier.size(52.dp))
+                }
+                IconButton(onClick = onNext, modifier = Modifier.size(76.dp).background(Color(0xFF161826), CircleShape)) {
+                    Icon(Icons.Default.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(42.dp))
+                }
+            }
+        }
     }
 }
 
@@ -2341,63 +2582,132 @@ private fun VipSettingsScreen(
 private fun SongRow(
     song: Song,
     active: Boolean,
-    playing: Boolean,
     isLiked: Boolean,
+    uiLayout: String,
     accent: Color,
     panel: Color,
+    cornerDp: Int,
+    fontScale: Float,
     onClick: () -> Unit,
     onMore: () -> Unit
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(if (active) accent.copy(alpha = 0.18f) else panel.copy(alpha = 0.88f), RoundedCornerShape(16.dp))
-            .border(
-                width = if (active) 1.dp else 0.dp,
-                color = if (active) accent else Color.Transparent,
-                shape = RoundedCornerShape(16.dp)
-            )
-            .clickable(onClick = onClick)
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        AlbumArtThumb(song, accent, sizeDp = 50)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                song.title,
-                color = if (active) accent else Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                "${song.artist} • ${song.album}",
-                color = Color(0xFFA0A3B8),
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+    val isCompact = uiLayout == "Compact Pro"
+    val isAmoled = uiLayout == "AMOLED Pure"
+    val rowBg = if (active) accent.copy(alpha = 0.14f) else panel
+
+    Column {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(cornerDp.dp))
+                .background(rowBg)
+                .border(
+                    width = if (active) 1.dp else if (uiLayout == "Cyber Glass") 0.6.dp else 0.dp,
+                    color = if (active) accent else if (uiLayout == "Cyber Glass") Color.White.copy(alpha = 0.10f) else Color.Transparent,
+                    shape = RoundedCornerShape(cornerDp.dp)
+                )
+                .clickable(onClick = onClick)
+                .padding(horizontal = 8.dp, vertical = if (isCompact) 5.dp else 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AlbumArtThumb(song, accent, sizeDp = if (isCompact) 38 else 46, cornerDp = (cornerDp - 4).coerceAtLeast(6))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    song.title,
+                    color = if (active) accent else Color.White,
+                    fontWeight = if (active) FontWeight.ExtraBold else FontWeight.SemiBold,
+                    fontSize = (13.5f * fontScale).sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    "${song.artist} • ${formatTime(song.duration)}",
+                    color = Color(0xFF989CB3),
+                    fontSize = (11f * fontScale).sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (isLiked) {
+                Icon(Icons.Default.Favorite, null, tint = accent, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+            }
+            IconButton(onClick = onMore, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.MoreVert, "More", tint = Color(0xFFB5B9D0), modifier = Modifier.size(18.dp))
+            }
         }
-        if (isLiked) {
-            Icon(Icons.Default.Favorite, "مفضلة", tint = accent, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(6.dp))
-        }
-        Text(formatTime(song.duration), color = Color(0xFFA0A3B8), fontSize = 11.sp)
-        IconButton(onClick = onMore, modifier = Modifier.semantics { contentDescription = "خيارات ${song.title}" }) {
-            Icon(Icons.Default.MoreVert, "More", tint = Color.White)
+        if (isAmoled && !active) {
+            HorizontalDivider(color = Color.White.copy(alpha = 0.05f), thickness = 0.5.dp, modifier = Modifier.padding(horizontal = 12.dp))
         }
     }
 }
 
 @Composable
-private fun AlbumArtThumb(song: Song?, accent: Color, sizeDp: Int = 48) {
+private fun BentoSongCard(
+    song: Song,
+    active: Boolean,
+    isLiked: Boolean,
+    accent: Color,
+    cornerDp: Int,
+    fontScale: Float,
+    onClick: () -> Unit,
+    onMore: () -> Unit
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(cornerDp.dp))
+            .background(Color(0xFF0E101C).copy(alpha = 0.65f))
+            .border(1.dp, if (active) accent else Color.White.copy(alpha = 0.08f), RoundedCornerShape(cornerDp.dp))
+            .clickable(onClick = onClick)
+            .padding(8.dp)
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(125.dp)
+                .clip(RoundedCornerShape((cornerDp - 4).coerceAtLeast(8).dp))
+                .background(Color(0xFF17192B)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.MusicNote, null, tint = accent, modifier = Modifier.size(40.dp))
+            AsyncImage(
+                model = song.albumArtUri,
+                contentDescription = song.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+            IconButton(
+                onClick = onMore,
+                modifier = Modifier.align(Alignment.TopEnd).size(28.dp).background(Color.Black.copy(alpha = 0.55f), CircleShape)
+            ) {
+                Icon(Icons.Default.MoreVert, null, tint = Color.White, modifier = Modifier.size(15.dp))
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            song.title,
+            color = if (active) accent else Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = (12.5f * fontScale).sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(song.artist, color = Color(0xFF989CB3), fontSize = 10.sp, maxLines = 1, modifier = Modifier.weight(1f))
+            if (isLiked) Icon(Icons.Default.Favorite, null, tint = accent, modifier = Modifier.size(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun AlbumArtThumb(song: Song?, accent: Color, sizeDp: Int = 46, cornerDp: Int = 12) {
     Box(
         Modifier
             .size(sizeDp.dp)
-            .clip(RoundedCornerShape(13.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF33205A), Color(0xFF151728)))),
+            .clip(RoundedCornerShape(cornerDp.dp))
+            .background(Color(0xFF151726)),
         contentAlignment = Alignment.Center
     ) {
         Icon(Icons.Default.MusicNote, null, tint = accent, modifier = Modifier.size((sizeDp / 2).dp))
@@ -2419,47 +2729,20 @@ private fun MenuActionRow(icon: androidx.compose.ui.graphics.vector.ImageVector,
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 10.dp, horizontal = 6.dp),
+            .padding(vertical = 9.dp, horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
+        Icon(icon, null, tint = tint, modifier = Modifier.size(19.dp))
         Spacer(Modifier.width(12.dp))
-        Text(title, color = tint, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Text(title, color = tint, fontSize = 13.sp, fontWeight = FontWeight.Medium)
     }
 }
 
 @Composable
 private fun InfoItem(label: String, value: String) {
     Column {
-        Text(label, color = Color(0xFFA0A3B8), fontSize = 11.sp)
-        Text(value, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-@Composable
-private fun SettingsActionTile(
-    title: String,
-    subtitle: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    accent: Color,
-    panel: Color,
-    onClick: () -> Unit
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(panel, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(icon, null, tint = accent)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Text(subtitle, color = Color(0xFFA0A3B8), fontSize = 11.sp)
-        }
-        Icon(Icons.Default.ChevronRight, null, tint = Color(0xFFA0A3B8))
+        Text(label, color = Color(0xFF989CB3), fontSize = 10.sp)
+        Text(value, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -2469,24 +2752,24 @@ private fun FeatureTile(
     subtitle: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     accent: Color,
-    panel: Color,
+    cornerDp: Int,
     onClick: () -> Unit
 ) {
     Row(
         Modifier
             .fillMaxWidth()
-            .background(panel, RoundedCornerShape(16.dp))
+            .background(Color(0xFF0E101C).copy(alpha = 0.72f), RoundedCornerShape(cornerDp.dp))
             .clickable(onClick = onClick)
-            .padding(16.dp),
+            .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, null, tint = accent, modifier = Modifier.size(26.dp))
+        Icon(icon, null, tint = accent, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, color = Color.White, fontWeight = FontWeight.Bold)
-            Text(subtitle, color = Color(0xFFA0A3B8), fontSize = 12.sp)
+            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Text(subtitle, color = Color(0xFF989CB3), fontSize = 11.sp)
         }
-        Icon(Icons.Default.ChevronRight, null, tint = Color(0xFFA0A3B8))
+        Icon(Icons.Default.ChevronRight, null, tint = Color(0xFF989CB3))
     }
 }
 
@@ -2494,9 +2777,9 @@ private fun FeatureTile(
 private fun EmptyState(message: String, accent: Color) {
     Box(Modifier.fillMaxWidth().padding(top = 55.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Default.LibraryMusic, null, tint = accent, modifier = Modifier.size(48.dp))
-            Spacer(Modifier.height(12.dp))
-            Text(message, color = Color.White, textAlign = TextAlign.Center)
+            Icon(Icons.Default.LibraryMusic, null, tint = accent, modifier = Modifier.size(44.dp))
+            Spacer(Modifier.height(10.dp))
+            Text(message, color = Color.White, textAlign = TextAlign.Center, fontSize = 13.sp)
         }
     }
 }
@@ -2512,8 +2795,8 @@ private fun extractCoverPalette(context: Context, artUri: Uri): CoverPalette {
         var gSum = 0L
         var bSum = 0L
         var count = 0L
-        val stepX = (bmp.width / 12).coerceAtLeast(1)
-        val stepY = (bmp.height / 12).coerceAtLeast(1)
+        val stepX = (bmp.width / 10).coerceAtLeast(1)
+        val stepY = (bmp.height / 10).coerceAtLeast(1)
 
         for (x in 0 until bmp.width step stepX) {
             for (y in 0 until bmp.height step stepY) {
@@ -2525,18 +2808,14 @@ private fun extractCoverPalette(context: Context, artUri: Uri): CoverPalette {
             }
         }
         if (count == 0L) return CoverPalette()
-        val r = (rSum / count).toInt().coerceIn(30, 245)
-        val g = (gSum / count).toInt().coerceIn(30, 245)
-        val b = (bSum / count).toInt().coerceIn(30, 245)
+        val r = (rSum / count).toInt().coerceIn(40, 245)
+        val g = (gSum / count).toInt().coerceIn(40, 245)
+        val b = (bSum / count).toInt().coerceIn(40, 245)
         val luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
 
-        val boostedR = (r * 1.25f).toInt().coerceIn(70, 255)
-        val boostedG = (g * 1.15f).toInt().coerceIn(60, 245)
-        val boostedB = (b * 1.30f).toInt().coerceIn(90, 255)
-
         CoverPalette(
-            dominant = Color(boostedR, boostedG, boostedB),
-            secondary = Color(r / 3, g / 3, b / 3),
+            dominant = Color((r * 1.25f).toInt().coerceIn(80, 255), (g * 1.15f).toInt().coerceIn(70, 250), (b * 1.30f).toInt().coerceIn(95, 255)),
+            secondary = Color(r / 4, g / 4, b / 4),
             isLightCover = luminance > 0.55
         )
     }.getOrDefault(CoverPalette())
@@ -2586,7 +2865,7 @@ private fun cutAndSetRingtone(context: Context, song: Song, startMs: Long, endMs
             extractor.release()
 
             val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, "VYRO_Ringtone_${song.title}.m4a")
+                put(MediaStore.MediaColumns.DISPLAY_NAME, "VYRO_Ring_${song.title}.m4a")
                 put(MediaStore.MediaColumns.MIME_TYPE, "audio/mp4")
                 put(MediaStore.Audio.Media.IS_RINGTONE, true)
             }
@@ -2602,9 +2881,7 @@ private fun cutAndSetRingtone(context: Context, song: Song, startMs: Long, endMs
         RingtoneManager.setActualDefaultRingtoneUri(context, RingtoneManager.TYPE_RINGTONE, song.uri)
         true
     }.getOrElse {
-        runCatching {
-            RingtoneManager.setActualDefaultRingtoneUri(context, RingtoneManager.TYPE_RINGTONE, song.uri)
-        }
+        runCatching { RingtoneManager.setActualDefaultRingtoneUri(context, RingtoneManager.TYPE_RINGTONE, song.uri) }
         false
     }
 }
@@ -2614,7 +2891,7 @@ private fun formatTime(ms: Long): String {
     return "%d:%02d".format(sec / 60, sec % 60)
 }
 
-private fun readSidecarLyrics(filePath: String?): String? {
+private fun readRawSidecarLyrics(filePath: String?): String? {
     if (filePath.isNullOrBlank()) return null
     return runCatching {
         val audioFile = File(filePath)
@@ -2622,13 +2899,28 @@ private fun readSidecarLyrics(filePath: String?): String? {
         val parent = audioFile.parentFile ?: return null
         val lrc = File(parent, "$base.lrc")
         val txt = File(parent, "$base.txt")
-        val target = when {
-            lrc.exists() -> lrc
-            txt.exists() -> txt
+        when {
+            lrc.exists() -> lrc.readText()
+            txt.exists() -> txt.readText()
             else -> null
-        } ?: return null
-        target.readText().replace(Regex("\\[\\d+:\\d+(\\.\\d+)?]"), "").trim()
+        }
     }.getOrNull()
+}
+
+private fun parseLrcLines(raw: String): List<LrcLine> {
+    if (raw.isBlank()) return emptyList()
+    val regex = Regex("\\[(\\d+):(\\d+)(?:\\.(\\d+))?](.*)")
+    val out = mutableListOf<LrcLine>()
+    raw.lines().forEach { line ->
+        val m = regex.find(line.trim())
+        if (m != null) {
+            val min = m.groupValues[1].toLongOrNull() ?: 0L
+            val sec = m.groupValues[2].toLongOrNull() ?: 0L
+            val txt = m.groupValues[4].trim()
+            if (txt.isNotEmpty()) out += LrcLine((min * 60 + sec) * 1000L, txt)
+        }
+    }
+    return out.sortedBy { it.timeMs }
 }
 
 private fun loadIdSet(json: String?): Set<Long> = runCatching {
@@ -2660,6 +2952,21 @@ private fun loadPlaylists(json: String?): Map<String, List<Long>> = runCatching 
 private fun encodePlaylists(map: Map<String, List<Long>>): String {
     val obj = JSONObject()
     map.forEach { (k, v) -> obj.put(k, JSONArray(v)) }
+    return obj.toString()
+}
+
+private fun loadPlayCounts(json: String?): Map<Long, Int> = runCatching {
+    val obj = JSONObject(json ?: "{}")
+    val map = mutableMapOf<Long, Int>()
+    obj.keys().forEach { key ->
+        key.toLongOrNull()?.let { id -> map[id] = obj.getInt(key) }
+    }
+    map
+}.getOrDefault(emptyMap())
+
+private fun encodePlayCounts(map: Map<Long, Int>): String {
+    val obj = JSONObject()
+    map.forEach { (k, v) -> obj.put(k.toString(), v) }
     return obj.toString()
 }
 
