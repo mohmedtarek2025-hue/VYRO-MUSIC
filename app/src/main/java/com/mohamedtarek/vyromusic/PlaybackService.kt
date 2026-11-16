@@ -47,6 +47,12 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
     private var virtualizer: Virtualizer? = null
     private var loudnessEnhancer: LoudnessEnhancer? = null
 
+    companion object {
+        const val ACTION_WIDGET_TOGGLE = "com.mohamedtarek.vyromusic.WIDGET_TOGGLE"
+        const val ACTION_WIDGET_NEXT = "com.mohamedtarek.vyromusic.WIDGET_NEXT"
+        const val ACTION_WIDGET_PREV = "com.mohamedtarek.vyromusic.WIDGET_PREV"
+    }
+
     override fun onCreate() {
         super.onCreate()
         prefs = getSharedPreferences("vyro_prefs", Context.MODE_PRIVATE)
@@ -106,6 +112,24 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(sessionActivityPendingIntent)
             .build()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_WIDGET_TOGGLE -> {
+                if (player.isPlaying) player.pause() else player.play()
+                VyroWidgetProvider.updateAllWidgets(this)
+            }
+            ACTION_WIDGET_NEXT -> {
+                player.seekToNext()
+                VyroWidgetProvider.updateAllWidgets(this)
+            }
+            ACTION_WIDGET_PREV -> {
+                player.seekToPrevious()
+                VyroWidgetProvider.updateAllWidgets(this)
+            }
+        }
+        return super.onStartCommand(intent, flags, startId)
     }
 
     private fun bindHardwareDsp(sessionId: Int) {
@@ -245,6 +269,26 @@ class VyroWidgetProvider : AppWidgetProvider() {
         appWidgetIds.forEach { id -> updateSingleWidget(context, appWidgetManager, id) }
     }
 
+    override fun onReceive(context: Context, intent: Intent) {
+        super.onReceive(context, intent)
+        when (intent.action) {
+            PlaybackService.ACTION_WIDGET_TOGGLE,
+            PlaybackService.ACTION_WIDGET_NEXT,
+            PlaybackService.ACTION_WIDGET_PREV -> {
+                val svcIntent = Intent(context, PlaybackService::class.java).apply {
+                    action = intent.action
+                }
+                runCatching {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.startForegroundService(svcIntent)
+                    } else {
+                        context.startService(svcIntent)
+                    }
+                }
+            }
+        }
+    }
+
     companion object {
         fun updateAllWidgets(context: Context) {
             runCatching {
@@ -257,22 +301,40 @@ class VyroWidgetProvider : AppWidgetProvider() {
         private fun updateSingleWidget(context: Context, mgr: AppWidgetManager, widgetId: Int) {
             runCatching {
                 val prefs = context.getSharedPreferences("vyro_prefs", Context.MODE_PRIVATE)
-                val title = prefs.getString("last_title", "VYRO MUSIC ULTRA") ?: "VYRO MUSIC ULTRA"
+                val title = prefs.getString("last_title", "VYRO MUSIC PRO MAX") ?: "VYRO MUSIC PRO MAX"
                 val artist = prefs.getString("last_artist", "Tap to launch studio") ?: "Tap to launch studio"
                 val albumId = prefs.getLong("last_album_id", -1L)
+                val isPlaying = prefs.getBoolean("is_playing_now", false)
 
-                val views = RemoteViews(context.packageName, android.R.layout.activity_list_item)
-                views.setTextViewText(android.R.id.text1, "$title • $artist")
+                val views = RemoteViews(context.packageName, R.layout.vyro_widget)
+                views.setTextViewText(R.id.widget_title, title)
+                views.setTextViewText(R.id.widget_artist, artist)
+                views.setImageViewResource(
+                    R.id.widget_play,
+                    if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+                )
 
                 val bmp = renderWidgetBadge(context, albumId)
-                views.setImageViewBitmap(android.R.id.icon, bmp)
+                views.setImageViewBitmap(R.id.widget_art, bmp)
 
-                val openIntent = Intent(context, MainActivity::class.java)
-                val piFlags = PendingIntent.FLAG_UPDATE_CURRENT or
-                    (if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0)
-                val pi = PendingIntent.getActivity(context, 0, openIntent, piFlags)
-                views.setOnClickPendingIntent(android.R.id.text1, pi)
-                views.setOnClickPendingIntent(android.R.id.icon, pi)
+                val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                val openPi = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), flags)
+                views.setOnClickPendingIntent(R.id.widget_root, openPi)
+                views.setOnClickPendingIntent(R.id.widget_art, openPi)
+
+                val togglePi = PendingIntent.getBroadcast(
+                    context, 1, Intent(context, VyroWidgetProvider::class.java).setAction(PlaybackService.ACTION_WIDGET_TOGGLE), flags
+                )
+                val nextPi = PendingIntent.getBroadcast(
+                    context, 2, Intent(context, VyroWidgetProvider::class.java).setAction(PlaybackService.ACTION_WIDGET_NEXT), flags
+                )
+                val prevPi = PendingIntent.getBroadcast(
+                    context, 3, Intent(context, VyroWidgetProvider::class.java).setAction(PlaybackService.ACTION_WIDGET_PREV), flags
+                )
+
+                views.setOnClickPendingIntent(R.id.widget_play, togglePi)
+                views.setOnClickPendingIntent(R.id.widget_next, nextPi)
+                views.setOnClickPendingIntent(R.id.widget_prev, prevPi)
 
                 mgr.updateAppWidget(widgetId, views)
             }
