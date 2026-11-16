@@ -20,6 +20,7 @@ import android.media.MediaMuxer
 import android.media.RingtoneManager
 import android.media.audiofx.AudioEffect
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -43,9 +44,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -380,8 +378,8 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
     var autoScanEnabled by remember { mutableStateOf(prefs.getBoolean("auto_scan_enabled", true)) }
     var isDriveMode by remember { mutableStateOf(false) }
 
-    var loopPointA by remember { mutableStateOf<Long?>(null) }
-    var loopPointB by remember { mutableStateOf<Long?>(null) }
+    var loopPointA by remember { mutableLongStateOf(-1L) }
+    var loopPointB by remember { mutableLongStateOf(-1L) }
 
     var eqPreset by remember { mutableStateOf(prefs.getString("eq_preset", "Phonk Master") ?: "Phonk Master") }
     var bandGains by remember {
@@ -535,8 +533,8 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
     fun playQueue(queue: List<Song>, startIndex: Int, startPosMs: Long = 0L, autoPlay: Boolean = true) {
         if (queue.isEmpty() || startIndex !in queue.indices) return
         val chosen = queue[startIndex]
-        loopPointA = null
-        loopPointB = null
+        loopPointA = -1L
+        loopPointB = -1L
         if (currentSongId == chosen.id && player.mediaItemCount > 0 && startPosMs == 0L) {
             if (autoPlay) {
                 if (player.isPlaying) player.pause() else player.play()
@@ -563,6 +561,7 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
         VyroWidgetProvider.updateAllWidgets(context)
     }
 
+    val permissionName = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
     val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         permission = granted
@@ -578,13 +577,15 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                 if (idx >= 0) playQueue(loaded, idx, prefs.getLong("last_position_ms", 0L), autoPlay = false)
             }
         }
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
             notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
     LaunchedEffect(Unit) {
-        permission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
+        permission = ContextCompat.checkSelfPermission(context, permissionName) == PackageManager.PERMISSION_GRANTED
         if (permission) {
             val loaded = loadSongs()
             songs = loaded
@@ -600,11 +601,13 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
             } else if (loaded.isNotEmpty()) {
                 currentSongId = loaded.first().id
             }
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            if (Build.VERSION.SDK_INT >= 33 &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
                 notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         } else {
-            launcher.launch(Manifest.permission.READ_MEDIA_AUDIO)
+            launcher.launch(permissionName)
         }
     }
 
@@ -667,8 +670,8 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                 val id = mediaItem?.mediaId?.toLongOrNull()
                 if (id != null) {
                     currentSongId = id
-                    loopPointA = null
-                    loopPointB = null
+                    loopPointA = -1L
+                    loopPointB = -1L
                     recentIds = (listOf(id) + recentIds.filter { it != id }).take(60)
                     playCounts = playCounts + (id to ((playCounts[id] ?: 0) + 1))
                     saveState()
@@ -687,10 +690,8 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                 position = player.currentPosition.coerceAtLeast(0L)
                 duration = if (realDur > 0) realDur else (currentSong?.duration ?: 0L)
 
-                val a = loopPointA
-                val b = loopPointB
-                if (a != null && b != null && b > a + 1000L && position >= b) {
-                    player.seekTo(a)
+                if (loopPointA >= 0L && loopPointB > loopPointA + 1000L && position >= loopPointB) {
+                    player.seekTo(loopPointA)
                 }
 
                 if (player.isPlaying) {
@@ -1052,8 +1053,13 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
             confirmButton = {
                 TextButton(onClick = {
                     runCatching {
-                        val pi = MediaStore.createDeleteRequest(context.contentResolver, listOf(target.uri))
-                        deleteResultLauncher.launch(IntentSenderRequest.Builder(pi.intentSender).build())
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            val pi = MediaStore.createDeleteRequest(context.contentResolver, listOf(target.uri))
+                            deleteResultLauncher.launch(IntentSenderRequest.Builder(pi.intentSender).build())
+                        } else {
+                            context.contentResolver.delete(target.uri, null, null)
+                            songs = loadSongs()
+                        }
                     }
                     songForDeleteConfirm = null
                 }) { Text("Delete", color = Color(0xFFFF5C5C), fontWeight = FontWeight.Bold) }
@@ -1451,17 +1457,17 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                             },
                                             onToggleABLoop = {
                                                 when {
-                                                    loopPointA == null -> {
+                                                    loopPointA < 0L -> {
                                                         loopPointA = position
                                                         Toast.makeText(context, "Point A: ${formatTime(position)}", Toast.LENGTH_SHORT).show()
                                                     }
-                                                    loopPointB == null && position > (loopPointA ?: 0L) + 1000L -> {
+                                                    loopPointB < 0L && position > loopPointA + 1000L -> {
                                                         loopPointB = position
                                                         Toast.makeText(context, "A-B Loop Active!", Toast.LENGTH_SHORT).show()
                                                     }
                                                     else -> {
-                                                        loopPointA = null
-                                                        loopPointB = null
+                                                        loopPointA = -1L
+                                                        loopPointB = -1L
                                                     }
                                                 }
                                             },
@@ -1529,7 +1535,6 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                         playlists = playlists,
                                         activeView = activePlaylistView,
                                         currentSongId = currentSongId,
-                                        playing = playing,
                                         accent = primaryAccent,
                                         panel = surfacePanel,
                                         cornerDp = cornerRadiusDp,
@@ -1641,7 +1646,6 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                         }
                                     }
 
-                                    // شريط اختيار شكل الواجهة بجانب زر الثيمات مباشرة في أعلى القائمة
                                     Row(
                                         Modifier
                                             .fillMaxWidth()
@@ -1689,23 +1693,35 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                     } else if (sortedSongs.isEmpty()) {
                                         EmptyState("لا توجد مقاطع صوتية مطابقة", primaryAccent)
                                     } else if (uiLayout == "Bento Grid") {
-                                        LazyVerticalGrid(
-                                            columns = GridCells.Fixed(2),
+                                        val pairs = remember(sortedSongs) { sortedSongs.chunked(2) }
+                                        LazyColumn(
                                             verticalArrangement = Arrangement.spacedBy(10.dp),
-                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                                             contentPadding = PaddingValues(bottom = 16.dp)
                                         ) {
-                                            gridItemsIndexed(sortedSongs) { idx, song ->
-                                                BentoSongCard(
-                                                    song = song,
-                                                    active = currentSongId == song.id,
-                                                    isLiked = likedIds.contains(song.id),
-                                                    accent = primaryAccent,
-                                                    cornerDp = cornerRadiusDp,
-                                                    fontScale = fontScale,
-                                                    onClick = { playQueue(sortedSongs, idx, 0L, true) },
-                                                    onMore = { songForMenu = song }
-                                                )
+                                            itemsIndexed(pairs) { rowIndex, pair ->
+                                                Row(
+                                                    Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                                ) {
+                                                    pair.forEachIndexed { colIndex, song ->
+                                                        val realIdx = rowIndex * 2 + colIndex
+                                                        Box(Modifier.weight(1f)) {
+                                                            BentoSongCard(
+                                                                song = song,
+                                                                active = currentSongId == song.id,
+                                                                isLiked = likedIds.contains(song.id),
+                                                                accent = primaryAccent,
+                                                                cornerDp = cornerRadiusDp,
+                                                                fontScale = fontScale,
+                                                                onClick = { playQueue(sortedSongs, realIdx, 0L, true) },
+                                                                onMore = { songForMenu = song }
+                                                            )
+                                                        }
+                                                    }
+                                                    if (pair.size == 1) {
+                                                        Spacer(Modifier.weight(1f))
+                                                    }
+                                                }
                                             }
                                         }
                                     } else {
@@ -1789,12 +1805,20 @@ private fun SleekMiniPlayerPill(
         }
         Spacer(Modifier.height(5.dp))
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxWidth().height(2.dp),
-                color = accent,
-                trackColor = Color.White.copy(alpha = 0.12f)
-            )
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color.White.copy(alpha = 0.12f))
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(progress)
+                        .fillMaxHeight()
+                        .background(accent)
+                )
+            }
         }
     }
 }
@@ -1812,8 +1836,8 @@ private fun UltraNowPlayingScreen(
     discStyle: String,
     waveStyle: String,
     cornerDp: Int,
-    loopA: Long?,
-    loopB: Long?,
+    loopA: Long,
+    loopB: Long,
     accent: Color,
     palette: CoverPalette,
     onTogglePlay: () -> Unit,
@@ -2036,8 +2060,8 @@ private fun UltraNowPlayingScreen(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(formatTime(position), color = Color(0xFFA5A9C0), fontSize = 11.sp)
                     val abStatus = when {
-                        loopA != null && loopB != null -> "A-B LOOP (${formatTime(loopA)}-${formatTime(loopB)})"
-                        loopA != null -> "A SET (${formatTime(loopA)}) • TAP FOR B"
+                        loopA >= 0L && loopB >= 0L -> "A-B LOOP (${formatTime(loopA)}-${formatTime(loopB)})"
+                        loopA >= 0L -> "A SET (${formatTime(loopA)}) • TAP FOR B"
                         else -> "HI-RES 24-BIT DSP"
                     }
                     Text(abStatus, color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -2094,7 +2118,7 @@ private fun UltraNowPlayingScreen(
         ) {
             AssistChip(
                 onClick = onToggleABLoop,
-                label = { Text(if (loopA != null) "A-B Active" else "A-B Loop", fontSize = 11.sp) },
+                label = { Text(if (loopA >= 0L) "A-B Active" else "A-B Loop", fontSize = 11.sp) },
                 leadingIcon = { Icon(Icons.Default.Repeat, null, tint = accent, modifier = Modifier.size(15.dp)) }
             )
             AssistChip(
@@ -2258,7 +2282,6 @@ private fun SmartPlaylistsScreen(
     playlists: Map<String, List<Long>>,
     activeView: String?,
     currentSongId: Long,
-    playing: Boolean,
     accent: Color,
     panel: Color,
     cornerDp: Int,
@@ -2520,7 +2543,7 @@ private fun UltraSettingsScreen(
         }
 
         Text(
-            "VYRO MUSIC 3.0.0-ULTRA • ANDROID 13+ EXCLUSIVE • PLAYED: $tracksPlayedStat",
+            "VYRO MUSIC 3.0.0-ULTRA • DEVELOPED BY MOHAMED TAREK • PLAYED: $tracksPlayedStat",
             color = Color(0xFF7E8299),
             fontSize = 10.sp,
             textAlign = TextAlign.Center,
@@ -2638,7 +2661,13 @@ private fun SongRow(
             }
         }
         if (isAmoled && !active) {
-            HorizontalDivider(color = Color.White.copy(alpha = 0.05f), thickness = 0.5.dp, modifier = Modifier.padding(horizontal = 12.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .height(0.5.dp)
+                    .background(Color.White.copy(alpha = 0.05f))
+            )
         }
     }
 }
