@@ -3,15 +3,27 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val currentKotlinVersion = org.jetbrains.kotlin.config.KotlinCompilerVersion.VERSION
+val matchedComposeCompiler = when (currentKotlinVersion) {
+    "1.9.0" -> "1.5.1"
+    "1.9.10" -> "1.5.3"
+    "1.9.20" -> "1.5.4"
+    "1.9.21" -> "1.5.7"
+    "1.9.22" -> "1.5.10"
+    "1.9.23" -> "1.5.11"
+    "1.9.24" -> "1.5.14"
+    else -> "1.5.10"
+}
+
 android {
     namespace = "com.mohamedtarek.vyromusic"
     compileSdk = 34
 
     defaultConfig {
         applicationId = "com.mohamedtarek.vyromusic"
-        minSdk = 33
+        minSdk = 26
         targetSdk = 34
-        versionCode = 4
+        versionCode = 5
         versionName = "3.0.0-ULTRA"
     }
 
@@ -32,6 +44,10 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+        freeCompilerArgs = freeCompilerArgs + listOf(
+            "-P",
+            "plugin:androidx.compose.compiler.plugins.kotlin:suppressKotlinVersionCompatibilityCheck=$currentKotlinVersion"
+        )
     }
 
     buildFeatures {
@@ -39,7 +55,7 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
+        kotlinCompilerExtensionVersion = matchedComposeCompiler
     }
 
     packaging {
@@ -50,17 +66,17 @@ android {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
+    val composeBom = platform("androidx.compose:compose-bom:2024.02.02")
     implementation(composeBom)
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
-    implementation("androidx.activity:activity-compose:1.9.0")
+    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.media3:media3-exoplayer:1.3.1")
-    implementation("androidx.media3:media3-session:1.3.1")
-    implementation("io.coil-kt:coil-compose:2.6.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("androidx.media3:media3-exoplayer:1.2.1")
+    implementation("androidx.media3:media3-session:1.2.1")
+    implementation("io.coil-kt:coil-compose:2.5.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 }
