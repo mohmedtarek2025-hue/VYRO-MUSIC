@@ -20,6 +20,7 @@ import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
 import android.net.Uri
+import android.os.Build
 import android.widget.RemoteViews
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
@@ -51,7 +52,6 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         prefs = getSharedPreferences("vyro_prefs", Context.MODE_PRIVATE)
         prefs.registerOnSharedPreferenceChangeListener(this)
 
-        // منع انخفاض الصوت العشوائي عند التنقل بين الشاشات
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -153,7 +153,6 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
             val centerLvl = (minLvl + maxLvl) / 2
             val halfSpan = (maxLvl - minLvl) / 2f
 
-            // ضخ Sub-Bass إضافي على الترددات المنخفضة (60Hz & 230Hz) ليعطي بيز حقيقي وقوي
             val subBass0 = (bassStrength / 100f) * 0.50f
             val subBass1 = (bassStrength / 100f) * 0.30f
 
@@ -269,12 +268,9 @@ class VyroWidgetProvider : AppWidgetProvider() {
                 views.setImageViewBitmap(android.R.id.icon, bmp)
 
                 val openIntent = Intent(context, MainActivity::class.java)
-                val pi = PendingIntent.getActivity(
-                    context,
-                    0,
-                    openIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
+                val piFlags = PendingIntent.FLAG_UPDATE_CURRENT or
+                    (if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0)
+                val pi = PendingIntent.getActivity(context, 0, openIntent, piFlags)
                 views.setOnClickPendingIntent(android.R.id.text1, pi)
                 views.setOnClickPendingIntent(android.R.id.icon, pi)
 
