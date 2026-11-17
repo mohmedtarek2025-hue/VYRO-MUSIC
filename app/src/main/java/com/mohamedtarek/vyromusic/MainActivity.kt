@@ -115,165 +115,73 @@ data class Song(
 }
 
 data class CoverPalette(
-    val dominant: Color = Color(0xFFA87BFF),
-    val secondary: Color = Color(0xFF141122),
-    val isLightCover: Boolean = false
+    val dominant: Color = Color(0xFF8E54E9),
+    val secondary: Color = Color(0xFF4776E6),
+    val deepTint: Color = Color(0xFF0A0818)
 )
 
 data class LrcLine(val timeMs: Long, val text: String)
 
-data class Strings(
-    val isRtl: Boolean,
-    val songs: String,
-    val albums: String,
-    val playlists: String,
-    val eqStudio: String,
-    val settings: String,
-    val searchHint: String,
-    val tracksCount: String,
-    val nowPlaying: String,
-    val likedSongs: String,
-    val recentlyPlayed: String,
-    val mostPlayed: String,
-    val newPlaylist: String,
-    val playNow: String,
-    val playNext: String,
-    val favToggle: String,
-    val addToPlaylist: String,
-    val setRingtone: String,
-    val viewLyrics: String,
-    val shareSong: String,
-    val fileInfo: String,
-    val deleteDevice: String,
-    val uiStudioTitle: String,
-    val layoutSectionTitle: String,
-    val themeTitle: String,
-    val pickBgImage: String,
-    val clearBgImage: String,
-    val bgDimLevel: String,
-    val langTitle: String,
-    val langSystem: String,
-    val shakeToSkip: String,
-    val sleepTimer: String,
-    val crossfade: String,
-    val backupRestore: String
+data class VisualOption(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val c1: Color,
+    val c2: Color,
+    val previewKind: String
 )
 
-private val ALL_THEMES = listOf(
-    "Stadium Champions" to "🏟️ استاد الأبطال",
-    "Camp Blaugrana" to "🔵🔴 كامب نو",
-    "Ocean Bubbles" to "🌊 البحر والفقاقيع",
-    "Cyber Neon City" to "⚡ أضواء النيون",
-    "Red Devil Arena" to "🔥 استاد الشياطين",
-    "Golden Pharaoh VIP" to "👑 الذهب الملكي",
-    "Matrix Cyber Rain" to "🟢 مطر الماتريكس",
-    "Phonk Drift Carbon" to "🏎️ كربون فونك",
-    "Aurora Borealis" to "🌌 الشفق القطبي",
-    "Deep Space Nebula" to "✨ مجرة الفضاء",
-    "Dynamic Cover Aura" to "🎨 ألوان الأغنية",
-    "Pitch Black AMOLED" to "⬛ سواد AMOLED"
+private val LAYOUT_VISUAL_OPTIONS = listOf(
+    VisualOption("Royal Glass", "Royal Glass", "بطاقات زجاجية فاخرة", Color(0xFF8E54E9), Color(0xFF4776E6), "LAYOUT_GLASS"),
+    VisualOption("AMOLED Pure", "AMOLED Pure", "سواد نقي بدون إطارات", Color(0xFF00E5FF), Color(0xFF050508), "LAYOUT_AMOLED"),
+    VisualOption("Bento Grid", "Bento Grid 2x2", "شبكة بوسترات مزدوجة", Color(0xFFFFC857), Color(0xFF1F1638), "LAYOUT_GRID2"),
+    VisualOption("Poster Wall 3x3", "Poster Wall 3x3", "جدار ألبومات ثلاثي", Color(0xFFFF2A6D), Color(0xFF161026), "LAYOUT_GRID3"),
+    VisualOption("Stadium Cards", "Stadium Cards", "بطاقات مباريات عريضة", Color(0xFF00F57A), Color(0xFF072614), "LAYOUT_STADIUM"),
+    VisualOption("Neon Capsule", "Neon Capsule", "كبسولات دائرية مضيئة", Color(0xFF00F0FF), Color(0xFF280B45), "LAYOUT_CAPSULE"),
+    VisualOption("Compact Pro", "Compact Studio", "قائمة مدمجة سريعة", Color(0xFFA87BFF), Color(0xFF121424), "LAYOUT_COMPACT")
 )
 
-private val ALL_LAYOUTS = listOf(
-    "AMOLED Pure" to "AMOLED مسطح",
-    "Cyber Glass" to "زجاجي نيون",
-    "Bento Grid" to "شبكي 2x2",
-    "Poster Wall 3x3" to "بوسترات 3x3",
-    "Stadium Cards" to "بطاقات الاستاد",
-    "Neon Capsule" to "كبسولات مضيئة",
-    "Compact Pro" to "مدمج استوديو",
-    "Minimalist Zen" to "هادئ بدون حدود"
+private val THEME_VISUAL_OPTIONS = listOf(
+    VisualOption("Dynamic Cover Aura", "غلاف الأغنية الذكي", "يتلون تلقائياً بصورة الأغنية", Color(0xFFFF6B9D), Color(0xFF6A4CFF), "THEME_DYNAMIC"),
+    VisualOption("Stadium Champions", "استاد الأبطال", "ملعب كرة قدم وكشافات", Color(0xFF00F57A), Color(0xFF052412), "THEME_STADIUM"),
+    VisualOption("Camp Blaugrana", "مدرجات كامب نو", "أزرق كتالوني وقرمزي", Color(0xFFED1B4E), Color(0xFF004D98), "THEME_STADIUM"),
+    VisualOption("Ocean Bubbles", "البحر والفقاقيع", "أمواج بحرية وفقاقيع صاعدة", Color(0xFF00E5FF), Color(0xFF03254C), "THEME_OCEAN"),
+    VisualOption("Cyber Neon City", "أضواء النيون", "شبكة ليزر وإضاءة سايبر", Color(0xFFFF00E5), Color(0xFF00F0FF), "THEME_NEON"),
+    VisualOption("Golden Pharaoh VIP", "الذهب الملكي", "جزيئات ذهب فاخرة", Color(0xFFFFC857), Color(0xFF1E1606), "THEME_PARTICLES"),
+    VisualOption("Red Devil Arena", "مدرجات الشياطين", "أحمر ناري وتخطيط ملعب", Color(0xFFFF2A3C), Color(0xFF240408), "THEME_STADIUM"),
+    VisualOption("Matrix Cyber Rain", "مطر الماتريكس", "شيفرات رقمية متساقطة", Color(0xFF00FF66), Color(0xFF031A09), "THEME_MATRIX"),
+    VisualOption("Deep Space Nebula", "مجرة الفضاء", "نجوم وسدم كونية متحركة", Color(0xFF9E7BFF), Color(0xFF09061A), "THEME_PARTICLES"),
+    VisualOption("Pitch Black AMOLED", "سواد AMOLED", "خلفية سوداء صافية للبطارية", Color(0xFF8A94B8), Color(0xFF000000), "THEME_AMOLED")
 )
 
-private fun getAppStrings(langSetting: String): Strings {
-    val code = if (langSetting == "SYSTEM") Locale.getDefault().language.uppercase() else langSetting.uppercase()
-    return when {
-        code.startsWith("AR") -> Strings(
-            true, "الأغاني", "الألبومات", "القوائم", "الصوت DSP", "الإعدادات",
-            "ابحث عن أغنية أو مطرب...", "مقطع", "المشغل", "الأغاني المفضلة", "تم تشغيلها مؤخراً", "الأكثر استماعاً",
-            "+ قائمة جديدة", "تشغيل الآن", "تشغيل كالتالي في الطابور", "إضافة / إزالة من المفضلة",
-            "إضافة إلى قائمة تشغيل...", "قص وتعيين كنغمة رنين", "كلمات الأغنية المتزامنة (LRC)",
-            "مشاركة الملف الصوتي", "معلومات الملف التفصيلية", "حذف من الجهاز",
-            "استوديو تخصيص الواجهة والثيمات 360°", "تشكيلة الواجهة (8 أشكال UI)", "السمات الحية (استاد • بحر • نيون)",
-            "اختيار خلفية من استوديو الهاتف", "إلغاء خلفية الهاتف", "درجة تعتيم الخلفية (لوضوح الصورة)",
-            "لغة التطبيق (10 لغات)", "لغة الجهاز", "هز الهاتف لتغيير الأغنية (Shake-to-Skip)",
-            "مؤقت النوم التدريجي (Fade-Out)", "الدمج السلس (Crossfade)", "النسخ الاحتياطي والاستعادة"
-        )
-        code.startsWith("FR") -> Strings(
-            false, "Titres", "Albums", "Listes", "Audio DSP", "Options",
-            "Rechercher titres, artistes...", "TITRES", "Lecture", "Titres likés", "Récents", "Plus écoutés",
-            "+ Nouvelle", "Lire", "Lire ensuite", "Favoris", "Ajouter à la liste...", "Couper en sonnerie",
-            "Paroles synchronisées", "Partager", "Infos fichier", "Supprimer",
-            "Studio d'Interface 360°", "Style de Disposition (8 Layouts)", "Thèmes Animés (Stade • Océan • Néon)",
-            "Image de fond (Galerie)", "Réinitialiser le fond", "Opacité du fond",
-            "Langue (10 Langues)", "Système", "Secouer pour passer", "Minuteur (Fade-Out)", "Fondu (Crossfade)", "Sauvegarde JSON"
-        )
-        code.startsWith("ES") -> Strings(
-            false, "Canciones", "Álbumes", "Listas", "Audio DSP", "Ajustes",
-            "Buscar canciones, artistas...", "PISTAS", "Sonando", "Favoritas", "Recientes", "Más escuchadas",
-            "+ Nueva lista", "Reproducir", "Siguiente en cola", "Favorito", "Añadir a lista...", "Cortar como tono",
-            "Letras sincronizadas", "Compartir", "Info del archivo", "Eliminar",
-            "Estudio de Interfaz 360°", "Diseño de Pantalla (8 Layouts)", "Temas Vivos (Estadio • Mar • Neón)",
-            "Fondo desde galería", "Quitar fondo", "Oscurecimiento de fondo",
-            "Idioma (10 Idiomas)", "Sistema", "Agitar para saltar", "Temporizador", "Transición Crossfade", "Copia de seguridad"
-        )
-        code.startsWith("DE") -> Strings(
-            false, "Titel", "Alben", "Listen", "DSP Studio", "Optionen",
-            "Songs, Künstler suchen...", "TITEL", "Player", "Favoriten", "Verlauf", "Meistgespielt",
-            "+ Neue Liste", "Abspielen", "Als Nächstes", "Favorit", "Zur Liste...", "Als Klingelton",
-            "Songtext (LRC)", "Teilen", "Datei-Info", "Löschen",
-            "360° UI-Design Studio", "Oberflächen-Layout (8 Stile)", "Live-Themen (Stadion • Meer • Neon)",
-            "Hintergrundbild wählen", "Hintergrund zurücksetzen", "Hintergrund-Abdunkelung",
-            "Sprache (10 Sprachen)", "System", "Schütteln zum Überspringen", "Schlaftimer", "Crossfade", "Backup & Restore"
-        )
-        code.startsWith("IT") -> Strings(
-            false, "Brani", "Album", "Playlist", "DSP Audio", "Impostazioni",
-            "Cerca brani, artisti...", "BRANI", "Player", "Preferiti", "Recenti", "Più ascoltati",
-            "+ Nuova", "Riproduci", "Riproduci successivo", "Preferito", "Aggiungi a playlist...", "Taglia come suoneria",
-            "Testi sincronizzati", "Condividi", "Info file", "Elimina",
-            "Studio Interfaccia 360°", "Stile Layout UI (8 Stili)", "Temi Animati (Stadio • Mare • Neon)",
-            "Sfondo dalla galleria", "Rimuovi sfondo", "Oscuramento sfondo",
-            "Lingua (10 Lingue)", "Sistema", "Scuoti per cambiare brano", "Sleep Timer", "Crossfade", "Backup JSON"
-        )
-        code.startsWith("TR") -> Strings(
-            false, "Şarkılar", "Albümler", "Listeler", "DSP Ses", "Ayarlar",
-            "Şarkı veya sanatçı ara...", "PARÇA", "Çalıyor", "Beğenilenler", "Son Çalınanlar", "En Çok Dinlenenler",
-            "+ Yeni Liste", "Şimdi Çal", "Sıradaki Çal", "Favori", "Listeye Ekle...", "Zil Sesi Yap",
-            "Senkronize Sözler", "Paylaş", "Dosya Bilgisi", "Sil",
-            "360° Arayüz Stüdyosu", "Arayüz Düzeni (8 Stiller)", "Canlı Temalar (Stadyum • Deniz • Neon)",
-            "Galeriden Arka Plan Seç", "Arka Planı Sıfırla", "Arka Plan Karartma",
-            "Dil (10 Dil)", "Sistem", "Geçmek İçin Salla", "Uyku Zamanlayıcı", "Crossfade Geçiş", "Yedekleme (JSON)"
-        )
-        code.startsWith("RU") -> Strings(
-            false, "Треки", "Альбомы", "Плейлисты", "DSP Звук", "Настройки",
-            "Поиск треков, артистов...", "ТРЕКОВ", "Плеер", "Любимые", "Недавние", "Популярные",
-            "+ Новый", "Играть", "Следующий", "В избранное", "В плейлист...", "На рингтон",
-            "Синхронный текст", "Поделиться", "О файле", "Удалить",
-            "Студия Интерфейса 360°", "Макет интерфейса (8 стилей)", "Живые Темы (Стадион • Море • Неон)",
-            "Фон из галереи", "Сбросить фон", "Затемнение фона",
-            "Язык (10 языков)", "Системный", "Встряхнуть для переключения", "Таймер сна", "Кроссфейд", "Резервная копия"
-        )
-        code.startsWith("HI") -> Strings(
-            false, "गाने", "एल्बम", "प्लेलिस्ट", "DSP ऑडियो", "सेटिंग्स",
-            "गाने या कलाकार खोजें...", "गाने", "प्लेयर", "पसंदीदा", "हाल ही में", "सबसे ज़्यादा सुने गए",
-            "+ नई प्लेलिस्ट", "अभी चलाएं", "अगला चलाएं", "पसंदीदा", "प्लेलिस्ट में जोड़ें...", "रिंगटोन बनाएं",
-            "सिंक किए गए बोल", "शेयर करें", "फ़ाइल जानकारी", "हटाएं",
-            "360° UI कस्टमाइज़ स्टूडियो", "UI लेआउट स्टाइल", "लाइव थीम (स्टेडियम • समुद्र • नियॉन)",
-            "गैलरी से वॉलपेपर चुनें", "वॉलपेपर हटाएं", "वॉलपेपर ब्राइटनेस/डिम",
-            "भाषा (10 भाषाएं)", "सिस्टम", "गाना बदलने के लिए फ़ोन हिलाएं", "स्लीप टाइमर", "क्रॉसफ़ेड", "बैकअप और रीस्टोर"
-        )
-        else -> Strings(
-            false, "Songs", "Albums", "Playlists", "DSP Studio", "Settings",
-            "Search tracks, artists, albums...", "TRACKS", "Playing", "Liked Songs", "Recently Played", "Most Played",
-            "+ New List", "Play Now", "Play Next in Queue", "Toggle Favorite", "Add to Playlist...", "Trim & Set as Ringtone",
-            "Synced Lyrics Studio (LRC)", "Share Audio", "File Info", "Delete from Device",
-            "360° UI Layout & Theme Studio", "UI Layout Structure (8 Styles)", "Live Themes (Stadium • Ocean • Neon)",
-            "Pick Custom Wallpaper from Phone", "Clear Custom Wallpaper", "Wallpaper Dim Level (Clarity)",
-            "App Language (10 Languages)", "System Default", "Shake Phone to Skip Track",
-            "Smart Fade-Out Sleep Timer", "Smooth Crossfade", "Backup & Restore (JSON)"
-        )
-    }
-}
+private val DISC_VISUAL_OPTIONS = listOf(
+    VisualOption("Dynamic Aura", "Dynamic Aura Card", "غلاف متوهج بلون الأغنية", Color(0xFFFF6B9D), Color(0xFF6A4CFF), "DISC_AURA"),
+    VisualOption("Vinyl Spin", "Vinyl Spin", "أسطوانة فينيل دوارة", Color(0xFFA87BFF), Color(0xFF141624), "DISC_VINYL"),
+    VisualOption("Stadium Crest", "Stadium Crest", "درع الاستاد الرياضي", Color(0xFF00F57A), Color(0xFF082914), "DISC_CREST"),
+    VisualOption("Square Studio", "Square Poster", "بوستر استوديو مربع", Color(0xFFFFC857), Color(0xFF1A1C2C), "DISC_SQUARE"),
+    VisualOption("Neon Ring", "Neon Laser Ring", "حلقة ليزر نيون دائرية", Color(0xFF00E5FF), Color(0xFF101830), "DISC_RING")
+)
+
+private val WAVE_VISUAL_OPTIONS = listOf(
+    VisualOption("Smooth Wave", "موجة ليزر ناعمة", "موجة صوتية انسيابية", Color(0xFF00E5FF), Color(0xFF6A4CFF), "WAVE_SMOOTH"),
+    VisualOption("Mirror Twin", "موجة مزدوجة", "موجتان متعاكستان", Color(0xFFFF00E5), Color(0xFF00E5FF), "WAVE_MIRROR"),
+    VisualOption("Spectrum Bars", "أعمدة طيفية", "أعمدة استوديو راقصة", Color(0xFF00F57A), Color(0xFF0B2E1B), "WAVE_BARS"),
+    VisualOption("Pulse Dots", "نقاط نبضية", "كرات ضوئية متفاعلة", Color(0xFFFFC857), Color(0xFF281E0B), "WAVE_DOTS"),
+    VisualOption("Hidden", "إخفاء الموجات", "واجهة هادئة بدون موجات", Color(0xFF6C738A), Color(0xFF121420), "WAVE_NONE")
+)
+
+private val WIDGET_VISUAL_OPTIONS = listOf(
+    VisualOption("Auto Adaptive", "تلقائي ذكي", "يتحول لمربع أو طويل حسب سحبك", Color(0xFF00E5FF), Color(0xFF6A4CFF), "WIDGET_AUTO"),
+    VisualOption("Square Card 2x2", "مربع بوستر 2x2", "شكل مربع بصورة أغنية كبيرة", Color(0xFFFF6B9D), Color(0xFF261230), "WIDGET_SQUARE"),
+    VisualOption("Wide Pill 4x1", "شريط عريض 4x1", "شريط أفقي أنيق ومسطح", Color(0xFF00F57A), Color(0xFF0B2918), "WIDGET_WIDE"),
+    VisualOption("Neon Capsule", "كبسولة دائرية", "حواف دائرية بالكامل مع نيون", Color(0xFFFFC857), Color(0xFF291F09), "WIDGET_CAPSULE")
+)
+
+private val MINI_VISUAL_OPTIONS = listOf(
+    VisualOption("Floating Pill", "كبسولة عائمة", "مرفوعة بحواف دائرية", Color(0xFF8E54E9), Color(0xFF4776E6), "MINI_PILL"),
+    VisualOption("Neon Dock", "منصة نيون مضيئة", "إطار متوهج بلون الأغنية", Color(0xFF00E5FF), Color(0xFF142238), "MINI_DOCK"),
+    VisualOption("Full Bar", "شريط كامل العرض", "ملتصق بعرض الشاشة", Color(0xFFFFC857), Color(0xFF221C10), "MINI_BAR")
+)
 
 class MainActivity : ComponentActivity() {
     private var controller: MediaController? = null
@@ -290,7 +198,7 @@ class MainActivity : ComponentActivity() {
             try {
                 controller = controllerFuture?.get()
                 setContent {
-                    controller?.let { VyroUltraApp(it, ::loadSongs) }
+                    controller?.let { VyroRoyalApp(it, ::loadSongs) }
                 }
             } catch (e: Exception) {
                 setContent {
@@ -361,31 +269,36 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
+fun VyroRoyalApp(player: Player, loadSongs: () -> List<Song>) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vyro_prefs", Context.MODE_PRIVATE) }
     val appScope = rememberCoroutineScope()
 
-    var langSetting by remember { mutableStateOf(prefs.getString("lang_setting", "SYSTEM") ?: "SYSTEM") }
-    val strings = remember(langSetting) { getAppStrings(langSetting) }
+    var langSetting by remember { mutableStateOf(prefs.getString("lang_setting", "AR") ?: "AR") }
+    val isRtl = remember(langSetting) {
+        val code = if (langSetting == "SYSTEM") Locale.getDefault().language.uppercase() else langSetting.uppercase()
+        code.startsWith("AR")
+    }
 
-    // إعدادات التخصيص العميقة (8 أشكال واجهة + 12 سمة متحركة + تفاصيل دقيقة)
-    var uiLayout by remember { mutableStateOf(prefs.getString("ui_layout", "Cyber Glass") ?: "Cyber Glass") }
-    var themeName by remember { mutableStateOf(prefs.getString("theme_name", "Stadium Champions") ?: "Stadium Champions") }
-    var discStyle by remember { mutableStateOf(prefs.getString("disc_style", "Vinyl Spin") ?: "Vinyl Spin") }
+    // الإعدادات الافتراضية الجديدة: تصميم Royal Glass أنيق + تفاعل ديناميكي تلقائي مع صورة الأغنية
+    var uiLayout by remember { mutableStateOf(prefs.getString("ui_layout", "Royal Glass") ?: "Royal Glass") }
+    var themeName by remember { mutableStateOf(prefs.getString("theme_name", "Dynamic Cover Aura") ?: "Dynamic Cover Aura") }
+    var dynamicPlayerColor by remember { mutableStateOf(prefs.getBoolean("dynamic_player_color", true)) }
+    var discStyle by remember { mutableStateOf(prefs.getString("disc_style", "Dynamic Aura") ?: "Dynamic Aura") }
     var waveStyle by remember { mutableStateOf(prefs.getString("wave_style", "Smooth Wave") ?: "Smooth Wave") }
     var miniPlayerStyle by remember { mutableStateOf(prefs.getString("mini_player_style", "Floating Pill") ?: "Floating Pill") }
-    var headerStyle by remember { mutableStateOf(prefs.getString("header_style", "Compact Pro") ?: "Compact Pro") }
-    var cornerRadiusDp by remember { mutableIntStateOf(prefs.getInt("corner_radius_dp", 18)) }
-    var cardOpacity by remember { mutableFloatStateOf(prefs.getFloat("card_opacity", 0.28f)) }
+    var headerStyle by remember { mutableStateOf(prefs.getString("header_style", "Royal Clean") ?: "Royal Clean") }
+    var widgetStyle by remember { mutableStateOf(prefs.getString("widget_style", "Auto Adaptive") ?: "Auto Adaptive") }
+
+    var cornerRadiusDp by remember { mutableIntStateOf(prefs.getInt("corner_radius_dp", 20)) }
+    var cardOpacity by remember { mutableFloatStateOf(prefs.getFloat("card_opacity", 0.22f)) }
     var fontScale by remember { mutableFloatStateOf(prefs.getFloat("font_scale", 1.0f)) }
-    var borderWidthDp by remember { mutableFloatStateOf(prefs.getFloat("border_width_dp", 1.0f)) }
-    var bgAnimIntensity by remember { mutableFloatStateOf(prefs.getFloat("bg_anim_intensity", 0.85f)) }
+    var borderWidthDp by remember { mutableFloatStateOf(prefs.getFloat("border_width_dp", 0.8f)) }
+    var bgAnimIntensity by remember { mutableFloatStateOf(prefs.getFloat("bg_anim_intensity", 0.75f)) }
 
     var customBgUri by remember { mutableStateOf(prefs.getString("custom_bg_uri", null)) }
-    var bgDimAlpha by remember { mutableFloatStateOf(prefs.getFloat("bg_dim_alpha", 0.35f)) }
+    var bgDimAlpha by remember { mutableFloatStateOf(prefs.getFloat("bg_dim_alpha", 0.40f)) }
 
-    // نافذة تأكيد إعادة ضبط الإعدادات الافتراضية لكل قسم
     var pendingResetSection by remember { mutableStateOf<String?>(null) }
 
     var songs by remember { mutableStateOf(emptyList<Song>()) }
@@ -410,19 +323,21 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
 
     var crossfadeSec by remember { mutableIntStateOf(prefs.getInt("crossfade_sec", 0)) }
     var shakeSkipEnabled by remember { mutableStateOf(prefs.getBoolean("shake_skip_enabled", true)) }
-    var autoScanEnabled by remember { mutableStateOf(prefs.getBoolean("auto_scan_enabled", true)) }
     var isDriveMode by remember { mutableStateOf(false) }
 
     var loopPointA by remember { mutableLongStateOf(-1L) }
     var loopPointB by remember { mutableLongStateOf(-1L) }
 
-    var eqPreset by remember { mutableStateOf(prefs.getString("eq_preset", "Phonk Master") ?: "Phonk Master") }
+    // إعدادات الصوت النقية الخالية من الغروشة + ميزة الصوت المحيطي 8D الجديدة
+    var antiClipping by remember { mutableStateOf(prefs.getBoolean("anti_clipping", true)) }
+    var spatial8DEnabled by remember { mutableStateOf(prefs.getBoolean("spatial_8d_enabled", false)) }
+    var eqPreset by remember { mutableStateOf(prefs.getString("eq_preset", "Pure Hi-Fi") ?: "Pure Hi-Fi") }
     var bandGains by remember {
-        mutableStateOf(loadFloatList(prefs.getString("band_gains", null)) ?: listOf(0.80f, 0.45f, -0.10f, 0.50f, 0.85f))
+        mutableStateOf(loadFloatList(prefs.getString("band_gains", null)) ?: listOf(0.35f, 0.20f, 0.0f, 0.18f, 0.32f))
     }
-    var bassStrength by remember { mutableIntStateOf(prefs.getInt("bass_strength", 75)) }
-    var virtualizerStrength by remember { mutableIntStateOf(prefs.getInt("virtualizer_strength", 55)) }
-    var loudnessGain by remember { mutableIntStateOf(prefs.getInt("loudness_gain", 40)) }
+    var bassStrength by remember { mutableIntStateOf(prefs.getInt("bass_strength", 40)) }
+    var virtualizerStrength by remember { mutableIntStateOf(prefs.getInt("virtualizer_strength", 35)) }
+    var loudnessGain by remember { mutableIntStateOf(prefs.getInt("loudness_gain", 0)) }
     var playbackSpeed by remember { mutableFloatStateOf(prefs.getFloat("playback_speed", 1f)) }
     var playbackPitch by remember { mutableFloatStateOf(prefs.getFloat("playback_pitch", 1f)) }
 
@@ -447,10 +362,12 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
             .putString("lang_setting", langSetting)
             .putString("ui_layout", uiLayout)
             .putString("theme_name", themeName)
+            .putBoolean("dynamic_player_color", dynamicPlayerColor)
             .putString("disc_style", discStyle)
             .putString("wave_style", waveStyle)
             .putString("mini_player_style", miniPlayerStyle)
             .putString("header_style", headerStyle)
+            .putString("widget_style", widgetStyle)
             .putInt("corner_radius_dp", cornerRadiusDp)
             .putFloat("card_opacity", cardOpacity)
             .putFloat("font_scale", fontScale)
@@ -466,7 +383,8 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
             .putString("lyrics_map", encodeLyricsMap(customLyrics))
             .putInt("crossfade_sec", crossfadeSec)
             .putBoolean("shake_skip_enabled", shakeSkipEnabled)
-            .putBoolean("auto_scan_enabled", autoScanEnabled)
+            .putBoolean("anti_clipping", antiClipping)
+            .putBoolean("spatial_8d_enabled", spatial8DEnabled)
             .putString("eq_preset", eqPreset)
             .putString("band_gains", JSONArray(bandGains).toString())
             .putInt("bass_strength", bassStrength)
@@ -475,72 +393,76 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
             .putFloat("playback_speed", playbackSpeed)
             .putFloat("playback_pitch", playbackPitch)
             .apply()
+        VyroWidgetProvider.updateAllWidgets(context)
     }
 
     fun executeSectionReset(section: String) {
         when (section) {
             "LAYOUT" -> {
-                uiLayout = "Cyber Glass"
-                miniPlayerStyle = "Floating Pill"
-                headerStyle = "Compact Pro"
-                cardOpacity = 0.28f
+                uiLayout = "Royal Glass"
+                cardOpacity = 0.22f
             }
             "THEME" -> {
-                themeName = "Stadium Champions"
-                bgAnimIntensity = 0.85f
+                themeName = "Dynamic Cover Aura"
+                dynamicPlayerColor = true
+                bgAnimIntensity = 0.75f
             }
-            "PLAYER_STYLE" -> {
-                discStyle = "Vinyl Spin"
-                waveStyle = "Smooth Wave"
-            }
+            "DISC" -> discStyle = "Dynamic Aura"
+            "WAVE" -> waveStyle = "Smooth Wave"
+            "MINI" -> miniPlayerStyle = "Floating Pill"
+            "HEADER" -> headerStyle = "Royal Clean"
+            "WIDGET" -> widgetStyle = "Auto Adaptive"
             "DIMENSIONS" -> {
-                cornerRadiusDp = 18
-                cardOpacity = 0.28f
+                cornerRadiusDp = 20
+                cardOpacity = 0.22f
                 fontScale = 1.0f
-                borderWidthDp = 1.0f
-                bgAnimIntensity = 0.85f
+                borderWidthDp = 0.8f
+                bgAnimIntensity = 0.75f
             }
             "WALLPAPER" -> {
                 customBgUri = null
-                bgDimAlpha = 0.35f
+                bgDimAlpha = 0.40f
             }
             "DSP" -> {
-                eqPreset = "Phonk Master"
-                bandGains = listOf(0.80f, 0.45f, -0.10f, 0.50f, 0.85f)
-                bassStrength = 75
-                virtualizerStrength = 55
-                loudnessGain = 40
+                antiClipping = true
+                spatial8DEnabled = false
+                eqPreset = "Pure Hi-Fi"
+                bandGains = listOf(0.35f, 0.20f, 0.0f, 0.18f, 0.32f)
+                bassStrength = 40
+                virtualizerStrength = 35
+                loudnessGain = 0
                 playbackSpeed = 1f
                 playbackPitch = 1f
             }
             "ALL" -> {
-                uiLayout = "Cyber Glass"
-                themeName = "Stadium Champions"
-                discStyle = "Vinyl Spin"
+                uiLayout = "Royal Glass"
+                themeName = "Dynamic Cover Aura"
+                dynamicPlayerColor = true
+                discStyle = "Dynamic Aura"
                 waveStyle = "Smooth Wave"
                 miniPlayerStyle = "Floating Pill"
-                headerStyle = "Compact Pro"
-                cornerRadiusDp = 18
-                cardOpacity = 0.28f
+                headerStyle = "Royal Clean"
+                widgetStyle = "Auto Adaptive"
+                cornerRadiusDp = 20
+                cardOpacity = 0.22f
                 fontScale = 1.0f
-                borderWidthDp = 1.0f
-                bgAnimIntensity = 0.85f
+                borderWidthDp = 0.8f
+                bgAnimIntensity = 0.75f
                 customBgUri = null
-                bgDimAlpha = 0.35f
-                langSetting = "SYSTEM"
-                crossfadeSec = 0
-                shakeSkipEnabled = true
-                eqPreset = "Phonk Master"
-                bandGains = listOf(0.80f, 0.45f, -0.10f, 0.50f, 0.85f)
-                bassStrength = 75
-                virtualizerStrength = 55
-                loudnessGain = 40
+                bgDimAlpha = 0.40f
+                antiClipping = true
+                spatial8DEnabled = false
+                eqPreset = "Pure Hi-Fi"
+                bandGains = listOf(0.35f, 0.20f, 0.0f, 0.18f, 0.32f)
+                bassStrength = 40
+                virtualizerStrength = 35
+                loudnessGain = 0
                 playbackSpeed = 1f
                 playbackPitch = 1f
             }
         }
         saveState()
-        Toast.makeText(context, "تمت إعادة الضبط للإعدادات الافتراضية بنجاح ✓", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "تمت إعادة الضبط للإعدادات الافتراضية ✓", Toast.LENGTH_SHORT).show()
     }
 
     fun requestPinHomeWidget() {
@@ -552,14 +474,10 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
             } else {
                 Toast.makeText(context, "اضغط مطولاً على الشاشة الرئيسية واختر ويدجت VYRO MUSIC", Toast.LENGTH_LONG).show()
             }
-        }.onFailure {
-            Toast.makeText(context, "اضغط مطولاً على الشاشة الرئيسية واختر ويدجت VYRO MUSIC", Toast.LENGTH_LONG).show()
         }
     }
 
-    val voiceSearchLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { res ->
+    val voiceSearchLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         if (res.resultCode == Activity.RESULT_OK) {
             val spoken = res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
             if (!spoken.isNullOrBlank()) {
@@ -570,12 +488,10 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
         }
     }
 
-    val deleteResultLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartIntentSenderForResult()
-    ) { res ->
+    val deleteResultLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
         if (res.resultCode == Activity.RESULT_OK) {
             songs = loadSongs()
-            Toast.makeText(context, "Deleted", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "تم حذف الملف", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -585,8 +501,7 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                 context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             customBgUri = uri.toString()
-            bgDimAlpha = 0.30f
-            if (cardOpacity > 0.40f) cardOpacity = 0.22f
+            bgDimAlpha = 0.35f
             saveState()
         }
     }
@@ -595,20 +510,19 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
         if (uri != null) {
             runCatching {
                 val root = JSONObject().apply {
-                    put("version", "3.1.0-PRO-MAX")
+                    put("version", "3.2.0-ROYAL")
                     put("liked_ids", JSONArray(likedIds.toList()))
                     put("recent_ids", JSONArray(recentIds))
                     put("playlists", JSONObject(encodePlaylists(playlists)))
                     put("lyrics_map", JSONObject(encodeLyricsMap(customLyrics)))
                     put("ui_layout", uiLayout)
                     put("theme_name", themeName)
+                    put("widget_style", widgetStyle)
                     put("eq_preset", eqPreset)
                     put("band_gains", JSONArray(bandGains))
-                    put("bass_strength", bassStrength)
-                    put("loudness_gain", loudnessGain)
                 }
                 context.contentResolver.openOutputStream(uri)?.use { it.write(root.toString(2).toByteArray()) }
-                Toast.makeText(context, "Backup Saved!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "تم حفظ النسخة الاحتياطية ✓", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -624,10 +538,9 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                 if (root.has("lyrics_map")) customLyrics = loadLyricsMap(root.getJSONObject("lyrics_map").toString())
                 if (root.has("ui_layout")) uiLayout = root.getString("ui_layout")
                 if (root.has("theme_name")) themeName = root.getString("theme_name")
-                if (root.has("bass_strength")) bassStrength = root.getInt("bass_strength")
-                if (root.has("loudness_gain")) loudnessGain = root.getInt("loudness_gain")
+                if (root.has("widget_style")) widgetStyle = root.getString("widget_style")
                 saveState()
-                Toast.makeText(context, "Restored!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "تمت الاستعادة بنجاح ✓", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -747,7 +660,7 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                     if (now - lastShakeTime > 1200L && player.isPlaying) {
                         lastShakeTime = now
                         player.seekToNext()
-                        Toast.makeText(context, "⏭ Shake Skip!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "⏭ تم تغيير الأغنية بالهز!", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -759,8 +672,8 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
         onDispose { sensorManager?.unregisterListener(listener) }
     }
 
-    DisposableEffect(permission, autoScanEnabled) {
-        if (!permission || !autoScanEnabled) return@DisposableEffect onDispose { }
+    DisposableEffect(permission) {
+        if (!permission) return@DisposableEffect onDispose { }
         val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
                 songs = loadSongs()
@@ -801,8 +714,10 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
         onDispose { player.removeListener(listener) }
     }
 
-    LaunchedEffect(player, crossfadeSec, loopPointA, loopPointB) {
+    // حلقة تحديث الوقت + Crossfade + ميزة 8D Spatial Audio المحيطية الجديدة
+    LaunchedEffect(player, crossfadeSec, loopPointA, loopPointB, spatial8DEnabled) {
         var tick = 0
+        var angle8D = 0f
         while (true) {
             val realDur = player.duration
             if (player.isPlaying || player.mediaItemCount > 0) {
@@ -824,7 +739,11 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                 }
             }
             if (sleepTimerRemainingSec <= 0) {
-                if (crossfadeSec > 0 && realDur > crossfadeSec * 2500L && player.isPlaying) {
+                if (spatial8DEnabled && player.isPlaying) {
+                    angle8D += 0.16f
+                    val waveVol = 0.86f + 0.14f * sin(angle8D)
+                    player.volume = waveVol.coerceIn(0.72f, 1f)
+                } else if (crossfadeSec > 0 && realDur > crossfadeSec * 2500L && player.isPlaying) {
                     val fadeWindow = crossfadeSec * 1000L
                     val remaining = realDur - position
                     player.volume = if (remaining in 1..fadeWindow) {
@@ -834,46 +753,48 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                     player.volume = 1f
                 }
             }
-            delay(300)
+            delay(250)
         }
     }
 
+    // اللون الأساسي يتفاعل تلقائياً مع صورة الأغنية عند تفعيل Dynamic Cover Aura أو dynamicPlayerColor
     val primaryAccent by animateColorAsState(
-        targetValue = when (themeName) {
-            "Stadium Champions" -> Color(0xFF00F57A)
-            "Camp Blaugrana" -> Color(0xFFED1B4E)
-            "Ocean Bubbles" -> Color(0xFF00E5FF)
-            "Cyber Neon City" -> Color(0xFFFF00E5)
-            "Red Devil Arena" -> Color(0xFFFF2A3C)
-            "Golden Pharaoh VIP" -> Color(0xFFFFC857)
-            "Matrix Cyber Rain" -> Color(0xFF00FF66)
-            "Phonk Drift Carbon" -> Color(0xFFFF4D00)
-            "Aurora Borealis" -> Color(0xFF42F5B3)
-            "Deep Space Nebula" -> Color(0xFF9E7BFF)
-            "Dynamic Cover Aura" -> coverPalette.dominant
-            else -> Color(0xFFA87BFF)
+        targetValue = when {
+            themeName == "Dynamic Cover Aura" || (dynamicPlayerColor && tab == "Now Playing") -> coverPalette.dominant
+            themeName == "Stadium Champions" -> Color(0xFF00F57A)
+            themeName == "Camp Blaugrana" -> Color(0xFFED1B4E)
+            themeName == "Ocean Bubbles" -> Color(0xFF00E5FF)
+            themeName == "Cyber Neon City" -> Color(0xFFFF00E5)
+            themeName == "Red Devil Arena" -> Color(0xFFFF2A3C)
+            themeName == "Golden Pharaoh VIP" -> Color(0xFFFFC857)
+            themeName == "Matrix Cyber Rain" -> Color(0xFF00FF66)
+            else -> Color(0xFF9E7BFF)
         },
+        tween(500),
         label = "accent"
     )
 
-    val bgNight = when {
-        uiLayout == "AMOLED Pure" || themeName == "Pitch Black AMOLED" -> Color(0xFF000000)
-        themeName == "Stadium Champions" -> Color(0xFF04140A)
-        themeName == "Camp Blaugrana" -> Color(0xFF07091E)
-        themeName == "Ocean Bubbles" -> Color(0xFF031424)
-        themeName == "Cyber Neon City" -> Color(0xFF0B0418)
-        themeName == "Red Devil Arena" -> Color(0xFF170407)
-        themeName == "Golden Pharaoh VIP" -> Color(0xFF120E04)
-        else -> Color(0xFF05060C)
-    }
+    val bgNight by animateColorAsState(
+        targetValue = when {
+            uiLayout == "AMOLED Pure" || themeName == "Pitch Black AMOLED" -> Color(0xFF000000)
+            (themeName == "Dynamic Cover Aura" || dynamicPlayerColor) && currentSong != null -> coverPalette.deepTint
+            themeName == "Stadium Champions" -> Color(0xFF04140A)
+            themeName == "Camp Blaugrana" -> Color(0xFF07091E)
+            themeName == "Ocean Bubbles" -> Color(0xFF031424)
+            themeName == "Cyber Neon City" -> Color(0xFF0B0418)
+            else -> Color(0xFF060812)
+        },
+        tween(600),
+        label = "bg"
+    )
 
     val effectiveCardAlpha = when {
-        !customBgUri.isNullOrBlank() -> cardOpacity.coerceIn(0.08f, 0.45f)
-        uiLayout == "AMOLED Pure" || uiLayout == "Minimalist Zen" -> cardOpacity.coerceIn(0.0f, 0.20f)
-        else -> cardOpacity.coerceIn(0.12f, 0.75f)
+        !customBgUri.isNullOrBlank() -> cardOpacity.coerceIn(0.10f, 0.42f)
+        uiLayout == "AMOLED Pure" -> cardOpacity.coerceIn(0.0f, 0.15f)
+        else -> cardOpacity.coerceIn(0.14f, 0.65f)
     }
-    val surfacePanel = Color(0xFF121526).copy(alpha = effectiveCardAlpha)
-    val mutedText = Color(0xFFA8B0C8)
+    val surfacePanel = Color(0xFF15192B).copy(alpha = effectiveCardAlpha)
+    val mutedText = Color(0xFFA6B0C9)
 
     val sortedSongs = remember(songs, query, sortBy, likedIds) {
         val base = if (sortBy == "FAV") songs.filter { likedIds.contains(it.id) } else songs
@@ -909,16 +830,16 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
         }
     }
 
-    // نافذة تأكيد إعادة ضبط الإعدادات الافتراضية ("هل أنت متأكد...؟" -> "تأكيد")
-    pendingResetSection?.let { sectionToReset ->
+    // نافذة تأكيد إعادة ضبط الإعدادات الافتراضية
+    pendingResetSection?.let { sec ->
         AlertDialog(
             onDismissRequest = { pendingResetSection = null },
-            containerColor = Color(0xFF0E1120),
+            containerColor = Color(0xFF0E1222),
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.RestartAlt, null, tint = primaryAccent)
                     Spacer(Modifier.width(8.dp))
-                    Text("تأكيد إعادة الضبط", color = Color.White, fontWeight = FontWeight.Black, fontSize = 17.sp)
+                    Text("إعادة ضبط الإعدادات", color = Color.White, fontWeight = FontWeight.Black, fontSize = 17.sp)
                 }
             },
             text = {
@@ -926,13 +847,13 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                     "هل أنت متأكد من أنك تريد إعادة ضبط الإعدادات الافتراضية؟",
                     color = Color.White,
                     fontSize = 14.sp,
-                    lineHeight = 21.sp
+                    lineHeight = 22.sp
                 )
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        executeSectionReset(sectionToReset)
+                        executeSectionReset(sec)
                         pendingResetSection = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = primaryAccent)
@@ -948,7 +869,7 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
         )
     }
 
-    // استوديو التخصيص العميق 360° (يحتوي على عشرات الخيارات + زر إعادة الضبط لكل خيار)
+    // استوديو المعاينة المصورة السريع من الهيدر
     if (showUiStudioSheet) {
         AlertDialog(
             onDismissRequest = { showUiStudioSheet = false },
@@ -959,12 +880,8 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.Palette, null, tint = primaryAccent)
-                        Spacer(Modifier.width(8.dp))
-                        Text(strings.uiStudioTitle, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                    }
-                    ResetChipButton(accent = Color(0xFFFF5C5C), label = "ضبط الكل") {
+                    Text("معرض تصميم الواجهة والسمات", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black)
+                    ResetChipButton(accent = Color(0xFFFF5C5C), label = "↺ ضبط الكل") {
                         pendingResetSection = "ALL"
                     }
                 }
@@ -972,147 +889,69 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
             text = {
                 Column(
                     Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    // 1. قسم أشكال الواجهة (8 أشكال)
-                    SectionHeaderWithReset(strings.layoutSectionTitle, primaryAccent) {
+                    SectionHeaderWithReset("1. شكل تخطيط الواجهة (اسحب واختار)", primaryAccent) {
                         pendingResetSection = "LAYOUT"
                     }
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        ALL_LAYOUTS.forEach { (id, label) ->
-                            FilterChip(
-                                selected = uiLayout == id,
-                                onClick = {
-                                    uiLayout = id
-                                    cardOpacity = when (id) {
-                                        "AMOLED Pure", "Minimalist Zen" -> 0.0f
-                                        "Cyber Glass", "Stadium Cards" -> 0.30f
-                                        else -> 0.24f
-                                    }
-                                    saveState()
-                                },
-                                label = { Text(label, fontSize = 11.sp) }
-                            )
+                    VisualPreviewCarousel(
+                        options = LAYOUT_VISUAL_OPTIONS,
+                        selectedId = uiLayout,
+                        defaultId = "Royal Glass",
+                        accent = primaryAccent,
+                        onSelectOrToggle = { chosen ->
+                            uiLayout = chosen
+                            cardOpacity = if (chosen == "AMOLED Pure") 0.0f else 0.22f
+                            saveState()
                         }
-                    }
+                    )
 
-                    // 2. قسم السمات التفاعلية (12 سمة: استاد، بحر، فقاقيع، نيون...)
-                    SectionHeaderWithReset(strings.themeTitle, primaryAccent) {
+                    SectionHeaderWithReset("2. السمات والخلفيات الحية", primaryAccent) {
                         pendingResetSection = "THEME"
                     }
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        ALL_THEMES.forEach { (id, label) ->
-                            FilterChip(
-                                selected = themeName == id,
-                                onClick = { themeName = id; saveState() },
-                                label = { Text(label, fontSize = 11.sp) }
-                            )
+                    VisualPreviewCarousel(
+                        options = THEME_VISUAL_OPTIONS,
+                        selectedId = themeName,
+                        defaultId = "Dynamic Cover Aura",
+                        accent = primaryAccent,
+                        onSelectOrToggle = { chosen ->
+                            themeName = chosen
+                            saveState()
                         }
-                    }
+                    )
 
-                    // 3. قسم شكل المشغل المصغر والهيدر
-                    Text("شكل المشغل المصغر والهيدر", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(
-                            "Floating Pill" to "كبسولة عائمة",
-                            "Full Bar" to "شريط كامل",
-                            "Neon Dock" to "منصة نيون"
-                        ).forEach { (id, label) ->
-                            FilterChip(
-                                selected = miniPlayerStyle == id,
-                                onClick = { miniPlayerStyle = id; saveState() },
-                                label = { Text(label, fontSize = 11.sp) }
-                            )
-                        }
-                        listOf(
-                            "Compact Pro" to "هيدر مدمج",
-                            "Centered VIP" to "هيدر ملكي"
-                        ).forEach { (id, label) ->
-                            FilterChip(
-                                selected = headerStyle == id,
-                                onClick = { headerStyle = id; saveState() },
-                                label = { Text(label, fontSize = 11.sp) }
-                            )
-                        }
+                    SectionHeaderWithReset("3. شكل مشغل الأغنية (Disc Style)", primaryAccent) {
+                        pendingResetSection = "DISC"
                     }
+                    VisualPreviewCarousel(
+                        options = DISC_VISUAL_OPTIONS,
+                        selectedId = discStyle,
+                        defaultId = "Dynamic Aura",
+                        accent = primaryAccent,
+                        onSelectOrToggle = { chosen ->
+                            discStyle = chosen
+                            saveState()
+                        }
+                    )
 
-                    // 4. قسم شكل قرص الأغنية والموجات
-                    SectionHeaderWithReset("المشغل والموجات (Disc & Visualizer)", primaryAccent) {
-                        pendingResetSection = "PLAYER_STYLE"
+                    SectionHeaderWithReset("4. شكل ويدجت الشاشة الرئيسية", primaryAccent) {
+                        pendingResetSection = "WIDGET"
                     }
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(
-                            "Vinyl Spin" to "أسطوانة دوارة",
-                            "Stadium Crest" to "شعار الاستاد",
-                            "Square Studio" to "بوستر مربع",
-                            "Neon Ring" to "حلقة نيون"
-                        ).forEach { (id, label) ->
-                            FilterChip(
-                                selected = discStyle == id,
-                                onClick = { discStyle = id; saveState() },
-                                label = { Text(label, fontSize = 11.sp) }
-                            )
+                    VisualPreviewCarousel(
+                        options = WIDGET_VISUAL_OPTIONS,
+                        selectedId = widgetStyle,
+                        defaultId = "Auto Adaptive",
+                        accent = primaryAccent,
+                        onSelectOrToggle = { chosen ->
+                            widgetStyle = chosen
+                            saveState()
                         }
-                    }
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(
-                            "Smooth Wave" to "موجة ليزر",
-                            "Spectrum Bars" to "أعمدة طيفية",
-                            "Mirror Twin" to "موجة مزدوجة",
-                            "Pulse Dots" to "نقاط نبضية",
-                            "Hidden" to "إخفاء"
-                        ).forEach { (id, label) ->
-                            FilterChip(
-                                selected = waveStyle == id,
-                                onClick = { waveStyle = id; saveState() },
-                                label = { Text(label, fontSize = 11.sp) }
-                            )
-                        }
-                    }
-
-                    // 5. قسم المنزلقات الدقيقة (الأبعاد، الشفافية، سمك الإطارات، قوة مؤثرات الخلفية)
-                    SectionHeaderWithReset("الأبعاد والشفافية والمؤثرات", primaryAccent) {
-                        pendingResetSection = "DIMENSIONS"
-                    }
-                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                        Column {
-                            Text("Background Effects Intensity (${(bgAnimIntensity * 100).toInt()}%)", color = mutedText, fontSize = 11.sp)
-                            Slider(
-                                value = bgAnimIntensity,
-                                onValueChange = { bgAnimIntensity = it; saveState() },
-                                valueRange = 0f..1f
-                            )
-                            Text("Corner Radius (${cornerRadiusDp}dp)", color = mutedText, fontSize = 11.sp)
-                            Slider(
-                                value = cornerRadiusDp.toFloat(),
-                                onValueChange = { cornerRadiusDp = it.toInt(); saveState() },
-                                valueRange = 0f..32f
-                            )
-                            Text("Card Opacity (${(cardOpacity * 100).toInt()}%)", color = mutedText, fontSize = 11.sp)
-                            Slider(
-                                value = cardOpacity,
-                                onValueChange = { cardOpacity = it; saveState() },
-                                valueRange = 0f..0.75f
-                            )
-                            Text("Neon Border Width (${"%.1f".format(borderWidthDp)}dp)", color = mutedText, fontSize = 11.sp)
-                            Slider(
-                                value = borderWidthDp,
-                                onValueChange = { borderWidthDp = it; saveState() },
-                                valueRange = 0f..3f
-                            )
-                            Text("Font Scale (${"%.2f".format(fontScale)}x)", color = mutedText, fontSize = 11.sp)
-                            Slider(
-                                value = fontScale,
-                                onValueChange = { fontScale = it; saveState() },
-                                valueRange = 0.85f..1.25f
-                            )
-                        }
-                    }
+                    )
                 }
             },
             confirmButton = {
                 TextButton(onClick = { showUiStudioSheet = false }) {
-                    Text("إغلاق وحفظ", color = primaryAccent, fontWeight = FontWeight.Black)
+                    Text("تم", color = primaryAccent, fontWeight = FontWeight.Black)
                 }
             }
         )
@@ -1131,35 +970,35 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
             },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    MenuActionRow(Icons.Default.PlayArrow, strings.playNow, primaryAccent) {
+                    MenuActionRow(Icons.Default.PlayArrow, "تشغيل الآن", primaryAccent) {
                         val idx = songs.indexOfFirst { it.id == target.id }
                         if (idx >= 0) playQueue(songs, idx, 0L, true)
                         songForMenu = null
                     }
-                    MenuActionRow(Icons.Default.QueuePlayNext, strings.playNext, Color.White) {
+                    MenuActionRow(Icons.Default.QueuePlayNext, "تشغيل كالتالي في الطابور", Color.White) {
                         val nextIdx = (player.currentMediaItemIndex + 1).coerceAtMost(player.mediaItemCount)
                         player.addMediaItem(nextIdx, buildMediaItem(target))
-                        Toast.makeText(context, strings.playNext, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "تمت الإضافة للطابور", Toast.LENGTH_SHORT).show()
                         songForMenu = null
                     }
-                    MenuActionRow(if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, strings.favToggle, Color.White) {
+                    MenuActionRow(if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "إضافة / إزالة من المفضلة", Color.White) {
                         likedIds = if (isLiked) likedIds - target.id else likedIds + target.id
                         saveState()
                         songForMenu = null
                     }
-                    MenuActionRow(Icons.Default.PlaylistAdd, strings.addToPlaylist, Color.White) {
+                    MenuActionRow(Icons.Default.PlaylistAdd, "إضافة إلى قائمة تشغيل...", Color.White) {
                         songForAddToPlaylist = target
                         songForMenu = null
                     }
-                    MenuActionRow(Icons.Default.RingVolume, strings.setRingtone, Color(0xFFFFC857)) {
+                    MenuActionRow(Icons.Default.RingVolume, "قص وتعيين كنغمة رنين", Color(0xFFFFC857)) {
                         songForRingtone = target
                         songForMenu = null
                     }
-                    MenuActionRow(Icons.Default.Lyrics, strings.viewLyrics, Color.White) {
+                    MenuActionRow(Icons.Default.Lyrics, "كلمات الأغنية المتزامنة (LRC)", Color.White) {
                         songForLyrics = target
                         songForMenu = null
                     }
-                    MenuActionRow(Icons.Default.Share, strings.shareSong, Color.White) {
+                    MenuActionRow(Icons.Default.Share, "مشاركة الملف الصوتي", Color.White) {
                         runCatching {
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "audio/*"
@@ -1170,17 +1009,17 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                         }
                         songForMenu = null
                     }
-                    MenuActionRow(Icons.Default.Info, strings.fileInfo, Color.White) {
+                    MenuActionRow(Icons.Default.Info, "معلومات الملف التفصيلية", Color.White) {
                         songForInfo = target
                         songForMenu = null
                     }
-                    MenuActionRow(Icons.Default.DeleteForever, strings.deleteDevice, Color(0xFFFF5C5C)) {
+                    MenuActionRow(Icons.Default.DeleteForever, "حذف من الجهاز", Color(0xFFFF5C5C)) {
                         songForDeleteConfirm = target
                         songForMenu = null
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { songForMenu = null }) { Text("OK", color = primaryAccent) } }
+            confirmButton = { TextButton(onClick = { songForMenu = null }) { Text("إغلاق", color = primaryAccent) } }
         )
     }
 
@@ -1193,7 +1032,7 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
         AlertDialog(
             onDismissRequest = { if (!cutting) songForRingtone = null },
             containerColor = Color(0xFF0E101C),
-            title = { Text(strings.setRingtone, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+            title = { Text("قص وتعيين كنغمة رنين", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(target.title, color = primaryAccent, maxLines = 1)
@@ -1246,18 +1085,18 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
         AlertDialog(
             onDismissRequest = { songForInfo = null },
             containerColor = Color(0xFF0E101C),
-            title = { Text(strings.fileInfo, color = primaryAccent, fontWeight = FontWeight.Bold) },
+            title = { Text("معلومات الملف الصوتي", color = primaryAccent, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    InfoItem("Title", target.title)
-                    InfoItem("Artist", target.artist)
-                    InfoItem("Album", target.album)
-                    InfoItem("Duration / Size", "${formatTime(target.duration)} • $mb")
-                    InfoItem("Play Count", "$plays times")
-                    InfoItem("Path", target.filePath ?: target.uri.toString())
+                    InfoItem("الأغنية", target.title)
+                    InfoItem("الفنان", target.artist)
+                    InfoItem("الألبوم", target.album)
+                    InfoItem("المدة والحجم", "${formatTime(target.duration)} • $mb")
+                    InfoItem("مرات الاستماع", "$plays مرة")
+                    InfoItem("المسار", target.filePath ?: target.uri.toString())
                 }
             },
-            confirmButton = { TextButton(onClick = { songForInfo = null }) { Text("OK", color = primaryAccent) } }
+            confirmButton = { TextButton(onClick = { songForInfo = null }) { Text("حسناً", color = primaryAccent) } }
         )
     }
 
@@ -1265,7 +1104,7 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
         AlertDialog(
             onDismissRequest = { songForDeleteConfirm = null },
             containerColor = Color(0xFF0E101C),
-            title = { Text(strings.deleteDevice, color = Color(0xFFFF5C5C), fontWeight = FontWeight.Bold) },
+            title = { Text("حذف من الجهاز", color = Color(0xFFFF5C5C), fontWeight = FontWeight.Bold) },
             text = { Text(target.title, color = Color.White) },
             confirmButton = {
                 TextButton(onClick = {
@@ -1279,9 +1118,9 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                         }
                     }
                     songForDeleteConfirm = null
-                }) { Text("Delete", color = Color(0xFFFF5C5C), fontWeight = FontWeight.Bold) }
+                }) { Text("تأكيد الحذف", color = Color(0xFFFF5C5C), fontWeight = FontWeight.Bold) }
             },
-            dismissButton = { TextButton(onClick = { songForDeleteConfirm = null }) { Text("Cancel", color = Color.White) } }
+            dismissButton = { TextButton(onClick = { songForDeleteConfirm = null }) { Text("إلغاء", color = Color.White) } }
         )
     }
 
@@ -1289,7 +1128,7 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
         AlertDialog(
             onDismissRequest = { songForAddToPlaylist = null },
             containerColor = Color(0xFF0E101C),
-            title = { Text(strings.addToPlaylist, color = Color.White) },
+            title = { Text("إضافة إلى قائمة تشغيل", color = Color.White) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     playlists.keys.forEach { pName ->
@@ -1300,7 +1139,7 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                     playlists = playlists + (pName to (currentList + targetSong.id))
                                     saveState()
                                 }
-                                Toast.makeText(context, "Added to $pName", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "تمت الإضافة إلى $pName", Toast.LENGTH_SHORT).show()
                                 songForAddToPlaylist = null
                             },
                             modifier = Modifier.fillMaxWidth()
@@ -1312,10 +1151,10 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                             showCreatePlaylistDialog = true
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text(strings.newPlaylist, color = primaryAccent) }
+                    ) { Text("+ إنشاء قائمة جديدة", color = primaryAccent) }
                 }
             },
-            confirmButton = { TextButton(onClick = { songForAddToPlaylist = null }) { Text("Close") } }
+            confirmButton = { TextButton(onClick = { songForAddToPlaylist = null }) { Text("إغلاق") } }
         )
     }
 
@@ -1324,12 +1163,12 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
         AlertDialog(
             onDismissRequest = { showCreatePlaylistDialog = false },
             containerColor = Color(0xFF0E101C),
-            title = { Text(strings.newPlaylist, color = Color.White) },
+            title = { Text("قائمة تشغيل جديدة", color = Color.White) },
             text = {
                 OutlinedTextField(
                     value = newName,
                     onValueChange = { newName = it },
-                    placeholder = { Text("Gym Phonk / Favorites") },
+                    placeholder = { Text("مثال: تراكات الجيم / فونك") },
                     singleLine = true
                 )
             },
@@ -1341,9 +1180,9 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                         saveState()
                         showCreatePlaylistDialog = false
                     }
-                }) { Text("Create", color = primaryAccent) }
+                }) { Text("إنشاء", color = primaryAccent) }
             },
-            dismissButton = { TextButton(onClick = { showCreatePlaylistDialog = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showCreatePlaylistDialog = false }) { Text("إلغاء") } }
         )
     }
 
@@ -1358,14 +1197,14 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
         AlertDialog(
             onDismissRequest = { songForLyrics = null },
             containerColor = Color(0xFF0C0E18),
-            title = { Text("${strings.viewLyrics} • ${targetSong.title}", color = Color.White, fontSize = 15.sp, maxLines = 1) },
+            title = { Text("كلمات الأغنية • ${targetSong.title}", color = Color.White, fontSize = 15.sp, maxLines = 1) },
             text = {
                 Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (editingMode) {
                         OutlinedTextField(
                             value = draftText,
                             onValueChange = { draftText = it },
-                            placeholder = { Text("[00:12.00] Paste synced LRC or normal lyrics...") },
+                            placeholder = { Text("[00:12.00] الصق كلمات الأغنية هنا...") },
                             modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp)
                         )
                     } else if (parsedLrc.isNotEmpty()) {
@@ -1384,7 +1223,7 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                             )
                         }
                     } else {
-                        Text(draftText.ifBlank { "No lyrics saved yet. Tap Edit to paste." }, color = Color.White, lineHeight = 22.sp)
+                        Text(draftText.ifBlank { "لا توجد كلمات مضافة بعد. اضغط تعديل للصق الكلمات." }, color = Color.White, lineHeight = 22.sp)
                     }
                 }
             },
@@ -1394,12 +1233,12 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                         customLyrics = customLyrics + (targetSong.id to draftText.trim())
                         saveState()
                         editingMode = false
-                    }) { Text("Save", color = primaryAccent) }
+                    }) { Text("حفظ", color = primaryAccent) }
                 } else {
-                    TextButton(onClick = { editingMode = true }) { Text("Edit", color = primaryAccent) }
+                    TextButton(onClick = { editingMode = true }) { Text("تعديل", color = primaryAccent) }
                 }
             },
-            dismissButton = { TextButton(onClick = { songForLyrics = null }) { Text("Close") } }
+            dismissButton = { TextButton(onClick = { songForLyrics = null }) { Text("إغلاق") } }
         )
     }
 
@@ -1407,28 +1246,28 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
         AlertDialog(
             onDismissRequest = { showSleepDialog = false },
             containerColor = Color(0xFF0E101C),
-            title = { Text(strings.sleepTimer, color = Color.White) },
+            title = { Text("مؤقت النوم التدريجي", color = Color.White) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     listOf(5, 10, 15, 30, 45, 60).forEach { mins ->
                         TextButton(
                             onClick = { startSleepTimer(mins); showSleepDialog = false },
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text("$mins min (Smooth Fade-Out)", color = Color.White) }
+                        ) { Text("$mins دقيقة (خفض تدريجي للصوت)", color = Color.White) }
                     }
                     if (sleepTimerRemainingSec > 0) {
                         TextButton(
                             onClick = { startSleepTimer(0); showSleepDialog = false },
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text("Cancel Timer", color = Color(0xFFFF5C5C)) }
+                        ) { Text("إلغاء المؤقت", color = Color(0xFFFF5C5C)) }
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { showSleepDialog = false }) { Text("Close") } }
+            confirmButton = { TextButton(onClick = { showSleepDialog = false }) { Text("إغلاق") } }
         )
     }
 
-    CompositionLocalProvider(LocalLayoutDirection provides if (strings.isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr) {
+    CompositionLocalProvider(LocalLayoutDirection provides if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr) {
         MaterialTheme(
             colorScheme = darkColorScheme(
                 background = bgNight,
@@ -1440,17 +1279,17 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
             )
         ) {
             Box(Modifier.fillMaxSize().background(bgNight)) {
-                // رسم الخلفية الحية للثيمات (استاد كرة القدم، البحر والفقاقيع، النيون، الفضاء، الماتريكس...)
+                // رسم الخلفية الحية أو هالة صورة الأغنية الديناميكية
                 if (bgAnimIntensity > 0.02f && uiLayout != "AMOLED Pure") {
                     AnimatedThemeBackdrop(
                         themeName = themeName,
                         accent = primaryAccent,
+                        secondaryAccent = coverPalette.secondary,
                         intensity = bgAnimIntensity,
                         playing = playing
                     )
                 }
 
-                // خلفية الهاتف المخصصة (إن وجدت)
                 if (!customBgUri.isNullOrBlank()) {
                     AsyncImage(
                         model = Uri.parse(customBgUri),
@@ -1484,7 +1323,7 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                             Column(
                                 Modifier.background(
                                     Brush.verticalGradient(
-                                        listOf(Color.Transparent, bgNight.copy(alpha = 0.85f), bgNight.copy(alpha = 0.96f))
+                                        listOf(Color.Transparent, bgNight.copy(alpha = 0.88f), bgNight.copy(alpha = 0.98f))
                                     )
                                 )
                             ) {
@@ -1494,7 +1333,7 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                         playing = playing,
                                         position = position,
                                         duration = duration,
-                                        accent = primaryAccent,
+                                        accent = if (dynamicPlayerColor) coverPalette.dominant else primaryAccent,
                                         miniStyle = miniPlayerStyle,
                                         cornerDp = cornerRadiusDp,
                                         onToggle = {
@@ -1509,15 +1348,15 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                     )
                                 }
                                 NavigationBar(
-                                    containerColor = Color.Black.copy(alpha = if (customBgUri != null) 0.55f else 0.90f),
+                                    containerColor = Color(0xFF070913).copy(alpha = 0.94f),
                                     tonalElevation = 0.dp
                                 ) {
                                     listOf(
-                                        "Songs" to strings.songs,
-                                        "Now Playing" to strings.nowPlaying,
-                                        "EQ Studio" to strings.eqStudio,
-                                        "Playlists" to strings.playlists,
-                                        "Settings" to strings.settings
+                                        "Songs" to "المكتبة",
+                                        "Now Playing" to "المشغل",
+                                        "EQ Studio" to "الصوت 8D",
+                                        "Playlists" to "القوائم",
+                                        "Settings" to "التخصيص"
                                     ).forEach { (key, label) ->
                                         NavigationBarItem(
                                             selected = tab == key,
@@ -1532,16 +1371,16 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                                         "Now Playing" -> Icons.Default.Album
                                                         "EQ Studio" -> Icons.Default.GraphicEq
                                                         "Playlists" -> Icons.Default.QueueMusic
-                                                        else -> Icons.Default.Tune
+                                                        else -> Icons.Default.Palette
                                                     },
                                                     contentDescription = label
                                                 )
                                             },
-                                            label = { Text(label, fontSize = 10.sp, maxLines = 1) },
+                                            label = { Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1) },
                                             colors = NavigationBarItemDefaults.colors(
                                                 selectedIconColor = primaryAccent,
                                                 selectedTextColor = primaryAccent,
-                                                indicatorColor = primaryAccent.copy(alpha = 0.18f),
+                                                indicatorColor = primaryAccent.copy(alpha = 0.16f),
                                                 unselectedTextColor = mutedText,
                                                 unselectedIconColor = mutedText
                                             )
@@ -1557,45 +1396,46 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                 .padding(padding)
                                 .padding(horizontal = 14.dp)
                         ) {
-                            // الهيدر القابل للتخصيص + أزرار البحث واستوديو الواجهة والويدجت والقيادة
+                            // هيدر ملكي نظيف ومرتب بدون زحمة
                             Row(
                                 Modifier
                                     .fillMaxWidth()
-                                    .padding(top = 10.dp, bottom = 6.dp),
+                                    .padding(top = 12.dp, bottom = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Box(
                                     Modifier
-                                        .size(34.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(Brush.linearGradient(listOf(primaryAccent, Color(0xFF2E1468)))),
+                                        .size(38.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Brush.linearGradient(listOf(primaryAccent, coverPalette.secondary))),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(Icons.Default.GraphicEq, null, tint = Color.Black, modifier = Modifier.size(20.dp))
+                                    Icon(Icons.Default.GraphicEq, null, tint = Color.Black, modifier = Modifier.size(22.dp))
                                 }
-                                Spacer(Modifier.width(9.dp))
+                                Spacer(Modifier.width(10.dp))
                                 Column(Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             "VYRO",
                                             color = Color.White,
-                                            fontSize = if (headerStyle == "Centered VIP") 21.sp else 18.sp,
+                                            fontSize = if (headerStyle == "Centered VIP") 22.sp else 19.sp,
                                             fontWeight = FontWeight.Black,
-                                            letterSpacing = 2.sp
+                                            letterSpacing = 1.8.sp
                                         )
-                                        Spacer(Modifier.width(5.dp))
-                                        Text(
-                                            "3.1 PRO MAX",
-                                            color = primaryAccent,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            letterSpacing = 1.sp
-                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Box(
+                                            Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(primaryAccent.copy(alpha = 0.18f))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text("ROYAL 3.2", color = primaryAccent, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                                        }
                                     }
                                     Text(
-                                        "MOHAMED TAREK • ${songs.size} ${strings.tracksCount}",
+                                        "${songs.size} مقطع صوتي • استوديو محمد طارق",
                                         color = mutedText,
-                                        fontSize = 9.sp,
+                                        fontSize = 10.sp,
                                         maxLines = 1
                                     )
                                 }
@@ -1606,43 +1446,32 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                         searchExpanded = !searchExpanded
                                     },
                                     modifier = Modifier
-                                        .size(34.dp)
+                                        .size(36.dp)
                                         .background(
                                             if (searchExpanded || query.isNotEmpty()) primaryAccent.copy(alpha = 0.24f)
                                             else Color.White.copy(alpha = 0.07f),
                                             CircleShape
                                         )
                                 ) {
-                                    Icon(Icons.Default.Search, "Search", tint = if (searchExpanded) primaryAccent else Color.White, modifier = Modifier.size(17.dp))
+                                    Icon(Icons.Default.Search, "Search", tint = if (searchExpanded) primaryAccent else Color.White, modifier = Modifier.size(18.dp))
                                 }
-                                Spacer(Modifier.width(5.dp))
+                                Spacer(Modifier.width(6.dp))
                                 IconButton(
                                     onClick = { showUiStudioSheet = true },
                                     modifier = Modifier
-                                        .size(34.dp)
+                                        .size(36.dp)
                                         .background(primaryAccent.copy(alpha = 0.20f), CircleShape)
                                 ) {
-                                    Icon(Icons.Default.Palette, "UI Studio", tint = primaryAccent, modifier = Modifier.size(17.dp))
+                                    Icon(Icons.Default.Palette, "Visual Studio", tint = primaryAccent, modifier = Modifier.size(18.dp))
                                 }
-                                Spacer(Modifier.width(5.dp))
+                                Spacer(Modifier.width(6.dp))
                                 IconButton(
-                                    onClick = { requestPinHomeWidget() },
+                                    onClick = { if (currentSong != null) isDriveMode = true },
                                     modifier = Modifier
-                                        .size(34.dp)
-                                        .background(Color(0xFFFFC857).copy(alpha = 0.16f), CircleShape)
-                                ) {
-                                    Icon(Icons.Default.Widgets, "Pin Widget", tint = Color(0xFFFFC857), modifier = Modifier.size(17.dp))
-                                }
-                                Spacer(Modifier.width(5.dp))
-                                IconButton(
-                                    onClick = {
-                                        if (currentSong != null) isDriveMode = true
-                                    },
-                                    modifier = Modifier
-                                        .size(34.dp)
+                                        .size(36.dp)
                                         .background(Color.White.copy(alpha = 0.07f), CircleShape)
                                 ) {
-                                    Icon(Icons.Default.DirectionsCar, "Drive Mode", tint = Color.White, modifier = Modifier.size(17.dp))
+                                    Icon(Icons.Default.DirectionsCar, "Drive Mode", tint = Color.White, modifier = Modifier.size(18.dp))
                                 }
                             }
 
@@ -1660,10 +1489,12 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                             sleepRemainingSec = sleepTimerRemainingSec,
                                             discStyle = discStyle,
                                             waveStyle = waveStyle,
+                                            dynamicPlayerColor = dynamicPlayerColor,
+                                            spatial8DEnabled = spatial8DEnabled,
                                             cornerDp = cornerRadiusDp,
                                             loopA = loopPointA,
                                             loopB = loopPointB,
-                                            accent = primaryAccent,
+                                            accent = if (dynamicPlayerColor) coverPalette.dominant else primaryAccent,
                                             palette = coverPalette,
                                             onTogglePlay = {
                                                 if (player.mediaItemCount == 0) {
@@ -1694,15 +1525,23 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                                 }
                                                 player.repeatMode = repeatMode
                                             },
+                                            onToggleDynamicColor = {
+                                                dynamicPlayerColor = !dynamicPlayerColor
+                                                saveState()
+                                            },
+                                            onToggle8D = {
+                                                spatial8DEnabled = !spatial8DEnabled
+                                                saveState()
+                                            },
                                             onToggleABLoop = {
                                                 when {
                                                     loopPointA < 0L -> {
                                                         loopPointA = position
-                                                        Toast.makeText(context, "Point A: ${formatTime(position)}", Toast.LENGTH_SHORT).show()
+                                                        Toast.makeText(context, "بداية التكرار A: ${formatTime(position)}", Toast.LENGTH_SHORT).show()
                                                     }
                                                     loopPointB < 0L && position > loopPointA + 1000L -> {
                                                         loopPointB = position
-                                                        Toast.makeText(context, "A-B Loop Active!", Toast.LENGTH_SHORT).show()
+                                                        Toast.makeText(context, "تم تفعيل تكرار A-B!", Toast.LENGTH_SHORT).show()
                                                     }
                                                     else -> {
                                                         loopPointA = -1L
@@ -1729,16 +1568,51 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                         loudnessGain = loudnessGain,
                                         playbackSpeed = playbackSpeed,
                                         playbackPitch = playbackPitch,
+                                        antiClipping = antiClipping,
+                                        spatial8D = spatial8DEnabled,
                                         accent = primaryAccent,
                                         cornerDp = cornerRadiusDp,
                                         onSelectPreset = { preset ->
-                                            eqPreset = preset
-                                            bandGains = when (preset) {
-                                                "Bass Extreme" -> listOf(1.0f, 0.80f, 0.05f, 0.25f, 0.50f)
-                                                "Phonk Master" -> listOf(0.95f, 0.55f, -0.15f, 0.60f, 0.90f)
-                                                "VIP Studio" -> listOf(0.55f, 0.35f, 0.15f, 0.45f, 0.70f)
-                                                "Vocal Crystal" -> listOf(-0.15f, 0.30f, 0.90f, 0.65f, 0.25f)
-                                                else -> listOf(0f, 0f, 0f, 0f, 0f)
+                                            if (eqPreset == preset && preset != "Pure Hi-Fi") {
+                                                // الضغط مرة ثانية يلغي التحديد ويرجع للوضع النقي الافتراضي
+                                                eqPreset = "Pure Hi-Fi"
+                                                bandGains = listOf(0.35f, 0.20f, 0.0f, 0.18f, 0.32f)
+                                                bassStrength = 40
+                                                loudnessGain = 0
+                                            } else {
+                                                eqPreset = preset
+                                                when (preset) {
+                                                    "Pure Hi-Fi" -> {
+                                                        bandGains = listOf(0.35f, 0.20f, 0.0f, 0.18f, 0.32f)
+                                                        bassStrength = 40
+                                                        loudnessGain = 0
+                                                    }
+                                                    "Clean Phonk" -> {
+                                                        bandGains = listOf(0.65f, 0.38f, -0.08f, 0.35f, 0.55f)
+                                                        bassStrength = 55
+                                                        loudnessGain = 15
+                                                    }
+                                                    "Gym Beast" -> {
+                                                        bandGains = listOf(0.75f, 0.50f, 0.05f, 0.40f, 0.60f)
+                                                        bassStrength = 65
+                                                        loudnessGain = 25
+                                                    }
+                                                    "Vocal Studio" -> {
+                                                        bandGains = listOf(-0.10f, 0.20f, 0.65f, 0.50f, 0.25f)
+                                                        bassStrength = 20
+                                                        loudnessGain = 5
+                                                    }
+                                                    "Night Chill" -> {
+                                                        bandGains = listOf(0.40f, 0.25f, -0.15f, -0.10f, 0.15f)
+                                                        bassStrength = 35
+                                                        loudnessGain = 0
+                                                    }
+                                                    else -> {
+                                                        bandGains = listOf(0f, 0f, 0f, 0f, 0f)
+                                                        bassStrength = 0
+                                                        loudnessGain = 0
+                                                    }
+                                                }
                                             }
                                             saveState()
                                         },
@@ -1752,6 +1626,8 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                         onLoudnessChange = { loudnessGain = it; saveState() },
                                         onSpeedChange = { playbackSpeed = it; saveState() },
                                         onPitchChange = { playbackPitch = it; saveState() },
+                                        onToggleAntiClipping = { antiClipping = !antiClipping; saveState() },
+                                        onToggle8D = { spatial8DEnabled = !spatial8DEnabled; saveState() },
                                         onRequestResetDsp = { pendingResetSection = "DSP" },
                                         onOpenSystemEq = {
                                             runCatching {
@@ -1767,7 +1643,6 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
 
                                 "Playlists" -> {
                                     SmartPlaylistsScreen(
-                                        strings = strings,
                                         songs = songs,
                                         likedIds = likedIds,
                                         recentIds = recentIds,
@@ -1795,35 +1670,54 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
 
                                 "Settings" -> {
                                     UltraSettingsScreen(
-                                        strings = strings,
                                         uiLayout = uiLayout,
                                         themeName = themeName,
+                                        dynamicPlayerColor = dynamicPlayerColor,
+                                        discStyle = discStyle,
+                                        waveStyle = waveStyle,
+                                        miniPlayerStyle = miniPlayerStyle,
+                                        headerStyle = headerStyle,
+                                        widgetStyle = widgetStyle,
                                         langSetting = langSetting,
                                         customBgUri = customBgUri,
                                         bgDimAlpha = bgDimAlpha,
+                                        cornerRadiusDp = cornerRadiusDp,
+                                        cardOpacity = cardOpacity,
+                                        borderWidthDp = borderWidthDp,
+                                        fontScale = fontScale,
+                                        bgAnimIntensity = bgAnimIntensity,
                                         shakeSkipEnabled = shakeSkipEnabled,
                                         crossfadeSec = crossfadeSec,
                                         sleepRemainingSec = sleepTimerRemainingSec,
                                         tracksPlayedStat = prefs.getInt("stat_tracks_played", 0),
                                         accent = primaryAccent,
-                                        cornerDp = cornerRadiusDp,
-                                        onOpenUiStudio = { showUiStudioSheet = true },
                                         onSelectLayout = {
                                             uiLayout = it
-                                            cardOpacity = if (it == "AMOLED Pure" || it == "Minimalist Zen") 0f else 0.28f
+                                            cardOpacity = if (it == "AMOLED Pure") 0f else 0.22f
                                             saveState()
                                         },
                                         onSelectTheme = { themeName = it; saveState() },
+                                        onToggleDynamicColor = { dynamicPlayerColor = !dynamicPlayerColor; saveState() },
+                                        onSelectDisc = { discStyle = it; saveState() },
+                                        onSelectWave = { waveStyle = it; saveState() },
+                                        onSelectMini = { miniPlayerStyle = it; saveState() },
+                                        onSelectHeader = { headerStyle = it; saveState() },
+                                        onSelectWidget = { widgetStyle = it; saveState() },
                                         onSelectLang = { langSetting = it; saveState() },
                                         onPickBg = { bgImagePicker.launch(arrayOf("image/*")) },
                                         onClearBg = { customBgUri = null; saveState() },
                                         onChangeDim = { bgDimAlpha = it; saveState() },
+                                        onChangeCorner = { cornerRadiusDp = it; saveState() },
+                                        onChangeOpacity = { cardOpacity = it; saveState() },
+                                        onChangeBorder = { borderWidthDp = it; saveState() },
+                                        onChangeFont = { fontScale = it; saveState() },
+                                        onChangeAnimIntensity = { bgAnimIntensity = it; saveState() },
                                         onToggleShake = { shakeSkipEnabled = !shakeSkipEnabled; saveState() },
                                         onChangeCrossfade = { crossfadeSec = it; saveState() },
                                         onOpenSleep = { showSleepDialog = true },
                                         onPinWidget = { requestPinHomeWidget() },
                                         onRequestResetSection = { pendingResetSection = it },
-                                        onBackup = { backupLauncher.launch("vyro_promax_backup.json") },
+                                        onBackup = { backupLauncher.launch("vyro_royal_backup.json") },
                                         onRestore = { restoreLauncher.launch(arrayOf("application/json", "*/*")) }
                                     )
                                 }
@@ -1833,10 +1727,10 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                         Column(
                                             Modifier
                                                 .fillMaxWidth()
-                                                .padding(bottom = 8.dp)
+                                                .padding(bottom = 10.dp)
                                                 .clip(RoundedCornerShape(cornerRadiusDp.dp))
-                                                .background(Color(0xFF10121E).copy(alpha = 0.92f))
-                                                .border(1.dp, primaryAccent.copy(alpha = 0.40f), RoundedCornerShape(cornerRadiusDp.dp))
+                                                .background(Color(0xFF101322).copy(alpha = 0.94f))
+                                                .border(1.dp, primaryAccent.copy(alpha = 0.35f), RoundedCornerShape(cornerRadiusDp.dp))
                                                 .padding(10.dp),
                                             verticalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
@@ -1847,7 +1741,7 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                                     value = query,
                                                     onValueChange = { query = it },
                                                     modifier = Modifier.weight(1f),
-                                                    placeholder = { Text(strings.searchHint, color = mutedText, fontSize = 12.sp) },
+                                                    placeholder = { Text("ابحث عن أغنية أو فنان أو ألبوم...", color = mutedText, fontSize = 12.sp) },
                                                     singleLine = true,
                                                     shape = RoundedCornerShape(12.dp)
                                                 )
@@ -1873,15 +1767,18 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                                             ) {
                                                 listOf(
-                                                    "TITLE" to "A-Z",
-                                                    "ARTIST" to "Artist",
-                                                    "DURATION" to "Duration",
-                                                    "NEWEST" to "Newest",
-                                                    "FAV" to "❤ Favorites"
+                                                    "TITLE" to "أبجدي A-Z",
+                                                    "ARTIST" to "الفنان",
+                                                    "DURATION" to "الأطول",
+                                                    "NEWEST" to "الأحدث",
+                                                    "FAV" to "❤ المفضلة"
                                                 ).forEach { (key, label) ->
                                                     FilterChip(
                                                         selected = sortBy == key,
-                                                        onClick = { sortBy = key; saveState() },
+                                                        onClick = {
+                                                            sortBy = if (sortBy == key && key != "TITLE") "TITLE" else key
+                                                            saveState()
+                                                        },
                                                         label = { Text(label, fontSize = 11.sp) }
                                                     )
                                                 }
@@ -1889,46 +1786,51 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                         }
                                     }
 
-                                    // شريط علوي سريع للتبديل بين الـ 12 ثيم والـ 8 أشكال واجهة مباشرة
+                                    // شريط أنيق ومختصر للوصول السريع للمفضلة واستوديو الصور والـ 8D
                                     Row(
                                         Modifier
                                             .fillMaxWidth()
-                                            .padding(bottom = 6.dp)
+                                            .padding(bottom = 8.dp)
                                             .horizontalScroll(rememberScrollState()),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Box(
-                                            Modifier
-                                                .clip(RoundedCornerShape(50))
-                                                .background(Color(0xFFFFC857).copy(alpha = 0.18f))
-                                                .border(1.dp, Color(0xFFFFC857).copy(alpha = 0.6f), RoundedCornerShape(50))
-                                                .clickable { showUiStudioSheet = true }
-                                                .padding(horizontal = 10.dp, vertical = 4.dp)
-                                        ) {
-                                            Text("🎨 استوديو الواجهة والثيمات", color = Color(0xFFFFC857), fontSize = 10.sp, fontWeight = FontWeight.Black)
-                                        }
-                                        ALL_THEMES.forEach { (id, label) ->
-                                            val active = themeName == id
-                                            Box(
-                                                Modifier
-                                                    .clip(RoundedCornerShape(50))
-                                                    .background(if (active) primaryAccent.copy(alpha = 0.24f) else Color.White.copy(alpha = 0.06f))
-                                                    .border(1.dp, if (active) primaryAccent else Color.Transparent, RoundedCornerShape(50))
-                                                    .clickable {
-                                                        themeName = id
-                                                        saveState()
-                                                    }
-                                                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                                            ) {
-                                                Text(
-                                                    label,
-                                                    color = if (active) primaryAccent else Color.White,
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
+                                        QuickActionPill(
+                                            label = "🎨 معرض الواجهات والسمات",
+                                            active = false,
+                                            accent = Color(0xFFFFC857),
+                                            onClick = { showUiStudioSheet = true }
+                                        )
+                                        QuickActionPill(
+                                            label = if (spatial8DEnabled) "🎧 صوت 8D: مفعل" else "🎧 تفعيل صوت 8D",
+                                            active = spatial8DEnabled,
+                                            accent = primaryAccent,
+                                            onClick = {
+                                                spatial8DEnabled = !spatial8DEnabled
+                                                saveState()
                                             }
-                                        }
+                                        )
+                                        QuickActionPill(
+                                            label = "❤ المفضلة (${likedIds.size})",
+                                            active = sortBy == "FAV",
+                                            accent = Color(0xFFFF4D79),
+                                            onClick = {
+                                                sortBy = if (sortBy == "FAV") "TITLE" else "FAV"
+                                                saveState()
+                                            }
+                                        )
+                                        QuickActionPill(
+                                            label = "🔀 تشغيل عشوائي",
+                                            active = shuffle,
+                                            accent = primaryAccent,
+                                            onClick = {
+                                                if (sortedSongs.isNotEmpty()) {
+                                                    shuffle = true
+                                                    player.shuffleModeEnabled = true
+                                                    playQueue(sortedSongs.shuffled(), 0, 0L, true)
+                                                }
+                                            }
+                                        )
                                     }
 
                                     if (!permission) {
@@ -1974,7 +1876,7 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
                                         LazyColumn(
                                             verticalArrangement = Arrangement.spacedBy(
                                                 when (uiLayout) {
-                                                    "AMOLED Pure", "Minimalist Zen" -> 2.dp
+                                                    "AMOLED Pure" -> 2.dp
                                                     "Stadium Cards" -> 10.dp
                                                     else -> 7.dp
                                                 }
@@ -2008,11 +1910,221 @@ fun VyroUltraApp(player: Player, loadSongs: () -> List<Song>) {
     }
 }
 
-// محرك رسم الخلفيات الحية (استاد كرة القدم، البحر والفقاقيع، أضواء النيون، الفضاء، الماتريكس)
+// معرض البطاقات المصورة (تقلب في الصور وتشوف شكل الواجهة وتحت كل صورة زر "تحديد" أو "إلغاء التحديد")
+@Composable
+private fun VisualPreviewCarousel(
+    options: List<VisualOption>,
+    selectedId: String,
+    defaultId: String,
+    accent: Color,
+    onSelectOrToggle: (String) -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        options.forEach { opt ->
+            val isSelected = selectedId == opt.id
+            Column(
+                Modifier
+                    .width(154.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Color(0xFF121628).copy(alpha = 0.92f))
+                    .border(
+                        width = if (isSelected) 2.dp else 1.dp,
+                        color = if (isSelected) accent else Color.White.copy(alpha = 0.10f),
+                        shape = RoundedCornerShape(18.dp)
+                    )
+                    .clickable {
+                        val next = if (isSelected && opt.id != defaultId) defaultId else opt.id
+                        onSelectOrToggle(next)
+                    }
+                    .padding(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // صورة المعاينة الحية لشكل الخيار
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(92.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Brush.linearGradient(listOf(opt.c1.copy(alpha = 0.35f), opt.c2))),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Canvas(Modifier.fillMaxSize().padding(10.dp)) {
+                        val w = size.width
+                        val h = size.height
+                        when (opt.previewKind) {
+                            "LAYOUT_GLASS", "LAYOUT_COMPACT", "LAYOUT_AMOLED" -> {
+                                for (r in 0..2) {
+                                    val y = r * (h / 3f) + 4f
+                                    drawRoundRect(
+                                        color = if (opt.previewKind == "LAYOUT_AMOLED") Color.White.copy(alpha = 0.10f) else opt.c1.copy(alpha = 0.45f),
+                                        topLeft = Offset(0f, y),
+                                        size = Size(w, h / 3.8f),
+                                        cornerRadius = CornerRadius(10f, 10f)
+                                    )
+                                }
+                            }
+                            "LAYOUT_GRID2", "LAYOUT_GRID3" -> {
+                                val cols = if (opt.previewKind == "LAYOUT_GRID3") 3 else 2
+                                val cellW = (w - (cols - 1) * 8f) / cols
+                                for (c in 0 until cols) {
+                                    drawRoundRect(
+                                        color = opt.c1.copy(alpha = 0.55f),
+                                        topLeft = Offset(c * (cellW + 8f), 4f),
+                                        size = Size(cellW, h - 8f),
+                                        cornerRadius = CornerRadius(12f, 12f)
+                                    )
+                                }
+                            }
+                            "LAYOUT_CAPSULE", "WIDGET_CAPSULE" -> {
+                                drawRoundRect(
+                                    color = opt.c1.copy(alpha = 0.55f),
+                                    topLeft = Offset(4f, h * 0.25f),
+                                    size = Size(w - 8f, h * 0.5f),
+                                    cornerRadius = CornerRadius(50f, 50f)
+                                )
+                            }
+                            "THEME_STADIUM", "LAYOUT_STADIUM", "DISC_CREST" -> {
+                                drawRect(
+                                    color = Color.White.copy(alpha = 0.35f),
+                                    topLeft = Offset(6f, 6f),
+                                    size = Size(w - 12f, h - 12f),
+                                    style = Stroke(width = 2.5f)
+                                )
+                                drawCircle(
+                                    color = opt.c1,
+                                    radius = h * 0.26f,
+                                    center = Offset(w / 2f, h / 2f),
+                                    style = Stroke(width = 3f)
+                                )
+                            }
+                            "THEME_OCEAN" -> {
+                                for (b in 0..4) {
+                                    drawCircle(
+                                        color = opt.c1.copy(alpha = 0.65f),
+                                        radius = 6f + b * 2f,
+                                        center = Offset((w / 5f) * b + 12f, h * (0.7f - b * 0.1f)),
+                                        style = Stroke(width = 2f)
+                                    )
+                                }
+                            }
+                            "WIDGET_SQUARE", "DISC_SQUARE" -> {
+                                val side = minOf(w, h) * 0.78f
+                                drawRoundRect(
+                                    color = opt.c1.copy(alpha = 0.65f),
+                                    topLeft = Offset((w - side) / 2f, (h - side) / 2f),
+                                    size = Size(side, side),
+                                    cornerRadius = CornerRadius(16f, 16f)
+                                )
+                            }
+                            "WIDGET_WIDE", "MINI_BAR", "MINI_PILL", "MINI_DOCK" -> {
+                                drawRoundRect(
+                                    color = opt.c1.copy(alpha = 0.65f),
+                                    topLeft = Offset(4f, h * 0.28f),
+                                    size = Size(w - 8f, h * 0.44f),
+                                    cornerRadius = CornerRadius(18f, 18f)
+                                )
+                            }
+                            "WAVE_BARS" -> {
+                                val bars = 10
+                                val bw = w / bars
+                                for (i in 0 until bars) {
+                                    val bh = h * (0.3f + (i % 3) * 0.2f)
+                                    drawRoundRect(
+                                        color = opt.c1,
+                                        topLeft = Offset(i * bw + 3f, (h - bh) / 2f),
+                                        size = Size(bw - 6f, bh),
+                                        cornerRadius = CornerRadius(6f, 6f)
+                                    )
+                                }
+                            }
+                            else -> {
+                                drawCircle(
+                                    color = opt.c1.copy(alpha = 0.75f),
+                                    radius = h * 0.34f,
+                                    center = Offset(w / 2f, h / 2f)
+                                )
+                                drawCircle(
+                                    color = Color.White,
+                                    radius = h * 0.10f,
+                                    center = Offset(w / 2f, h / 2f)
+                                )
+                            }
+                        }
+                    }
+                    if (isSelected) {
+                        Box(
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(6.dp)
+                                .size(20.dp)
+                                .background(accent, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Check, null, tint = Color.Black, modifier = Modifier.size(13.dp))
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(6.dp))
+                Text(opt.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(opt.subtitle, color = Color(0xFF9EA6C0), fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(7.dp))
+
+                // زر "تحديد" أو "إلغاء التحديد" تحت كل صورة معاينة مباشرة
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isSelected) accent else Color.White.copy(alpha = 0.08f))
+                        .padding(vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (isSelected) "✓ مُحدد (إلغاء)" else "تحديد",
+                        color = if (isSelected) Color.Black else Color.White,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickActionPill(
+    label: String,
+    active: Boolean,
+    accent: Color,
+    onClick: () -> Unit
+) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (active) accent.copy(alpha = 0.24f) else Color(0xFF141828).copy(alpha = 0.85f))
+            .border(1.dp, if (active) accent else accent.copy(alpha = 0.30f), RoundedCornerShape(50))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Text(
+            label,
+            color = if (active) accent else Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
 @Composable
 private fun AnimatedThemeBackdrop(
     themeName: String,
     accent: Color,
+    secondaryAccent: Color,
     intensity: Float,
     playing: Boolean
 ) {
@@ -2036,8 +2148,30 @@ private fun AnimatedThemeBackdrop(
         val alphaMul = intensity.coerceIn(0.1f, 1f)
 
         when (themeName) {
+            "Dynamic Cover Aura" -> {
+                val swayX = sin(phase) * w * 0.14f
+                val swayY = cos(phase) * h * 0.08f
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        listOf(accent.copy(alpha = 0.34f * alphaMul), Color.Transparent),
+                        center = Offset(w * 0.30f + swayX, h * 0.24f + swayY),
+                        radius = w * 0.75f
+                    ),
+                    center = Offset(w * 0.30f + swayX, h * 0.24f + swayY),
+                    radius = w * 0.75f
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        listOf(secondaryAccent.copy(alpha = 0.28f * alphaMul), Color.Transparent),
+                        center = Offset(w * 0.75f - swayX, h * 0.68f - swayY),
+                        radius = w * 0.75f
+                    ),
+                    center = Offset(w * 0.75f - swayX, h * 0.68f - swayY),
+                    radius = w * 0.75f
+                )
+            }
+
             "Stadium Champions", "Camp Blaugrana", "Red Devil Arena" -> {
-                // 1. تقسيمات عشب ملعب كرة القدم
                 val stripes = 10
                 val stripeH = h / stripes
                 for (i in 0 until stripes) {
@@ -2053,7 +2187,6 @@ private fun AnimatedThemeBackdrop(
                     )
                 }
 
-                // 2. خطوط الملعب البيضاء ودائرة المنتصف ومنطقة الجزاء
                 val lineColor = Color.White.copy(alpha = 0.14f * alphaMul)
                 val stroke = Stroke(width = 3f)
                 drawRect(
@@ -2074,26 +2207,7 @@ private fun AnimatedThemeBackdrop(
                     center = Offset(w * 0.5f, h * 0.5f),
                     style = stroke
                 )
-                drawCircle(
-                    color = accent.copy(alpha = 0.25f * alphaMul),
-                    radius = 6f,
-                    center = Offset(w * 0.5f, h * 0.5f)
-                )
-                // منطقة الجزاء العلوية والسفلية
-                drawRect(
-                    color = lineColor,
-                    topLeft = Offset(w * 0.25f, h * 0.08f),
-                    size = Size(w * 0.5f, h * 0.14f),
-                    style = stroke
-                )
-                drawRect(
-                    color = lineColor,
-                    topLeft = Offset(w * 0.25f, h * 0.78f),
-                    size = Size(w * 0.5f, h * 0.14f),
-                    style = stroke
-                )
 
-                // 3. كشافات الاستاد المضيئة والمتحركة من الزوايا العليا
                 val sway = sin(phase) * (w * 0.12f)
                 drawCircle(
                     brush = Brush.radialGradient(
@@ -2104,19 +2218,9 @@ private fun AnimatedThemeBackdrop(
                     center = Offset(w * 0.15f + sway, h * 0.08f),
                     radius = w * 0.65f
                 )
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        listOf(Color.White.copy(alpha = 0.20f * alphaMul), Color.Transparent),
-                        center = Offset(w * 0.85f - sway, h * 0.08f),
-                        radius = w * 0.65f
-                    ),
-                    center = Offset(w * 0.85f - sway, h * 0.08f),
-                    radius = w * 0.65f
-                )
             }
 
             "Ocean Bubbles" -> {
-                // 1. أمواج البحر المتحركة
                 for (layer in 0..2) {
                     val wavePath = Path()
                     val baseY = h * (0.35f + layer * 0.22f)
@@ -2137,7 +2241,6 @@ private fun AnimatedThemeBackdrop(
                     )
                 }
 
-                // 2. الفقاقيع المائية المتصاعدة
                 val bubbleCount = 24
                 for (b in 0 until bubbleCount) {
                     val seedX = ((b * 37) % 100) / 100f
@@ -2152,17 +2255,10 @@ private fun AnimatedThemeBackdrop(
                         center = Offset(xPos, yPos),
                         style = Stroke(width = 2f)
                     )
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.14f * alphaMul),
-                        radius = radius * 0.35f,
-                        center = Offset(xPos - radius * 0.3f, yPos - radius * 0.3f)
-                    )
                 }
             }
 
-            "Cyber Neon City", "Phonk Drift Carbon" -> {
-                // خطوط ليزر نيون متقاطعة وشبكة سايبر
-                val secondaryNeon = if (themeName == "Cyber Neon City") Color(0xFF00F0FF) else Color(0xFFFF0055)
+            "Cyber Neon City" -> {
                 val lines = 12
                 for (i in 0 until lines) {
                     val progress = ((i.toFloat() / lines) + riseProgress * 0.25f) % 1f
@@ -2181,15 +2277,6 @@ private fun AnimatedThemeBackdrop(
                         radius = w * 0.6f
                     ),
                     center = Offset(w * 0.2f, h * (0.3f + 0.1f * sin(phase))),
-                    radius = w * 0.6f
-                )
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        listOf(secondaryNeon.copy(alpha = 0.24f * alphaMul), Color.Transparent),
-                        center = Offset(w * 0.8f, h * (0.7f + 0.1f * cos(phase))),
-                        radius = w * 0.6f
-                    ),
-                    center = Offset(w * 0.8f, h * (0.7f + 0.1f * cos(phase))),
                     radius = w * 0.6f
                 )
             }
@@ -2212,7 +2299,6 @@ private fun AnimatedThemeBackdrop(
             }
 
             else -> {
-                // جزيئات ملكية ذهبية / نجوم الفضاء / الشفق القطبي
                 val particles = 22
                 for (p in 0 until particles) {
                     val px = (((p * 43) % 100) / 100f) * w + sin(phase + p) * 14f
@@ -2239,7 +2325,7 @@ private fun SectionHeaderWithReset(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(title, color = accent, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+        Text(title, color = accent, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
         ResetChipButton(accent = accent, label = "↺ افتراضي", onClick = onResetClick)
     }
 }
@@ -2256,7 +2342,7 @@ private fun ResetChipButton(
             .background(accent.copy(alpha = 0.14f))
             .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(50))
             .clickable(onClick = onClick)
-            .padding(horizontal = 9.dp, vertical = 3.dp)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
     ) {
         Text(label, color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
     }
@@ -2285,10 +2371,10 @@ private fun SleekMiniPlayerPill(
             .fillMaxWidth()
             .padding(horizontal = horizontalPad, vertical = 4.dp)
             .clip(RoundedCornerShape(shapeRadius))
-            .background(Color(0xFF0A0C16).copy(alpha = 0.90f))
+            .background(Color(0xFF0B0E1B).copy(alpha = 0.94f))
             .border(
-                width = if (miniStyle == "Neon Dock") 1.5.dp else 1.dp,
-                color = accent.copy(alpha = if (miniStyle == "Neon Dock") 0.75f else 0.40f),
+                width = if (miniStyle == "Neon Dock") 1.6.dp else 1.dp,
+                color = accent.copy(alpha = if (miniStyle == "Neon Dock") 0.80f else 0.40f),
                 shape = RoundedCornerShape(shapeRadius)
             )
             .clickable(onClick = onOpen)
@@ -2323,7 +2409,7 @@ private fun SleekMiniPlayerPill(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(2.dp)
+                    .height(2.5.dp)
                     .clip(RoundedCornerShape(2.dp))
                     .background(Color.White.copy(alpha = 0.12f))
             ) {
@@ -2350,6 +2436,8 @@ private fun UltraNowPlayingScreen(
     sleepRemainingSec: Int,
     discStyle: String,
     waveStyle: String,
+    dynamicPlayerColor: Boolean,
+    spatial8DEnabled: Boolean,
     cornerDp: Int,
     loopA: Long,
     loopB: Long,
@@ -2362,6 +2450,8 @@ private fun UltraNowPlayingScreen(
     onToggleLike: () -> Unit,
     onToggleShuffle: () -> Unit,
     onCycleRepeat: () -> Unit,
+    onToggleDynamicColor: () -> Unit,
+    onToggle8D: () -> Unit,
     onToggleABLoop: () -> Unit,
     onOpenSleep: () -> Unit,
     onOpenLyrics: () -> Unit,
@@ -2386,7 +2476,17 @@ private fun UltraNowPlayingScreen(
         Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(top = 4.dp, bottom = 16.dp),
+            .clip(RoundedCornerShape(26.dp))
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        accent.copy(alpha = if (dynamicPlayerColor) 0.28f else 0.10f),
+                        palette.secondary.copy(alpha = if (dynamicPlayerColor) 0.16f else 0.05f),
+                        Color.Transparent
+                    )
+                )
+            )
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
@@ -2394,17 +2494,31 @@ private fun UltraNowPlayingScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(Color.White.copy(alpha = 0.08f))
-                    .clickable(onClick = onOpenUiStudio)
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.AutoAwesome, null, tint = accent, modifier = Modifier.size(13.dp))
-                Spacer(Modifier.width(5.dp))
-                Text("${discStyle.uppercase()} • تخصيص", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(if (dynamicPlayerColor) accent.copy(alpha = 0.24f) else Color.White.copy(alpha = 0.08f))
+                        .border(1.dp, if (dynamicPlayerColor) accent else Color.Transparent, RoundedCornerShape(50))
+                        .clickable(onClick = onToggleDynamicColor)
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        if (dynamicPlayerColor) "🎨 لون الغلاف التلقائي: مفعل" else "🎨 تفعيل لون الغلاف",
+                        color = if (dynamicPlayerColor) accent else Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.White.copy(alpha = 0.08f))
+                        .clickable(onClick = onOpenUiStudio)
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text("تغيير الشكل", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
             }
             IconButton(onClick = onOpenMenu, modifier = Modifier.size(32.dp)) {
                 Icon(Icons.Default.MoreVert, "More", tint = Color.White)
@@ -2415,7 +2529,7 @@ private fun UltraNowPlayingScreen(
 
         Box(
             Modifier
-                .size(235.dp)
+                .size(240.dp)
                 .pointerInput(Unit) {
                     var totalDrag = 0f
                     detectHorizontalDragGestures(
@@ -2429,14 +2543,24 @@ private fun UltraNowPlayingScreen(
                 },
             contentAlignment = Alignment.Center
         ) {
+            // هالة ضوئية خلف الغلاف بلون صورة الأغنية
+            Canvas(Modifier.fillMaxSize()) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        listOf(accent.copy(alpha = 0.42f), palette.secondary.copy(alpha = 0.18f), Color.Transparent)
+                    ),
+                    radius = size.minDimension / 1.9f
+                )
+            }
+
             when (discStyle) {
-                "Square Studio" -> {
+                "Dynamic Aura", "Square Studio" -> {
                     Box(
                         Modifier
-                            .size(220.dp)
-                            .clip(RoundedCornerShape(cornerDp.dp))
+                            .size(216.dp)
+                            .clip(RoundedCornerShape(28.dp))
                             .background(Color(0xFF121422))
-                            .border(2.dp, accent.copy(alpha = 0.65f), RoundedCornerShape(cornerDp.dp)),
+                            .border(2.5.dp, Brush.linearGradient(listOf(accent, palette.secondary)), RoundedCornerShape(28.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(Icons.Default.MusicNote, null, tint = accent, modifier = Modifier.size(64.dp))
@@ -2451,7 +2575,7 @@ private fun UltraNowPlayingScreen(
                 "Stadium Crest" -> {
                     Box(
                         Modifier
-                            .size(225.dp)
+                            .size(220.dp)
                             .clip(RoundedCornerShape(36.dp))
                             .background(Color(0xFF071F10))
                             .border(3.dp, accent, RoundedCornerShape(36.dp)),
@@ -2469,7 +2593,7 @@ private fun UltraNowPlayingScreen(
                 "Vinyl Spin" -> {
                     Box(
                         Modifier
-                            .size(225.dp)
+                            .size(222.dp)
                             .rotate(if (playing) spinAngle else 0f)
                             .clip(CircleShape)
                             .background(Color(0xFF0B0C12))
@@ -2494,10 +2618,6 @@ private fun UltraNowPlayingScreen(
                 else -> {
                     Canvas(Modifier.fillMaxSize()) {
                         val r = size.minDimension / 2f
-                        drawCircle(
-                            brush = Brush.radialGradient(listOf(palette.dominant.copy(alpha = 0.42f), Color.Transparent)),
-                            radius = r
-                        )
                         drawCircle(color = accent, radius = r * 0.88f, style = Stroke(width = 4f))
                     }
                     Box(Modifier.size(195.dp).clip(CircleShape).background(Color(0xFF121422)), contentAlignment = Alignment.Center) {
@@ -2512,7 +2632,7 @@ private fun UltraNowPlayingScreen(
             }
         }
 
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(12.dp))
 
         if (waveStyle != "Hidden") {
             Canvas(
@@ -2542,7 +2662,7 @@ private fun UltraNowPlayingScreen(
                                 val amp = if (playing) (size.height * 0.42f * sin(pulsePhase + i * 0.25f)) else 2f
                                 path2.lineTo(x, midY - amp)
                             }
-                            drawPath(path2, color = palette.dominant.copy(alpha = 0.65f), style = Stroke(width = 3f))
+                            drawPath(path2, color = palette.secondary.copy(alpha = 0.75f), style = Stroke(width = 3f))
                         }
                     }
                     "Pulse Dots" -> {
@@ -2551,7 +2671,7 @@ private fun UltraNowPlayingScreen(
                         for (i in 0 until dots) {
                             val f = if (playing) abs(sin(pulsePhase + i * 0.35f)) else 0.25f
                             drawCircle(
-                                color = if (i % 2 == 0) accent else palette.dominant,
+                                color = if (i % 2 == 0) accent else palette.secondary,
                                 radius = (4f + 6f * f),
                                 center = Offset(i * space + space / 2f, size.height / 2f)
                             )
@@ -2564,7 +2684,7 @@ private fun UltraNowPlayingScreen(
                             val animFactor = if (playing) abs(sin(pulsePhase + i * 0.42f)) else 0.20f
                             val barH = (size.height * (0.18f + 0.78f * animFactor)).coerceAtLeast(5f)
                             drawRoundRect(
-                                color = if (i % 2 == 0) accent else palette.dominant,
+                                color = if (i % 2 == 0) accent else palette.secondary,
                                 topLeft = Offset(i * space + 2f, (size.height - barH) / 2f),
                                 size = Size((space - 4f).coerceAtLeast(3f), barH),
                                 cornerRadius = CornerRadius(6f, 6f)
@@ -2583,7 +2703,7 @@ private fun UltraNowPlayingScreen(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(song.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${song.artist} • ${song.album}", color = Color(0xFFA5A9C0), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${song.artist} • ${song.album}", color = Color(0xFFB5B9D0), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             IconButton(onClick = onToggleLike) {
                 Icon(if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Like", tint = if (isLiked) accent else Color.White)
@@ -2602,12 +2722,12 @@ private fun UltraNowPlayingScreen(
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(formatTime(position), color = Color(0xFFA5A9C0), fontSize = 11.sp)
-                    val abStatus = when {
+                    val centerTag = when {
                         loopA >= 0L && loopB >= 0L -> "A-B LOOP (${formatTime(loopA)}-${formatTime(loopB)})"
-                        loopA >= 0L -> "A SET (${formatTime(loopA)}) • TAP FOR B"
-                        else -> "HI-RES 24-BIT DSP"
+                        spatial8DEnabled -> "🎧 8D SPATIAL SURROUND ACTIVE"
+                        else -> "PURE HI-FI • ANTI-CLIPPING"
                     }
-                    Text(abStatus, color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(centerTag, color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Text(formatTime(duration), color = Color(0xFFA5A9C0), fontSize = 11.sp)
                 }
             }
@@ -2631,7 +2751,7 @@ private fun UltraNowPlayingScreen(
                     onClick = onTogglePlay,
                     modifier = Modifier
                         .size(68.dp)
-                        .background(Brush.linearGradient(listOf(accent, palette.dominant)), CircleShape)
+                        .background(Brush.linearGradient(listOf(accent, palette.secondary)), CircleShape)
                 ) {
                     Icon(
                         if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -2660,13 +2780,18 @@ private fun UltraNowPlayingScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             AssistChip(
+                onClick = onToggle8D,
+                label = { Text(if (spatial8DEnabled) "8D محيطي: مفعل" else "تفعيل 8D محيطي", fontSize = 11.sp) },
+                leadingIcon = { Icon(Icons.Default.Headphones, null, tint = accent, modifier = Modifier.size(15.dp)) }
+            )
+            AssistChip(
                 onClick = onToggleABLoop,
-                label = { Text(if (loopA >= 0L) "A-B Active" else "A-B Loop", fontSize = 11.sp) },
+                label = { Text(if (loopA >= 0L) "تكرار A-B مفعل" else "تكرار مقطع A-B", fontSize = 11.sp) },
                 leadingIcon = { Icon(Icons.Default.Repeat, null, tint = accent, modifier = Modifier.size(15.dp)) }
             )
             AssistChip(
                 onClick = onOpenLyrics,
-                label = { Text("Lyrics LRC", fontSize = 11.sp) },
+                label = { Text("الكلمات LRC", fontSize = 11.sp) },
                 leadingIcon = { Icon(Icons.Default.Lyrics, null, tint = accent, modifier = Modifier.size(15.dp)) }
             )
             AssistChip(
@@ -2674,7 +2799,7 @@ private fun UltraNowPlayingScreen(
                 label = {
                     Text(
                         if (sleepRemainingSec > 0) "${sleepRemainingSec / 60}:${"%02d".format(sleepRemainingSec % 60)}"
-                        else "Sleep Timer",
+                        else "مؤقت النوم",
                         fontSize = 11.sp
                     )
                 },
@@ -2693,6 +2818,8 @@ private fun UltraDspStudioScreen(
     loudnessGain: Int,
     playbackSpeed: Float,
     playbackPitch: Float,
+    antiClipping: Boolean,
+    spatial8D: Boolean,
     accent: Color,
     cornerDp: Int,
     onSelectPreset: (String) -> Unit,
@@ -2702,30 +2829,74 @@ private fun UltraDspStudioScreen(
     onLoudnessChange: (Int) -> Unit,
     onSpeedChange: (Float) -> Unit,
     onPitchChange: (Float) -> Unit,
+    onToggleAntiClipping: () -> Unit,
+    onToggle8D: () -> Unit,
     onRequestResetDsp: () -> Unit,
     onOpenSystemEq: () -> Unit
 ) {
     val freqLabels = listOf("60Hz", "230Hz", "910Hz", "3.6kHz", "14kHz")
-    val cardBg = Color(0xFF0E101C).copy(alpha = 0.78f)
+    val cardBg = Color(0xFF0E1120).copy(alpha = 0.85f)
 
     Column(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(bottom = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        SectionHeaderWithReset("معادل الصوت الاحترافي (DSP Equalizer)", accent, onRequestResetDsp)
+        SectionHeaderWithReset("استوديو الصوت النقي والـ 8D المحيطي", accent, onRequestResetDsp)
 
+        // بطاقة منع الغروشة + الصوت المحيطي 8D
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(cornerDp.dp))
+                    .background(if (antiClipping) accent.copy(alpha = 0.18f) else cardBg)
+                    .border(1.dp, if (antiClipping) accent else Color.White.copy(alpha = 0.10f), RoundedCornerShape(cornerDp.dp))
+                    .clickable(onClick = onToggleAntiClipping)
+                    .padding(12.dp)
+            ) {
+                Icon(Icons.Default.Verified, null, tint = if (antiClipping) accent else Color.White)
+                Spacer(Modifier.height(6.dp))
+                Text("مانع الغروشة الذكي", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text(if (antiClipping) "مفعل • صوت نقي 100%" else "متوقف", color = Color(0xFFA6B0C9), fontSize = 10.sp)
+            }
+
+            Column(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(cornerDp.dp))
+                    .background(if (spatial8D) Color(0xFFFFC857).copy(alpha = 0.18f) else cardBg)
+                    .border(1.dp, if (spatial8D) Color(0xFFFFC857) else Color.White.copy(alpha = 0.10f), RoundedCornerShape(cornerDp.dp))
+                    .clickable(onClick = onToggle8D)
+                    .padding(12.dp)
+            ) {
+                Icon(Icons.Default.Headphones, null, tint = if (spatial8D) Color(0xFFFFC857) else Color.White)
+                Spacer(Modifier.height(6.dp))
+                Text("صوت محيطي 8D", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text(if (spatial8D) "مفعل • دوران 360°" else "اضغط للتفعيل", color = Color(0xFFA6B0C9), fontSize = 10.sp)
+            }
+        }
+
+        // أوضاع الصوت الذكية (الضغط مرة ثانية يلغي التحديد ويرجع للوضع الافتراضي)
+        Text("أوضاع الاستماع الذكية (اضغط للتحديد أو الإلغاء)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Row(
             Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf("Phonk Master", "Bass Extreme", "VIP Studio", "Vocal Crystal", "Flat").forEach { preset ->
+            listOf(
+                "Pure Hi-Fi" to "✨ Pure Hi-Fi",
+                "Clean Phonk" to "🔥 Clean Phonk",
+                "Gym Beast" to "💪 Gym Beast",
+                "Vocal Studio" to "🎤 Vocal Studio",
+                "Night Chill" to "🌙 Night Chill",
+                "Flat" to "Flat 0dB"
+            ).forEach { (id, label) ->
                 FilterChip(
-                    selected = eqPreset == preset,
-                    onClick = { onSelectPreset(preset) },
-                    label = { Text(preset, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                    selected = eqPreset == id,
+                    onClick = { onSelectPreset(id) },
+                    label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
                 )
             }
         }
@@ -2749,7 +2920,7 @@ private fun UltraDspStudioScreen(
                             modifier = Modifier.weight(1f),
                             colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent)
                         )
-                        Text("${(gain * 15).toInt()}dB", color = accent, fontSize = 11.sp, modifier = Modifier.width(40.dp), textAlign = TextAlign.End)
+                        Text("${(gain * 12).toInt()}dB", color = accent, fontSize = 11.sp, modifier = Modifier.width(40.dp), textAlign = TextAlign.End)
                     }
                 }
             }
@@ -2762,7 +2933,7 @@ private fun UltraDspStudioScreen(
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text("SUB-BASS OVERDRIVE ($bassStrength%)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("CLEAN SUB-BASS ($bassStrength%)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 Slider(
                     value = bassStrength.toFloat(),
                     onValueChange = { onBassChange(it.toInt()) },
@@ -2770,7 +2941,7 @@ private fun UltraDspStudioScreen(
                     colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent)
                 )
 
-                Text("3D PRE-AMP LOUDNESS BOOST (+${(loudnessGain * 0.1f).toInt()} dB)", color = Color(0xFFFFC857), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("PRE-AMP GAIN (+${(loudnessGain * 0.08f).toInt()} dB • 0% أنقى صوت)", color = Color(0xFFFFC857), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 Slider(
                     value = loudnessGain.toFloat(),
                     onValueChange = { onLoudnessChange(it.toInt()) },
@@ -2778,7 +2949,7 @@ private fun UltraDspStudioScreen(
                     colors = SliderDefaults.colors(thumbColor = Color(0xFFFFC857), activeTrackColor = Color(0xFFFFC857))
                 )
 
-                Text("SPATIAL 3D VIRTUALIZER ($virtualizerStrength%)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("3D SURROUND STAGE ($virtualizerStrength%)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 Slider(
                     value = virtualizerStrength.toFloat(),
                     onValueChange = { onVirtChange(it.toInt()) },
@@ -2799,10 +2970,10 @@ private fun UltraDspStudioScreen(
                     Text("Reset 1.0x", color = accent, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onSpeedChange(1f); onPitchChange(1f) })
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { onSpeedChange(0.84f); onPitchChange(0.86f) }) {
+                    OutlinedButton(onClick = { onSpeedChange(0.85f); onPitchChange(0.88f) }) {
                         Text("Slowed + Phonk", color = accent, fontSize = 11.sp)
                     }
-                    OutlinedButton(onClick = { onSpeedChange(1.18f); onPitchChange(1.14f) }) {
+                    OutlinedButton(onClick = { onSpeedChange(1.16f); onPitchChange(1.12f) }) {
                         Text("Nightcore", color = Color.White, fontSize = 11.sp)
                     }
                 }
@@ -2813,14 +2984,13 @@ private fun UltraDspStudioScreen(
         OutlinedButton(onClick = onOpenSystemEq, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Default.Speaker, null, tint = accent)
             Spacer(Modifier.width(8.dp))
-            Text("Dolby Atmos / System Audio Panel", color = Color.White, fontSize = 12.sp)
+            Text("فتح إعدادات Dolby Atmos للهاتف", color = Color.White, fontSize = 12.sp)
         }
     }
 }
 
 @Composable
 private fun SmartPlaylistsScreen(
-    strings: Strings,
     songs: List<Song>,
     likedIds: Set<Long>,
     recentIds: List<Long>,
@@ -2842,27 +3012,27 @@ private fun SmartPlaylistsScreen(
 ) {
     if (activeView == null) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(strings.playlists, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
-            TextButton(onClick = onCreateNew) { Text(strings.newPlaylist, color = accent, fontWeight = FontWeight.Bold) }
+            Text("القوائم والألبومات", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
+            TextButton(onClick = onCreateNew) { Text("+ قائمة جديدة", color = accent, fontWeight = FontWeight.Bold) }
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
-                FeatureTile(strings.likedSongs, "${likedIds.size} ${strings.tracksCount}", Icons.Default.Favorite, accent, cornerDp) {
+                FeatureTile("الأغاني المفضلة", "${likedIds.size} مقطع", Icons.Default.Favorite, accent, cornerDp) {
                     onChangeView("__LIKED__")
                 }
             }
             item {
-                FeatureTile(strings.mostPlayed, "${playCounts.size} ${strings.tracksCount}", Icons.Default.Star, Color(0xFFFFC857), cornerDp) {
+                FeatureTile("الأكثر استماعاً", "${playCounts.size} مقطع", Icons.Default.Star, Color(0xFFFFC857), cornerDp) {
                     onChangeView("__MOST_PLAYED__")
                 }
             }
             item {
-                FeatureTile(strings.recentlyPlayed, "${recentIds.size} ${strings.tracksCount}", Icons.Default.History, accent, cornerDp) {
+                FeatureTile("تم تشغيلها مؤخراً", "${recentIds.size} مقطع", Icons.Default.History, accent, cornerDp) {
                     onChangeView("__RECENT__")
                 }
             }
             item {
-                FeatureTile(strings.albums, "${songs.map { it.album }.distinct().size} ${strings.albums}", Icons.Default.Album, accent, cornerDp) {
+                FeatureTile("الألبومات", "${songs.map { it.album }.distinct().size} ألبوم", Icons.Default.Album, accent, cornerDp) {
                     onChangeView("__ALBUMS__")
                 }
             }
@@ -2870,7 +3040,7 @@ private fun SmartPlaylistsScreen(
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF0E101C).copy(alpha = 0.72f), RoundedCornerShape(cornerDp.dp))
+                        .background(Color(0xFF0E101C).copy(alpha = 0.78f), RoundedCornerShape(cornerDp.dp))
                         .clickable { onChangeView(entry.key) }
                         .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -2879,7 +3049,7 @@ private fun SmartPlaylistsScreen(
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(entry.key, color = Color.White, fontWeight = FontWeight.Bold)
-                        Text("${entry.value.size} ${strings.tracksCount}", color = Color(0xFFA5A9C0), fontSize = 11.sp)
+                        Text("${entry.value.size} مقطع", color = Color(0xFFA5A9C0), fontSize = 11.sp)
                     }
                     IconButton(onClick = { onDeletePlaylist(entry.key) }) {
                         Icon(Icons.Default.Delete, "Delete", tint = Color(0xFFA5A9C0))
@@ -2890,7 +3060,7 @@ private fun SmartPlaylistsScreen(
     } else if (activeView == "__ALBUMS__") {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { onChangeView(null) }) { Icon(Icons.Default.ArrowBack, "Back", tint = Color.White) }
-            Text(strings.albums, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("الألبومات", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
         val albums = songs.groupBy { it.album }.entries.toList()
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2898,7 +3068,7 @@ private fun SmartPlaylistsScreen(
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF0E101C).copy(alpha = 0.72f), RoundedCornerShape(cornerDp.dp))
+                        .background(Color(0xFF0E101C).copy(alpha = 0.78f), RoundedCornerShape(cornerDp.dp))
                         .clickable { onSelectAlbum(entry.key) }
                         .padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -2907,7 +3077,7 @@ private fun SmartPlaylistsScreen(
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(entry.key, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
-                        Text("${entry.value.size} ${strings.tracksCount}", color = Color(0xFFA5A9C0), fontSize = 11.sp)
+                        Text("${entry.value.size} مقطع", color = Color(0xFFA5A9C0), fontSize = 11.sp)
                     }
                 }
             }
@@ -2929,7 +3099,7 @@ private fun SmartPlaylistsScreen(
                     song = song,
                     active = currentSongId == song.id,
                     isLiked = likedIds.contains(song.id),
-                    uiLayout = "AMOLED Pure",
+                    uiLayout = "Royal Glass",
                     accent = accent,
                     panel = panel,
                     cornerDp = cornerDp,
@@ -2943,27 +3113,47 @@ private fun SmartPlaylistsScreen(
     }
 }
 
+// شاشة الإعدادات والتخصيص الجديدة: كل قسم مفصول في بطاقة مستقلة تماماً مع صور المعاينة وزر "تحديد" وزر "افتراضي"
 @Composable
 private fun UltraSettingsScreen(
-    strings: Strings,
     uiLayout: String,
     themeName: String,
+    dynamicPlayerColor: Boolean,
+    discStyle: String,
+    waveStyle: String,
+    miniPlayerStyle: String,
+    headerStyle: String,
+    widgetStyle: String,
     langSetting: String,
     customBgUri: String?,
     bgDimAlpha: Float,
+    cornerRadiusDp: Int,
+    cardOpacity: Float,
+    borderWidthDp: Float,
+    fontScale: Float,
+    bgAnimIntensity: Float,
     shakeSkipEnabled: Boolean,
     crossfadeSec: Int,
     sleepRemainingSec: Int,
     tracksPlayedStat: Int,
     accent: Color,
-    cornerDp: Int,
-    onOpenUiStudio: () -> Unit,
     onSelectLayout: (String) -> Unit,
     onSelectTheme: (String) -> Unit,
+    onToggleDynamicColor: () -> Unit,
+    onSelectDisc: (String) -> Unit,
+    onSelectWave: (String) -> Unit,
+    onSelectMini: (String) -> Unit,
+    onSelectHeader: (String) -> Unit,
+    onSelectWidget: (String) -> Unit,
     onSelectLang: (String) -> Unit,
     onPickBg: () -> Unit,
     onClearBg: () -> Unit,
     onChangeDim: (Float) -> Unit,
+    onChangeCorner: (Int) -> Unit,
+    onChangeOpacity: (Float) -> Unit,
+    onChangeBorder: (Float) -> Unit,
+    onChangeFont: (Float) -> Unit,
+    onChangeAnimIntensity: (Float) -> Unit,
     onToggleShake: () -> Unit,
     onChangeCrossfade: (Int) -> Unit,
     onOpenSleep: () -> Unit,
@@ -2972,148 +3162,245 @@ private fun UltraSettingsScreen(
     onBackup: () -> Unit,
     onRestore: () -> Unit
 ) {
-    val cardBg = Color(0xFF0E101C).copy(alpha = 0.78f)
+    val cardBg = Color(0xFF0E1222).copy(alpha = 0.86f)
+    val cardShape = RoundedCornerShape(cornerRadiusDp.dp)
+
     Column(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(bottom = 26.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Button(
-            onClick = onOpenUiStudio,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(cornerDp.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = accent)
-        ) {
-            Icon(Icons.Default.Palette, null, tint = Color.Black)
-            Spacer(Modifier.width(8.dp))
-            Text(strings.uiStudioTitle, color = Color.Black, fontWeight = FontWeight.Black)
-        }
-
-        // زر إضافة التطبيق المصغر (Widget) للشاشة الرئيسية
-        FeatureTile(
-            title = "إضافة ويدجت VYRO للشاشة الرئيسية",
-            subtitle = "تطبيق مصغر تفاعلي على شاشة الهاتف للتحكم السريع",
-            icon = Icons.Default.Widgets,
-            accent = Color(0xFFFFC857),
-            cornerDp = cornerDp,
-            onClick = onPinWidget
-        )
-
-        Column(
-            Modifier.fillMaxWidth().background(cardBg, RoundedCornerShape(cornerDp.dp)).padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            SectionHeaderWithReset(strings.layoutSectionTitle, accent) {
+        // 1. بطاقة مستقلة: شكل تخطيط الواجهة (UI Layouts بالصور)
+        Column(Modifier.fillMaxWidth().background(cardBg, cardShape).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SectionHeaderWithReset("1. شكل تخطيط الواجهة (UI Layouts)", accent) {
                 onRequestResetSection("LAYOUT")
             }
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ALL_LAYOUTS.forEach { (id, label) ->
-                    FilterChip(selected = uiLayout == id, onClick = { onSelectLayout(id) }, label = { Text(label, fontSize = 11.sp) })
-                }
-            }
+            Text("اسحب بين الصور واضغط (تحديد) لتغيير شكل القائمة، أو اضغط مرة ثانية لإلغاء التحديد:", color = Color(0xFFA6B0C9), fontSize = 11.sp)
+            VisualPreviewCarousel(
+                options = LAYOUT_VISUAL_OPTIONS,
+                selectedId = uiLayout,
+                defaultId = "Royal Glass",
+                accent = accent,
+                onSelectOrToggle = onSelectLayout
+            )
+        }
 
-            SectionHeaderWithReset(strings.themeTitle, accent) {
+        // 2. بطاقة مستقلة: السمات والخلفيات الحية (Themes بالصور)
+        Column(Modifier.fillMaxWidth().background(cardBg, cardShape).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SectionHeaderWithReset("2. السمات الحية (استاد • بحر • نيون • غلاف)", accent) {
                 onRequestResetSection("THEME")
             }
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ALL_THEMES.forEach { (id, label) ->
-                    FilterChip(selected = themeName == id, onClick = { onSelectTheme(id) }, label = { Text(label, fontSize = 11.sp) })
+            VisualPreviewCarousel(
+                options = THEME_VISUAL_OPTIONS,
+                selectedId = themeName,
+                defaultId = "Dynamic Cover Aura",
+                accent = accent,
+                onSelectOrToggle = onSelectTheme
+            )
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White.copy(alpha = 0.05f))
+                    .clickable(onClick = onToggleDynamicColor)
+                    .padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("تلوين المشغل تلقائياً بلون صورة الأغنية", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("يتفاعل المشغل المصغر والكبير مع ألوان غلاف كل أغنية", color = Color(0xFFA6B0C9), fontSize = 10.sp)
+                }
+                Switch(checked = dynamicPlayerColor, onCheckedChange = { onToggleDynamicColor() })
+            }
+        }
+
+        // 3. بطاقة مستقلة: تخصيص ويدجت الشاشة الرئيسية (مربع 2x2 أو شريط طويل 4x1)
+        Column(Modifier.fillMaxWidth().background(cardBg, cardShape).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SectionHeaderWithReset("3. شكل وحجم ويدجت الشاشة الرئيسية", Color(0xFFFFC857)) {
+                onRequestResetSection("WIDGET")
+            }
+            Text("اختر شكل الويدجت (مربع 2x2 أو طويل عريض أو كبسولة) ويتفاعل لونه تلقائياً مع صورة الأغنية:", color = Color(0xFFA6B0C9), fontSize = 11.sp)
+            VisualPreviewCarousel(
+                options = WIDGET_VISUAL_OPTIONS,
+                selectedId = widgetStyle,
+                defaultId = "Auto Adaptive",
+                accent = Color(0xFFFFC857),
+                onSelectOrToggle = onSelectWidget
+            )
+            Button(
+                onClick = onPinWidget,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFC857))
+            ) {
+                Icon(Icons.Default.Widgets, null, tint = Color.Black)
+                Spacer(Modifier.width(8.dp))
+                Text("تثبيت الويدجت على الشاشة الرئيسية الآن", color = Color.Black, fontWeight = FontWeight.Black, fontSize = 12.sp)
+            }
+        }
+
+        // 4. بطاقة مستقلة: شكل قرص المشغل (Now Playing Disc)
+        Column(Modifier.fillMaxWidth().background(cardBg, cardShape).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SectionHeaderWithReset("4. شكل قرص المشغل (Now Playing Disc)", accent) {
+                onRequestResetSection("DISC")
+            }
+            VisualPreviewCarousel(
+                options = DISC_VISUAL_OPTIONS,
+                selectedId = discStyle,
+                defaultId = "Dynamic Aura",
+                accent = accent,
+                onSelectOrToggle = onSelectDisc
+            )
+        }
+
+        // 5. بطاقة مستقلة: شكل الموجات الصوتية (Visualizer)
+        Column(Modifier.fillMaxWidth().background(cardBg, cardShape).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SectionHeaderWithReset("5. شكل الموجات الصوتية (Visualizer)", accent) {
+                onRequestResetSection("WAVE")
+            }
+            VisualPreviewCarousel(
+                options = WAVE_VISUAL_OPTIONS,
+                selectedId = waveStyle,
+                defaultId = "Smooth Wave",
+                accent = accent,
+                onSelectOrToggle = onSelectWave
+            )
+        }
+
+        // 6. بطاقة مستقلة: شكل المشغل المصغر السفلي (Mini-Player)
+        Column(Modifier.fillMaxWidth().background(cardBg, cardShape).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SectionHeaderWithReset("6. شكل المشغل المصغر السفلي (Mini-Player)", accent) {
+                onRequestResetSection("MINI")
+            }
+            VisualPreviewCarousel(
+                options = MINI_VISUAL_OPTIONS,
+                selectedId = miniPlayerStyle,
+                defaultId = "Floating Pill",
+                accent = accent,
+                onSelectOrToggle = onSelectMini
+            )
+        }
+
+        // 7. بطاقة مستقلة: شكل الهيدر العلوي (Header Style)
+        Column(Modifier.fillMaxWidth().background(cardBg, cardShape).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionHeaderWithReset("7. شكل الهيدر العلوي", accent) {
+                onRequestResetSection("HEADER")
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Royal Clean" to "هيدر ملكي مدمج", "Centered VIP" to "هيدر عريض VIP").forEach { (id, label) ->
+                    FilterChip(
+                        selected = headerStyle == id,
+                        onClick = { onSelectHeader(if (headerStyle == id) "Royal Clean" else id) },
+                        label = { Text(label, fontSize = 11.sp) }
+                    )
                 }
             }
+        }
 
-            SectionHeaderWithReset("خلفية الهاتف الشخصية", Color.White) {
+        // 8. بطاقة مستقلة: خلفية الهاتف الشخصية (Custom Wallpaper)
+        Column(Modifier.fillMaxWidth().background(cardBg, cardShape).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionHeaderWithReset("8. خلفية الهاتف الشخصية (من الاستوديو)", accent) {
                 onRequestResetSection("WALLPAPER")
             }
             Button(
                 onClick = onPickBg,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.12f))
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.10f))
             ) {
                 Icon(Icons.Default.Wallpaper, null, tint = accent)
                 Spacer(Modifier.width(8.dp))
-                Text(strings.pickBgImage, color = Color.White, fontSize = 12.sp)
+                Text("اختيار صورة خلفية من الهاتف", color = Color.White, fontSize = 12.sp)
             }
             if (!customBgUri.isNullOrBlank()) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                     Column {
-                        Text("${strings.bgDimLevel}: ${(bgDimAlpha * 100).toInt()}%", color = Color.White, fontSize = 11.sp)
+                        Text("درجة تعتيم الصورة: ${(bgDimAlpha * 100).toInt()}%", color = Color.White, fontSize = 11.sp)
                         Slider(value = bgDimAlpha, onValueChange = onChangeDim, valueRange = 0.05f..0.85f)
                     }
                 }
                 OutlinedButton(onClick = onClearBg, modifier = Modifier.fillMaxWidth()) {
-                    Text(strings.clearBgImage, color = Color(0xFFFF5C5C), fontSize = 12.sp)
+                    Text("إلغاء خلفية الهاتف", color = Color(0xFFFF5C5C), fontSize = 12.sp)
                 }
             }
         }
 
-        Column(
-            Modifier.fillMaxWidth().background(cardBg, RoundedCornerShape(cornerDp.dp)).padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(strings.langTitle, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        // 9. بطاقة مستقلة: الأبعاد والشفافية الدقيقة
+        Column(Modifier.fillMaxWidth().background(cardBg, cardShape).padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            SectionHeaderWithReset("9. الأبعاد والشفافية الدقيقة", accent) {
+                onRequestResetSection("DIMENSIONS")
+            }
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Column {
+                    Text("قوة مؤثرات الخلفية (${(bgAnimIntensity * 100).toInt()}%)", color = Color(0xFFA6B0C9), fontSize = 11.sp)
+                    Slider(value = bgAnimIntensity, onValueChange = onChangeAnimIntensity, valueRange = 0f..1f)
+
+                    Text("استدارة الحواف (${cornerRadiusDp}dp)", color = Color(0xFFA6B0C9), fontSize = 11.sp)
+                    Slider(value = cornerRadiusDp.toFloat(), onValueChange = { onChangeCorner(it.toInt()) }, valueRange = 4f..32f)
+
+                    Text("شفافية البطاقات (${(cardOpacity * 100).toInt()}%)", color = Color(0xFFA6B0C9), fontSize = 11.sp)
+                    Slider(value = cardOpacity, onValueChange = onChangeOpacity, valueRange = 0f..0.70f)
+
+                    Text("سمك الإطارات (${"%.1f".format(borderWidthDp)}dp)", color = Color(0xFFA6B0C9), fontSize = 11.sp)
+                    Slider(value = borderWidthDp, onValueChange = onChangeBorder, valueRange = 0f..2.5f)
+
+                    Text("حجم الخط (${"%.2f".format(fontScale)}x)", color = Color(0xFFA6B0C9), fontSize = 11.sp)
+                    Slider(value = fontScale, onValueChange = onChangeFont, valueRange = 0.85f..1.25f)
+                }
+            }
+        }
+
+        // 10. بطاقة مستقلة: الأدوات والنسخ الاحتياطي واللغة
+        Column(Modifier.fillMaxWidth().background(cardBg, cardShape).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("10. اللغة والأدوات الذكية", color = accent, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(
-                    "SYSTEM" to strings.langSystem,
-                    "AR" to "العربية",
-                    "EN" to "English",
-                    "FR" to "Français",
-                    "ES" to "Español",
-                    "DE" to "Deutsch",
-                    "IT" to "Italiano",
-                    "TR" to "Türkçe",
-                    "RU" to "Русский",
-                    "HI" to "हिन्दी"
-                ).forEach { (code, name) ->
+                listOf("AR" to "العربية", "EN" to "English", "FR" to "Français", "ES" to "Español", "DE" to "Deutsch", "TR" to "Türkçe").forEach { (code, name) ->
                     FilterChip(selected = langSetting == code, onClick = { onSelectLang(code) }, label = { Text(name, fontSize = 11.sp) })
                 }
             }
-        }
 
-        FeatureTile(
-            title = strings.shakeToSkip,
-            subtitle = if (shakeSkipEnabled) "ON • هز الموبايل يقلب الأغنية" else "OFF",
-            icon = Icons.Default.Vibration,
-            accent = accent,
-            cornerDp = cornerDp,
-            onClick = onToggleShake
-        )
+            FeatureTile(
+                title = "هز الهاتف لتغيير الأغنية (Shake-to-Skip)",
+                subtitle = if (shakeSkipEnabled) "مفعل • هز الموبايل ينقل للأغنية التالية" else "متوقف",
+                icon = Icons.Default.Vibration,
+                accent = accent,
+                cornerDp = cornerRadiusDp,
+                onClick = onToggleShake
+            )
 
-        FeatureTile(
-            title = strings.sleepTimer,
-            subtitle = if (sleepRemainingSec > 0) "${sleepRemainingSec / 60}m active" else "Fade-Out Timer",
-            icon = Icons.Default.Bedtime,
-            accent = accent,
-            cornerDp = cornerDp,
-            onClick = onOpenSleep
-        )
+            FeatureTile(
+                title = "مؤقت النوم التدريجي (Fade-Out)",
+                subtitle = if (sleepRemainingSec > 0) "متبقي ${sleepRemainingSec / 60} دقيقة" else "اضغط لضبط المؤقت",
+                icon = Icons.Default.Bedtime,
+                accent = accent,
+                cornerDp = cornerRadiusDp,
+                onClick = onOpenSleep
+            )
 
-        Column(Modifier.fillMaxWidth().background(cardBg, RoundedCornerShape(cornerDp.dp)).padding(12.dp)) {
-            Text("${strings.crossfade}: ${if (crossfadeSec == 0) "Off" else "$crossfadeSec sec"}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Text("الدمج السلس بين الأغاني (Crossfade: ${if (crossfadeSec == 0) "متوقف" else "$crossfadeSec ثوانٍ"})", color = Color.White, fontSize = 12.sp)
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Slider(value = crossfadeSec.toFloat(), onValueChange = { onChangeCrossfade(it.toInt()) }, valueRange = 0f..10f, steps = 9)
             }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onBackup, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.CloudUpload, null, tint = accent, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("حفظ نسخة JSON", color = Color.White, fontSize = 11.sp)
+                }
+                OutlinedButton(onClick = onRestore, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.CloudDownload, null, tint = accent, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("استعادة JSON", color = Color.White, fontSize = 11.sp)
+                }
+            }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onBackup, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.CloudUpload, null, tint = accent, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Export JSON", color = Color.White, fontSize = 11.sp)
-            }
-            OutlinedButton(onClick = onRestore, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.CloudDownload, null, tint = accent, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Import JSON", color = Color.White, fontSize = 11.sp)
-            }
-        }
-
-        // زر إعادة ضبط جميع إعدادات التطبيق للوضع الافتراضي مع نافذة تأكيد
         OutlinedButton(
             onClick = { onRequestResetSection("ALL") },
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(cornerDp.dp)
+            shape = cardShape
         ) {
             Icon(Icons.Default.RestartAlt, null, tint = Color(0xFFFF5C5C))
             Spacer(Modifier.width(8.dp))
@@ -3121,11 +3408,11 @@ private fun UltraSettingsScreen(
         }
 
         Text(
-            "VYRO MUSIC 3.1.0-PRO-MAX • BY MOHAMED TAREK • PLAYED: $tracksPlayedStat",
+            "VYRO MUSIC 3.2.0 ROYAL • BY MOHAMED TAREK • PLAYED: $tracksPlayedStat",
             color = Color(0xFF7E8299),
             fontSize = 10.sp,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
         )
     }
 }
@@ -3152,7 +3439,7 @@ private fun DriveGymModeScreen(
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("DRIVE & GYM MODE", color = accent, fontWeight = FontWeight.Black, fontSize = 16.sp)
-            OutlinedButton(onClick = onExit) { Text("Exit", color = Color.White) }
+            OutlinedButton(onClick = onExit) { Text("خروج", color = Color.White) }
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             AlbumArtThumb(song, accent, sizeDp = 150, cornerDp = 24)
@@ -3194,11 +3481,11 @@ private fun SongRow(
     onMore: () -> Unit
 ) {
     val isCompact = uiLayout == "Compact Pro"
-    val isAmoled = uiLayout == "AMOLED Pure" || uiLayout == "Minimalist Zen"
+    val isAmoled = uiLayout == "AMOLED Pure"
     val isCapsule = uiLayout == "Neon Capsule"
     val isStadium = uiLayout == "Stadium Cards"
     val effectiveRadius = if (isCapsule) 50.dp else cornerDp.dp
-    val rowBg = if (active) accent.copy(alpha = 0.16f) else panel
+    val rowBg = if (active) accent.copy(alpha = 0.18f) else panel
 
     Column {
         Row(
@@ -3211,7 +3498,7 @@ private fun SongRow(
                     color = when {
                         active -> accent
                         isCapsule || isStadium -> accent.copy(alpha = 0.28f)
-                        uiLayout == "Cyber Glass" -> Color.White.copy(alpha = 0.12f)
+                        uiLayout == "Royal Glass" -> Color.White.copy(alpha = 0.09f)
                         else -> Color.Transparent
                     },
                     shape = RoundedCornerShape(effectiveRadius)
@@ -3223,10 +3510,10 @@ private fun SongRow(
             AlbumArtThumb(
                 song = song,
                 accent = accent,
-                sizeDp = if (isCompact) 38 else if (isStadium) 54 else 46,
-                cornerDp = if (isCapsule) 50 else (cornerDp - 4).coerceAtLeast(6)
+                sizeDp = if (isCompact) 40 else if (isStadium) 54 else 48,
+                cornerDp = if (isCapsule) 50 else (cornerDp - 4).coerceAtLeast(8)
             )
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     song.title,
@@ -3245,14 +3532,14 @@ private fun SongRow(
                 )
             }
             if (isLiked) {
-                Icon(Icons.Default.Favorite, null, tint = accent, modifier = Modifier.size(14.dp))
+                Icon(Icons.Default.Favorite, null, tint = accent, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(4.dp))
             }
             IconButton(onClick = onMore, modifier = Modifier.size(32.dp)) {
                 Icon(Icons.Default.MoreVert, "More", tint = Color(0xFFB5B9D0), modifier = Modifier.size(18.dp))
             }
         }
-        if (uiLayout == "AMOLED Pure" && !active) {
+        if (isAmoled && !active) {
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -3281,7 +3568,7 @@ private fun BentoSongCard(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(cornerDp.dp))
-            .background(Color(0xFF0E101C).copy(alpha = 0.68f))
+            .background(Color(0xFF0E101C).copy(alpha = 0.72f))
             .border(
                 width = if (active) 1.5.dp else borderWidthDp.dp,
                 color = if (active) accent else Color.White.copy(alpha = 0.10f),
@@ -3293,7 +3580,7 @@ private fun BentoSongCard(
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(if (compactPoster) 92.dp else 125.dp)
+                .height(if (compactPoster) 94.dp else 128.dp)
                 .clip(RoundedCornerShape((cornerDp - 4).coerceAtLeast(8).dp))
                 .background(Color(0xFF17192B)),
             contentAlignment = Alignment.Center
@@ -3312,7 +3599,7 @@ private fun BentoSongCard(
                 Icon(Icons.Default.MoreVert, null, tint = Color.White, modifier = Modifier.size(14.dp))
             }
         }
-        Spacer(Modifier.height(5.dp))
+        Spacer(Modifier.height(6.dp))
         Text(
             song.title,
             color = if (active) accent else Color.White,
@@ -3385,7 +3672,7 @@ private fun FeatureTile(
     Row(
         Modifier
             .fillMaxWidth()
-            .background(Color(0xFF0E101C).copy(alpha = 0.76f), RoundedCornerShape(cornerDp.dp))
+            .background(Color(0xFF14182B).copy(alpha = 0.80f), RoundedCornerShape(cornerDp.dp))
             .clickable(onClick = onClick)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -3435,15 +3722,14 @@ private fun extractCoverPalette(context: Context, artUri: Uri): CoverPalette {
             }
         }
         if (count == 0L) return CoverPalette()
-        val r = (rSum / count).toInt().coerceIn(40, 245)
-        val g = (gSum / count).toInt().coerceIn(40, 245)
-        val b = (bSum / count).toInt().coerceIn(40, 245)
-        val luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+        val r = (rSum / count).toInt().coerceIn(45, 240)
+        val g = (gSum / count).toInt().coerceIn(45, 240)
+        val b = (bSum / count).toInt().coerceIn(55, 245)
 
         CoverPalette(
-            dominant = Color((r * 1.25f).toInt().coerceIn(80, 255), (g * 1.15f).toInt().coerceIn(70, 250), (b * 1.30f).toInt().coerceIn(95, 255)),
-            secondary = Color(r / 4, g / 4, b / 4),
-            isLightCover = luminance > 0.55
+            dominant = Color((r * 1.28f).toInt().coerceIn(85, 255), (g * 1.18f).toInt().coerceIn(75, 250), (b * 1.32f).toInt().coerceIn(95, 255)),
+            secondary = Color((b * 1.15f).toInt().coerceIn(70, 245), (r * 0.95f).toInt().coerceIn(60, 230), (g * 1.25f).toInt().coerceIn(80, 250)),
+            deepTint = Color((r / 7).coerceIn(4, 28), (g / 7).coerceIn(4, 28), (b / 6).coerceIn(6, 34))
         )
     }.getOrDefault(CoverPalette())
 }
