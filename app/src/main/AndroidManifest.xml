@@ -44,6 +44,7 @@
             android:label="VYRO MUSIC Widget">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.appwidget.action.APPWIDGET_OPTIONS_CHANGED" />
                 <action android:name="com.mohamedtarek.vyromusic.WIDGET_TOGGLE" />
                 <action android:name="com.mohamedtarek.vyromusic.WIDGET_NEXT" />
                 <action android:name="com.mohamedtarek.vyromusic.WIDGET_PREV" />
