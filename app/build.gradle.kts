@@ -12,6 +12,7 @@ val drawableDir = File(resDir, "drawable").apply { mkdirs() }
 val xmlDir = File(resDir, "xml").apply { mkdirs() }
 val layoutDir = File(resDir, "layout").apply { mkdirs() }
 
+// 1. أيقونة التطبيق الكاملة (تظهر كأيقونة لملف الـ APK نفسه في مدير الملفات وعند التثبيت)
 File(drawableDir, "ic_vyro_bg.xml").writeText(
     """
     <?xml version="1.0" encoding="utf-8"?>
@@ -20,9 +21,9 @@ File(drawableDir, "ic_vyro_bg.xml").writeText(
         android:height="108dp"
         android:viewportWidth="108"
         android:viewportHeight="108">
-        <path android:fillColor="#FF05060A" android:pathData="M0,0h108v108h-108z"/>
-        <path android:fillColor="#FF0D1426" android:pathData="M54,54m-46,0a46,46 0,1 1,92 0a46,46 0,1 1,-92 0"/>
-        <path android:fillColor="#FF12203E" android:pathData="M54,54m-35,0a35,35 0,1 1,70 0a35,35 0,1 1,-70 0"/>
+        <path android:fillColor="#FF05070E" android:pathData="M0,0h108v108h-108z"/>
+        <path android:fillColor="#FF0E1830" android:pathData="M54,54m-46,0a46,46 0,1 1,92 0a46,46 0,1 1,-92 0"/>
+        <path android:fillColor="#FF16274D" android:pathData="M54,54m-36,0a36,36 0,1 1,72 0a36,36 0,1 1,-72 0"/>
     </vector>
     """.trimIndent()
 )
@@ -36,16 +37,42 @@ File(drawableDir, "ic_vyro_fg.xml").writeText(
         android:viewportWidth="108"
         android:viewportHeight="108">
         <path
-            android:strokeColor="#FF2196F3"
-            android:strokeWidth="3.0"
+            android:strokeColor="#FF00E5FF"
+            android:strokeWidth="3.2"
             android:fillColor="#00000000"
             android:pathData="M54,54m-31,0a31,31 0,1 1,62 0a31,31 0,1 1,-62 0"/>
         <path
             android:fillColor="#FFFFFFFF"
             android:pathData="M34,36 L43,36 L54,62 L65,36 L74,36 L57,74 L51,74 Z"/>
         <path
-            android:fillColor="#FF2196F3"
-            android:pathData="M52,30h4v16h-4zM45,36h3.5v10h-3.5zM59.5,36h3.5v10h-3.5z"/>
+            android:fillColor="#FF00E5FF"
+            android:pathData="M52,29h4v17h-4zM45,35h3.5v11h-3.5zM59.5,35h3.5v11h-3.5z"/>
+    </vector>
+    """.trimIndent()
+)
+
+// نسخة Fallback في drawable/ لضمان ظهور الأيقونة على ملف الـ APK في كل الأجهزة
+File(drawableDir, "ic_vyro_launcher.xml").writeText(
+    """
+    <?xml version="1.0" encoding="utf-8"?>
+    <vector xmlns:android="http://schemas.android.com/apk/res/android"
+        android:width="108dp"
+        android:height="108dp"
+        android:viewportWidth="108"
+        android:viewportHeight="108">
+        <path android:fillColor="#FF060914" android:pathData="M0,0h108v108h-108z"/>
+        <path android:fillColor="#FF122142" android:pathData="M54,54m-44,0a44,44 0,1 1,88 0a44,44 0,1 1,-88 0"/>
+        <path
+            android:strokeColor="#FF00E5FF"
+            android:strokeWidth="3.2"
+            android:fillColor="#00000000"
+            android:pathData="M54,54m-32,0a32,32 0,1 1,64 0a32,32 0,1 1,-64 0"/>
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M34,36 L43,36 L54,62 L65,36 L74,36 L57,74 L51,74 Z"/>
+        <path
+            android:fillColor="#FF00E5FF"
+            android:pathData="M52,29h4v17h-4zM45,35h3.5v11h-3.5zM59.5,35h3.5v11h-3.5z"/>
     </vector>
     """.trimIndent()
 )
@@ -61,6 +88,18 @@ File(drawableV26Dir, "ic_vyro_launcher.xml").writeText(
     """.trimIndent()
 )
 
+// 2. مسارات FileProvider لتثبيت التحديثات مباشرة من داخل التطبيق
+File(xmlDir, "file_paths.xml").writeText(
+    """
+    <?xml version="1.0" encoding="utf-8"?>
+    <paths xmlns:android="http://schemas.android.com/apk/res/android">
+        <cache-path name="apk_updates" path="updates/" />
+        <external-files-path name="ext_updates" path="Download/" />
+    </paths>
+    """.trimIndent()
+)
+
+// 3. تخطيط الويدجت الزجاجي (Glassify Style + Full Poster + Wide Pill)
 File(layoutDir, "vyro_widget.xml").writeText(
     """
     <?xml version="1.0" encoding="utf-8"?>
@@ -110,8 +149,6 @@ File(layoutDir, "vyro_widget.xml").writeText(
                     android:textColor="#FFFFFFFF"
                     android:textStyle="bold"
                     android:textSize="14sp"
-                    android:shadowColor="#CC000000"
-                    android:shadowRadius="4"
                     android:singleLine="true"
                     android:ellipsize="end" />
 
@@ -119,33 +156,31 @@ File(layoutDir, "vyro_widget.xml").writeText(
                     android:id="@+id/widget_artist_wide"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Mohamed Tarek"
-                    android:textColor="#FFDDE2F5"
+                    android:text="Tap to play"
+                    android:textColor="#FFD5DCF0"
                     android:textSize="11sp"
-                    android:shadowColor="#CC000000"
-                    android:shadowRadius="4"
                     android:singleLine="true"
                     android:ellipsize="end" />
             </LinearLayout>
 
             <ImageButton
                 android:id="@+id/widget_prev_wide"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
                 android:background="@android:color/transparent"
                 android:src="@android:drawable/ic_media_previous" />
 
             <ImageButton
                 android:id="@+id/widget_play_wide"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
                 android:background="@android:color/transparent"
                 android:src="@android:drawable/ic_media_play" />
 
             <ImageButton
                 android:id="@+id/widget_next_wide"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
                 android:background="@android:color/transparent"
                 android:src="@android:drawable/ic_media_next" />
         </LinearLayout>
@@ -156,13 +191,16 @@ File(layoutDir, "vyro_widget.xml").writeText(
             android:layout_height="match_parent"
             android:orientation="vertical"
             android:gravity="bottom|center_horizontal"
-            android:padding="12dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
             android:visibility="gone">
 
             <ImageView
                 android:id="@+id/widget_art_square"
-                android:layout_width="68dp"
-                android:layout_height="68dp"
+                android:layout_width="78dp"
+                android:layout_height="78dp"
                 android:layout_marginBottom="6dp"
                 android:scaleType="centerCrop"
                 android:src="@drawable/ic_vyro_fg" />
@@ -175,9 +213,11 @@ File(layoutDir, "vyro_widget.xml").writeText(
                 android:text="VYRO MUSIC"
                 android:textColor="#FFFFFFFF"
                 android:textStyle="bold"
-                android:textSize="14sp"
-                android:shadowColor="#EE000000"
-                android:shadowRadius="6"
+                android:textSize="13sp"
+                android:shadowColor="#CC000000"
+                android:shadowDx="0"
+                android:shadowDy="2"
+                android:shadowRadius="4"
                 android:singleLine="true"
                 android:ellipsize="end" />
 
@@ -187,17 +227,19 @@ File(layoutDir, "vyro_widget.xml").writeText(
                 android:layout_height="wrap_content"
                 android:gravity="center"
                 android:text="Mohamed Tarek"
-                android:textColor="#FFE4E8F7"
+                android:textColor="#FFE2E7F5"
                 android:textSize="11sp"
-                android:shadowColor="#EE000000"
-                android:shadowRadius="6"
+                android:shadowColor="#CC000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="3"
                 android:singleLine="true"
                 android:ellipsize="end" />
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
+                android:layout_marginTop="4dp"
                 android:orientation="horizontal"
                 android:gravity="center">
 
@@ -210,10 +252,8 @@ File(layoutDir, "vyro_widget.xml").writeText(
 
                 <ImageButton
                     android:id="@+id/widget_play_square"
-                    android:layout_width="42dp"
-                    android:layout_height="42dp"
-                    android:layout_marginStart="6dp"
-                    android:layout_marginEnd="6dp"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
                     android:background="@android:color/transparent"
                     android:src="@android:drawable/ic_media_play" />
 
@@ -237,7 +277,7 @@ File(xmlDir, "vyro_widget_info.xml").writeText(
         android:minHeight="70dp"
         android:minResizeWidth="110dp"
         android:minResizeHeight="60dp"
-        android:targetCellWidth="2"
+        android:targetCellWidth="3"
         android:targetCellHeight="2"
         android:updatePeriodMillis="1800000"
         android:initialLayout="@layout/vyro_widget"
@@ -245,6 +285,10 @@ File(xmlDir, "vyro_widget_info.xml").writeText(
         android:widgetCategory="home_screen" />
     """.trimIndent()
 )
+
+base {
+    archivesName.set("VYRO_MUSIC_5.0.0_TITAN")
+}
 
 android {
     namespace = "com.mohamedtarek.vyromusic"
@@ -254,13 +298,34 @@ android {
         applicationId = "com.mohamedtarek.vyromusic"
         minSdk = 26
         targetSdk = 34
-        versionCode = 10
-        versionName = "4.0.0-APEX"
+        versionCode = 11
+        versionName = "5.0.0-TITAN"
+    }
+
+    // توقيع ثابت للتحديث فوق النسخة المثبتة بدون حذفها (لو ملف vyro.jks موجود في مجلد app)
+    val fixedKeystore = File(projectDir, "vyro.jks")
+    signingConfigs {
+        if (fixedKeystore.exists()) {
+            create("vyroFixed") {
+                storeFile = fixedKeystore
+                storePassword = System.getenv("VYRO_KEY_PASS") ?: "vyro2026"
+                keyAlias = "vyro"
+                keyPassword = System.getenv("VYRO_KEY_PASS") ?: "vyro2026"
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            if (fixedKeystore.exists()) {
+                signingConfig = signingConfigs.getByName("vyroFixed")
+            }
+        }
         release {
             isMinifyEnabled = false
+            if (fixedKeystore.exists()) {
+                signingConfig = signingConfigs.getByName("vyroFixed")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
