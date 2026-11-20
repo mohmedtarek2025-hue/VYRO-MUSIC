@@ -20,9 +20,9 @@ File(drawableDir, "ic_vyro_bg.xml").writeText(
         android:height="108dp"
         android:viewportWidth="108"
         android:viewportHeight="108">
-        <path android:fillColor="#FF04050A" android:pathData="M0,0h108v108h-108z"/>
-        <path android:fillColor="#FF101426" android:pathData="M54,54m-46,0a46,46 0,1 1,92 0a46,46 0,1 1,-92 0"/>
-        <path android:fillColor="#FF1B1F3B" android:pathData="M54,54m-36,0a36,36 0,1 1,72 0a36,36 0,1 1,-72 0"/>
+        <path android:fillColor="#FF05060A" android:pathData="M0,0h108v108h-108z"/>
+        <path android:fillColor="#FF0D1426" android:pathData="M54,54m-46,0a46,46 0,1 1,92 0a46,46 0,1 1,-92 0"/>
+        <path android:fillColor="#FF12203E" android:pathData="M54,54m-35,0a35,35 0,1 1,70 0a35,35 0,1 1,-70 0"/>
     </vector>
     """.trimIndent()
 )
@@ -36,15 +36,15 @@ File(drawableDir, "ic_vyro_fg.xml").writeText(
         android:viewportWidth="108"
         android:viewportHeight="108">
         <path
-            android:strokeColor="#FF00E5FF"
+            android:strokeColor="#FF2196F3"
             android:strokeWidth="3.0"
             android:fillColor="#00000000"
             android:pathData="M54,54m-31,0a31,31 0,1 1,62 0a31,31 0,1 1,-62 0"/>
         <path
-            android:fillColor="#FFA87BFF"
+            android:fillColor="#FFFFFFFF"
             android:pathData="M34,36 L43,36 L54,62 L65,36 L74,36 L57,74 L51,74 Z"/>
         <path
-            android:fillColor="#FFFFC857"
+            android:fillColor="#FF2196F3"
             android:pathData="M52,30h4v16h-4zM45,36h3.5v10h-3.5zM59.5,36h3.5v10h-3.5z"/>
     </vector>
     """.trimIndent()
@@ -61,7 +61,6 @@ File(drawableV26Dir, "ic_vyro_launcher.xml").writeText(
     """.trimIndent()
 )
 
-// تخطيط الويدجت الذكي يدعم الشكل المربع (Square 2x2) والشكل الطويل العريض (Wide 4x1 / 4x2) مع تفاعل غلاف الأغنية
 File(layoutDir, "vyro_widget.xml").writeText(
     """
     <?xml version="1.0" encoding="utf-8"?>
@@ -69,7 +68,7 @@ File(layoutDir, "vyro_widget.xml").writeText(
         android:id="@+id/widget_root"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:padding="4dp">
+        android:padding="2dp">
 
         <ImageView
             android:id="@+id/widget_bg"
@@ -77,7 +76,6 @@ File(layoutDir, "vyro_widget.xml").writeText(
             android:layout_height="match_parent"
             android:scaleType="fitXY" />
 
-        <!-- الوضع الأفقي العريض (Wide Pill / Glass Studio) -->
         <LinearLayout
             android:id="@+id/widget_wide_box"
             android:layout_width="match_parent"
@@ -112,6 +110,8 @@ File(layoutDir, "vyro_widget.xml").writeText(
                     android:textColor="#FFFFFFFF"
                     android:textStyle="bold"
                     android:textSize="14sp"
+                    android:shadowColor="#CC000000"
+                    android:shadowRadius="4"
                     android:singleLine="true"
                     android:ellipsize="end" />
 
@@ -119,49 +119,51 @@ File(layoutDir, "vyro_widget.xml").writeText(
                     android:id="@+id/widget_artist_wide"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Tap to play"
-                    android:textColor="#FFD0D6F2"
+                    android:text="Mohamed Tarek"
+                    android:textColor="#FFDDE2F5"
                     android:textSize="11sp"
+                    android:shadowColor="#CC000000"
+                    android:shadowRadius="4"
                     android:singleLine="true"
                     android:ellipsize="end" />
             </LinearLayout>
 
             <ImageButton
                 android:id="@+id/widget_prev_wide"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
                 android:background="@android:color/transparent"
                 android:src="@android:drawable/ic_media_previous" />
 
             <ImageButton
                 android:id="@+id/widget_play_wide"
-                android:layout_width="42dp"
-                android:layout_height="42dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:background="@android:color/transparent"
                 android:src="@android:drawable/ic_media_play" />
 
             <ImageButton
                 android:id="@+id/widget_next_wide"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
                 android:background="@android:color/transparent"
                 android:src="@android:drawable/ic_media_next" />
         </LinearLayout>
 
-        <!-- الوضع المربع أو الطولي (Square Card 2x2 / Vertical Poster) -->
         <LinearLayout
             android:id="@+id/widget_square_box"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="vertical"
-            android:gravity="center"
-            android:padding="10dp"
+            android:gravity="bottom|center_horizontal"
+            android:padding="12dp"
             android:visibility="gone">
 
             <ImageView
                 android:id="@+id/widget_art_square"
-                android:layout_width="74dp"
-                android:layout_height="74dp"
+                android:layout_width="68dp"
+                android:layout_height="68dp"
+                android:layout_marginBottom="6dp"
                 android:scaleType="centerCrop"
                 android:src="@drawable/ic_vyro_fg" />
 
@@ -169,12 +171,13 @@ File(layoutDir, "vyro_widget.xml").writeText(
                 android:id="@+id/widget_title_square"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
                 android:gravity="center"
                 android:text="VYRO MUSIC"
                 android:textColor="#FFFFFFFF"
                 android:textStyle="bold"
-                android:textSize="13sp"
+                android:textSize="14sp"
+                android:shadowColor="#EE000000"
+                android:shadowRadius="6"
                 android:singleLine="true"
                 android:ellipsize="end" />
 
@@ -184,15 +187,17 @@ File(layoutDir, "vyro_widget.xml").writeText(
                 android:layout_height="wrap_content"
                 android:gravity="center"
                 android:text="Mohamed Tarek"
-                android:textColor="#FFD0D6F2"
+                android:textColor="#FFE4E8F7"
                 android:textSize="11sp"
+                android:shadowColor="#EE000000"
+                android:shadowRadius="6"
                 android:singleLine="true"
                 android:ellipsize="end" />
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
+                android:layout_marginTop="6dp"
                 android:orientation="horizontal"
                 android:gravity="center">
 
@@ -207,6 +212,8 @@ File(layoutDir, "vyro_widget.xml").writeText(
                     android:id="@+id/widget_play_square"
                     android:layout_width="42dp"
                     android:layout_height="42dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
                     android:background="@android:color/transparent"
                     android:src="@android:drawable/ic_media_play" />
 
@@ -230,8 +237,8 @@ File(xmlDir, "vyro_widget_info.xml").writeText(
         android:minHeight="70dp"
         android:minResizeWidth="110dp"
         android:minResizeHeight="60dp"
-        android:targetCellWidth="3"
-        android:targetCellHeight="1"
+        android:targetCellWidth="2"
+        android:targetCellHeight="2"
         android:updatePeriodMillis="1800000"
         android:initialLayout="@layout/vyro_widget"
         android:resizeMode="horizontal|vertical"
@@ -247,8 +254,8 @@ android {
         applicationId = "com.mohamedtarek.vyromusic"
         minSdk = 26
         targetSdk = 34
-        versionCode = 9
-        versionName = "3.2.0-ROYAL"
+        versionCode = 10
+        versionName = "4.0.0-APEX"
     }
 
     buildTypes {
