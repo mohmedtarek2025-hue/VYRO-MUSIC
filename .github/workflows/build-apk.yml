@@ -27,7 +27,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: '8.11.1'
 
       - name: Decode Permanent Signing Keystore
         env:
@@ -46,12 +46,7 @@ jobs:
           SECRET_PASS: ${{ secrets.VYRO_KEY_PASS }}
         run: |
           export VYRO_KEY_PASS=$(printf '%s' "${SECRET_PASS:-vyro2026}" | tr -d '\n\r ')
-          if [ -f "./gradlew" ] && [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-            chmod +x ./gradlew
-            ./gradlew assembleDebug
-          else
-            gradle assembleDebug
-          fi
+          gradle assembleDebug
 
       - name: Extract Version, Rename APK & Read What's New
         id: meta
