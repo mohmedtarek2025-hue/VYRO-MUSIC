@@ -24,35 +24,47 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
       - name: Decode Permanent Signing Keystore
         env:
           VYRO_KEYSTORE_B64: ${{ secrets.VYRO_KEYSTORE_B64 }}
+          SECRET_PASS: ${{ secrets.VYRO_KEY_PASS }}
         run: |
           if [ -n "$VYRO_KEYSTORE_B64" ]; then
-            echo "$VYRO_KEYSTORE_B64" | tr -d '\n\r ' | base64 --decode > app/vyro.jks
-            ls -lh app/vyro.jks
+            printf '%s' "$VYRO_KEYSTORE_B64" | tr -cd 'A-Za-z0-9+/=' | base64 -d > app/vyro.jks
+            PASS=$(printf '%s' "${SECRET_PASS:-vyro2026}" | tr -d '\n\r ')
+            keytool -list -keystore app/vyro.jks -storepass "$PASS" > /dev/null
+            echo "Keystore decoded and verified successfully!"
           fi
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v3
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
 
       - name: Build Signed APK
         env:
           SECRET_PASS: ${{ secrets.VYRO_KEY_PASS }}
         run: |
-          export VYRO_KEY_PASS="${SECRET_PASS:-vyro2026}"
-          ./gradlew assembleDebug
+          export VYRO_KEY_PASS=$(printf '%s' "${SECRET_PASS:-vyro2026}" | tr -d '\n\r ')
+          if [ -f "./gradlew" ] && [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug
+          else
+            gradle assembleDebug
+          fi
 
       - name: Extract Version, Rename APK & Read What's New
         id: meta
         run: |
-          VERSION=$(grep 'versionName =' app/build.gradle.kts | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+          VERSION=$(grep -E 'versionName[[:space:]]*=' app/build.gradle.kts | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+          VERSION="${VERSION:-5.0.0-TITAN}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
           APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "Error: APK file not found!"
+            exit 1
+          fi
           OUT_APK="VYRO_MUSIC_v${VERSION}.apk"
           cp "$APK_PATH" "$OUT_APK"
           echo "apk_file=$OUT_APK" >> "$GITHUB_OUTPUT"
