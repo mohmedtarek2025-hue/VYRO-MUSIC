@@ -14,7 +14,7 @@ import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.Rect
+import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.media.MediaMetadataRetriever
@@ -82,9 +82,8 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                val now = System.currentTimeMillis()
                 if (isPlaying) {
-                    playSessionStartMs = now
+                    playSessionStartMs = System.currentTimeMillis()
                     if (equalizer == null || bassBoost == null || loudnessEnhancer == null) {
                         bindHardwareDsp(player.audioSessionId)
                     }
@@ -106,6 +105,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
                     ?: mediaItem.requestMetadata.extras?.getString("song_uri")
                     ?: ""
                 val totalPlayed = prefs.getInt("stat_tracks_played", 0) + 1
+
                 prefs.edit()
                     .putLong("last_song_id", id)
                     .putString("last_song_uri", songUriStr)
@@ -114,6 +114,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
                     .putLong("last_album_id", albumId)
                     .putInt("stat_tracks_played", totalPlayed)
                     .apply()
+
                 VyroWidgetProvider.updateAllWidgets(this@PlaybackService)
             }
         })
@@ -185,8 +186,8 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         applyDspLevels()
     }
 
+    // محرك تنقية الصوت الإجباري الصامت: يضمن أعلى نقاء وبيز عميق بدون أي تشويش أو غروشة
     private fun applyDspLevels() {
-        val antiClipping = prefs.getBoolean("anti_clipping", true)
         val spatial8D = prefs.getBoolean("spatial_8d_enabled", false)
         val gainsJson = prefs.getString("band_gains", null)
         val gains = runCatching {
@@ -195,17 +196,17 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
                 val arr = JSONArray(gainsJson)
                 (0 until arr.length()).map { arr.getDouble(it).toFloat() }
             }
-        }.getOrNull() ?: listOf(0.30f, 0.18f, 0.0f, 0.16f, 0.28f)
+        }.getOrNull() ?: listOf(0.28f, 0.16f, 0.0f, 0.14f, 0.24f)
 
         val bassStrength = prefs.getInt("bass_strength", 35).coerceIn(0, 100)
         val virtStrength = prefs.getInt("virtualizer_strength", 30).coerceIn(0, 100)
         val loudnessGain = prefs.getInt("loudness_gain", 0).coerceIn(0, 100)
 
-        val safeScale = if (antiClipping) 0.58f else 0.85f
+        // موازنة ديناميكية لسقف الصوت (Dynamic Headroom Limiter) مطبقة إجبارياً في الخلفية
         val maxPeak = gains.maxOrNull()?.coerceAtLeast(0f) ?: 0f
-        val headroomDrop = if (antiClipping && (maxPeak > 0.50f || bassStrength > 55)) {
-            ((maxPeak - 0.45f).coerceAtLeast(0f) * 0.25f) + ((bassStrength - 55).coerceAtLeast(0) / 400f)
-        } else 0f
+        val headroomDrop = ((maxPeak - 0.42f).coerceAtLeast(0f) * 0.28f) +
+            ((bassStrength - 50).coerceAtLeast(0) / 380f) +
+            (loudnessGain / 550f)
 
         runCatching {
             val eq = equalizer ?: return@runCatching
@@ -217,8 +218,8 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
             val centerLvl = (minLvl + maxLvl) / 2
             val halfSpan = (maxLvl - minLvl) / 2f
 
-            val subBass0 = (bassStrength / 100f) * (if (antiClipping) 0.20f else 0.36f)
-            val subBass1 = (bassStrength / 100f) * (if (antiClipping) 0.10f else 0.20f)
+            val subBass0 = (bassStrength / 100f) * 0.18f
+            val subBass1 = (bassStrength / 100f) * 0.10f
 
             for (b in 0 until minOf(numBands, gains.size)) {
                 val extra = when (b) {
@@ -226,8 +227,8 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
                     1 -> subBass1
                     else -> 0f
                 }
-                val netGain = (gains[b] + extra - headroomDrop).coerceIn(-0.95f, 0.95f) * safeScale
-                val target = (centerLvl + (netGain * halfSpan).toInt()).coerceIn(minLvl, maxLvl).toShort()
+                val balanced = ((gains[b] + extra - headroomDrop).coerceIn(-0.90f, 0.90f)) * 0.56f
+                val target = (centerLvl + (balanced * halfSpan).toInt()).coerceIn(minLvl, maxLvl).toShort()
                 eq.setBandLevel(b.toShort(), target)
             }
         }
@@ -236,15 +237,14 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
             bassBoost?.let { bb ->
                 bb.enabled = bassStrength > 0
                 if (bb.strengthSupported) {
-                    val maxBb = if (antiClipping) 600 else 920
-                    bb.setStrength(((bassStrength * maxBb) / 100).coerceIn(0, 1000).toShort())
+                    bb.setStrength(((bassStrength * 580) / 100).coerceIn(0, 620).toShort())
                 }
             }
         }
 
         runCatching {
             virtualizer?.let { vt ->
-                val effectiveVirt = if (spatial8D) maxOf(virtStrength, 85) else virtStrength
+                val effectiveVirt = if (spatial8D) maxOf(virtStrength, 88) else virtStrength
                 vt.enabled = effectiveVirt > 0
                 if (vt.strengthSupported) {
                     vt.setStrength((effectiveVirt * 9).coerceIn(0, 1000).toShort())
@@ -254,9 +254,9 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
 
         runCatching {
             loudnessEnhancer?.let { le ->
-                val safeLoudness = if (antiClipping) (loudnessGain * 3) else (loudnessGain * 7)
-                le.enabled = safeLoudness > 0
-                le.setTargetGain(safeLoudness)
+                val safeGainMb = (loudnessGain * 3).coerceIn(0, 300)
+                le.enabled = safeGainMb > 0
+                le.setTargetGain(safeGainMb)
             }
         }
     }
@@ -271,7 +271,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
         when (key) {
-            "band_gains", "bass_strength", "virtualizer_strength", "loudness_gain", "anti_clipping", "spatial_8d_enabled" -> applyDspLevels()
+            "band_gains", "bass_strength", "virtualizer_strength", "loudness_gain", "spatial_8d_enabled" -> applyDspLevels()
             "playback_speed", "playback_pitch" -> applyPlaybackParams()
             "widget_style", "accent_color_id" -> VyroWidgetProvider.updateAllWidgets(this)
         }
@@ -361,15 +361,15 @@ class VyroWidgetProvider : AppWidgetProvider() {
                 val songUriStr = prefs.getString("last_song_uri", "") ?: ""
                 val albumId = prefs.getLong("last_album_id", -1L)
                 val isPlaying = prefs.getBoolean("is_playing_now", false)
-                val savedStyle = prefs.getString("widget_style", "Full Poster") ?: "Full Poster"
+                val savedStyle = prefs.getString("widget_style", "Glassify Frost") ?: "Glassify Frost"
 
                 val options = mgr.getAppWidgetOptions(widgetId)
                 val minW = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 200)
                 val minH = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 120)
 
                 val useSquareLayout = when (savedStyle) {
-                    "Full Poster", "Square Glass" -> true
-                    "Wide Bar" -> false
+                    "Full Poster", "Glassify Frost", "Stadium Glass" -> true
+                    "Wide Glass" -> false
                     else -> (minH >= 110 && minW <= 240) || (abs(minW - minH) < 60)
                 }
 
@@ -378,17 +378,15 @@ class VyroWidgetProvider : AppWidgetProvider() {
                 val views = RemoteViews(context.packageName, R.layout.vyro_widget)
                 views.setViewVisibility(R.id.widget_square_box, if (useSquareLayout) View.VISIBLE else View.GONE)
                 views.setViewVisibility(R.id.widget_wide_box, if (useSquareLayout) View.GONE else View.VISIBLE)
-                views.setViewVisibility(
-                    R.id.widget_art_square,
-                    if (isFullBleedPoster) View.GONE else View.VISIBLE
-                )
+                views.setViewVisibility(R.id.widget_art_square, if (isFullBleedPoster) View.GONE else View.VISIBLE)
 
                 val rawCover = loadRobustAlbumArt(context, songUriStr, albumId)
                 val domColor = extractSoftDominantColor(rawCover)
 
-                val bgBmp = renderSleekWidgetBackground(
+                val bgBmp = renderGlassifyWidgetBackground(
                     rawCover = rawCover,
                     domColor = domColor,
+                    style = savedStyle,
                     isSquare = useSquareLayout,
                     fullBleedPoster = isFullBleedPoster
                 )
@@ -436,26 +434,26 @@ class VyroWidgetProvider : AppWidgetProvider() {
             }
         }
 
-        // محرك تحميل الصور الثلاثي لضمان ظهور صورة الأغنية على أندرويد 14/15/16 بنسبة 100%
         fun loadRobustAlbumArt(context: Context, songUriStr: String, albumId: Long): Bitmap? {
             if (songUriStr.isNotBlank()) {
                 val uri = Uri.parse(songUriStr)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     runCatching {
-                        val thumb = context.contentResolver.loadThumbnail(uri, Size(360, 360), null)
+                        val thumb = context.contentResolver.loadThumbnail(uri, Size(420, 420), null)
                         if (thumb != null) return thumb
                     }
                 }
-                runCatching {
-                    val mmr = MediaMetadataRetriever()
+                val mmr = MediaMetadataRetriever()
+                try {
                     mmr.setDataSource(context, uri)
                     val bytes = mmr.embeddedPicture
-                    mmr.release()
-                    if (bytes != null) {
-                        val opts = BitmapFactory.Options().apply { inSampleSize = 1 }
-                        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+                    if (bytes != null && bytes.isNotEmpty()) {
+                        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                         if (decoded != null) return decoded
                     }
+                } catch (_: Exception) {
+                } finally {
+                    runCatching { mmr.release() }
                 }
             }
             if (albumId > 0) {
@@ -471,7 +469,7 @@ class VyroWidgetProvider : AppWidgetProvider() {
         }
 
         private fun extractSoftDominantColor(bmp: Bitmap?): Int {
-            if (bmp == null) return 0xFF1D2C49.toInt()
+            if (bmp == null) return 0xFF16325C.toInt()
             var r = 0L
             var g = 0L
             var b = 0L
@@ -487,72 +485,123 @@ class VyroWidgetProvider : AppWidgetProvider() {
                     c++
                 }
             }
-            if (c == 0L) return 0xFF1D2C49.toInt()
+            if (c == 0L) return 0xFF16325C.toInt()
             return android.graphics.Color.rgb(
-                ((r / c) * 0.72f).toInt().coerceIn(22, 165),
-                ((g / c) * 0.72f).toInt().coerceIn(22, 165),
-                ((b / c) * 0.78f).toInt().coerceIn(28, 175)
+                ((r / c) * 0.78f).toInt().coerceIn(28, 185),
+                ((g / c) * 0.78f).toInt().coerceIn(28, 185),
+                ((b / c) * 0.84f).toInt().coerceIn(36, 198)
             )
         }
 
-        private fun renderSleekWidgetBackground(
+        private fun renderGlassifyWidgetBackground(
             rawCover: Bitmap?,
             domColor: Int,
+            style: String,
             isSquare: Boolean,
             fullBleedPoster: Boolean
         ): Bitmap {
-            val w = if (isSquare) 360 else 640
-            val h = if (isSquare) 360 else 190
+            val w = if (isSquare) 380 else 660
+            val h = if (isSquare) 380 else 196
             val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(out)
-            val corner = 48f
+            val corner = 54f
             val rect = RectF(0f, 0f, w.toFloat(), h.toFloat())
 
-            if (fullBleedPoster && rawCover != null) {
-                // بوستر سينمائي: صورة الأغنية تملأ المربع بالكامل مع تدرج داكن أنيق في الأسفل للأزرار
-                val scaled = centerCropBitmap(rawCover, w, h)
-                val coverPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    shader = BitmapShader(scaled, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-                }
-                canvas.drawRoundRect(rect, corner, corner, coverPaint)
+            when {
+                fullBleedPoster && rawCover != null -> {
+                    val scaled = centerCropBitmap(rawCover, w, h)
+                    val coverPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = BitmapShader(scaled, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, coverPaint)
 
-                val scrimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    shader = LinearGradient(
-                        0f, h * 0.25f, 0f, h.toFloat(),
-                        intArrayOf(0x18000000, 0xB0080A12.toInt(), 0xEE06070D.toInt()),
-                        floatArrayOf(0f, 0.58f, 1f),
-                        Shader.TileMode.CLAMP
-                    )
+                    val scrimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = LinearGradient(
+                            0f, h * 0.22f, 0f, h.toFloat(),
+                            intArrayOf(0x14000000, 0xB8080B14.toInt(), 0xF005070D.toInt()),
+                            floatArrayOf(0f, 0.56f, 1f),
+                            Shader.TileMode.CLAMP
+                        )
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, scrimPaint)
                 }
-                canvas.drawRoundRect(rect, corner, corner, scrimPaint)
-            } else {
-                // بطاقة زجاجية فاخرة بألوان هادئة مستوحاة من غلاف الأغنية
-                val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    shader = LinearGradient(
-                        0f, 0f, w.toFloat(), h.toFloat(),
-                        intArrayOf(domColor, 0xFF10131C.toInt(), 0xFF0A0C12.toInt()),
-                        floatArrayOf(0f, 0.62f, 1f),
-                        Shader.TileMode.CLAMP
-                    )
+
+                style == "Stadium Glass" -> {
+                    val pitchPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = LinearGradient(
+                            0f, 0f, w.toFloat(), h.toFloat(),
+                            intArrayOf(0xE80A2E1A.toInt(), 0xE8071910.toInt(), 0xEE050A0E.toInt()),
+                            floatArrayOf(0f, 0.55f, 1f),
+                            Shader.TileMode.CLAMP
+                        )
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, pitchPaint)
+
+                    val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        this.style = Paint.Style.STROKE
+                        strokeWidth = 3f
+                        color = 0x2AFFFFFF
+                    }
+                    canvas.drawLine(0f, h * 0.5f, w.toFloat(), h * 0.5f, linePaint)
+                    canvas.drawCircle(w * 0.5f, h * 0.5f, minOf(w, h) * 0.24f, linePaint)
+
+                    val spotlight = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = RadialGradient(
+                            w * 0.2f, h * 0.1f, w * 0.65f,
+                            intArrayOf(0x4000F57A, 0x00000000),
+                            null, Shader.TileMode.CLAMP
+                        )
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, spotlight)
                 }
-                canvas.drawRoundRect(rect, corner, corner, bgPaint)
+
+                else -> {
+                    // Glassify Frosted Glass: شفافية زجاجية فاخرة مع انعكاس ضوئي علوي متدرج
+                    val glassBase = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = LinearGradient(
+                            0f, 0f, w.toFloat(), h.toFloat(),
+                            intArrayOf(
+                                (domColor and 0x00FFFFFF) or 0xCC000000.toInt(),
+                                0xC8101422.toInt(),
+                                0xDC080A12.toInt()
+                            ),
+                            floatArrayOf(0f, 0.55f, 1f),
+                            Shader.TileMode.CLAMP
+                        )
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, glassBase)
+
+                    val specularSheen = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = LinearGradient(
+                            0f, 0f, 0f, h * 0.45f,
+                            intArrayOf(0x2EFFFFFF, 0x00FFFFFF),
+                            null, Shader.TileMode.CLAMP
+                        )
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, specularSheen)
+                }
             }
 
-            val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.STROKE
-                strokeWidth = 2.5f
-                color = 0x33FFFFFF
+            // إطار زجاجي لامع (Glass Specular Rim)
+            val rimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                this.style = Paint.Style.STROKE
+                strokeWidth = 3f
+                shader = LinearGradient(
+                    0f, 0f, w.toFloat(), h.toFloat(),
+                    intArrayOf(0x66FFFFFF, 0x1AFFFFFF, 0x44FFFFFF),
+                    null, Shader.TileMode.CLAMP
+                )
             }
-            canvas.drawRoundRect(RectF(1.5f, 1.5f, w - 1.5f, h - 1.5f), corner, corner, borderPaint)
+            canvas.drawRoundRect(RectF(2f, 2f, w - 2f, h - 2f), corner, corner, rimPaint)
             return out
         }
 
         private fun renderRoundedCover(rawArt: Bitmap?, domColor: Int): Bitmap {
-            val size = 180
+            val size = 200
             val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(out)
             val rect = RectF(0f, 0f, size.toFloat(), size.toFloat())
-            val radius = 32f
+            val radius = 36f
 
             if (rawArt != null) {
                 val cropped = centerCropBitmap(rawArt, size, size)
@@ -564,18 +613,25 @@ class VyroWidgetProvider : AppWidgetProvider() {
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     shader = LinearGradient(
                         0f, 0f, size.toFloat(), size.toFloat(),
-                        intArrayOf(domColor, 0xFF171D2B.toInt()),
+                        intArrayOf(domColor, 0xFF141B2B.toInt()),
                         null, Shader.TileMode.CLAMP
                     )
                 }
                 canvas.drawRoundRect(rect, radius, radius, paint)
                 val notePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = 0xCCFFFFFF.toInt()
-                    textSize = 72f
+                    color = 0xDDFFFFFF.toInt()
+                    textSize = 78f
                     textAlign = Paint.Align.CENTER
                 }
-                canvas.drawText("♪", size / 2f, size * 0.64f, notePaint)
+                canvas.drawText("♪", size / 2f, size * 0.65f, notePaint)
             }
+
+            val rim = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = 2.5f
+                color = 0x44FFFFFF
+            }
+            canvas.drawRoundRect(RectF(1.5f, 1.5f, size - 1.5f, size - 1.5f), radius, radius, rim)
             return out
         }
 
