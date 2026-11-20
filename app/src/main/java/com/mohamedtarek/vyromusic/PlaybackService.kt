@@ -13,10 +13,11 @@ import android.graphics.BitmapFactory
 import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.LinearGradient
-import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
+import android.media.MediaMetadataRetriever
 import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
@@ -24,6 +25,7 @@ import android.media.audiofx.Virtualizer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Size
 import android.view.View
 import android.widget.RemoteViews
 import androidx.annotation.OptIn
@@ -51,6 +53,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
     private var bassBoost: BassBoost? = null
     private var virtualizer: Virtualizer? = null
     private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var playSessionStartMs: Long = 0L
 
     companion object {
         const val ACTION_WIDGET_TOGGLE = "com.mohamedtarek.vyromusic.WIDGET_TOGGLE"
@@ -79,20 +82,33 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying && (equalizer == null || bassBoost == null || loudnessEnhancer == null)) {
-                    bindHardwareDsp(player.audioSessionId)
+                val now = System.currentTimeMillis()
+                if (isPlaying) {
+                    playSessionStartMs = now
+                    if (equalizer == null || bassBoost == null || loudnessEnhancer == null) {
+                        bindHardwareDsp(player.audioSessionId)
+                    }
+                } else {
+                    flushListeningTime()
                 }
                 prefs.edit().putBoolean("is_playing_now", isPlaying).apply()
                 VyroWidgetProvider.updateAllWidgets(this@PlaybackService)
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                flushListeningTime()
+                if (player.isPlaying) playSessionStartMs = System.currentTimeMillis()
+
                 val id = mediaItem?.mediaId?.toLongOrNull() ?: return
                 val meta = mediaItem.mediaMetadata
                 val albumId = mediaItem.requestMetadata.extras?.getLong("album_id", -1L) ?: -1L
+                val songUriStr = mediaItem.localConfiguration?.uri?.toString()
+                    ?: mediaItem.requestMetadata.extras?.getString("song_uri")
+                    ?: ""
                 val totalPlayed = prefs.getInt("stat_tracks_played", 0) + 1
                 prefs.edit()
                     .putLong("last_song_id", id)
+                    .putString("last_song_uri", songUriStr)
                     .putString("last_title", meta.title?.toString() ?: "VYRO MUSIC")
                     .putString("last_artist", meta.artist?.toString() ?: "Mohamed Tarek")
                     .putLong("last_album_id", albumId)
@@ -117,6 +133,17 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(sessionActivityPendingIntent)
             .build()
+    }
+
+    private fun flushListeningTime() {
+        if (playSessionStartMs > 0L) {
+            val deltaSec = ((System.currentTimeMillis() - playSessionStartMs) / 1000L).coerceIn(0L, 14400L)
+            if (deltaSec > 0L) {
+                val prev = prefs.getLong("stat_listen_seconds", 0L)
+                prefs.edit().putLong("stat_listen_seconds", prev + deltaSec).apply()
+            }
+            playSessionStartMs = 0L
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -158,7 +185,6 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         applyDspLevels()
     }
 
-    // محرك تنقية الصوت ومنع الغروشة (Anti-Clipping Crystal DSP Engine)
     private fun applyDspLevels() {
         val antiClipping = prefs.getBoolean("anti_clipping", true)
         val spatial8D = prefs.getBoolean("spatial_8d_enabled", false)
@@ -169,17 +195,16 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
                 val arr = JSONArray(gainsJson)
                 (0 until arr.length()).map { arr.getDouble(it).toFloat() }
             }
-        }.getOrNull() ?: listOf(0.35f, 0.20f, 0.0f, 0.18f, 0.32f)
+        }.getOrNull() ?: listOf(0.30f, 0.18f, 0.0f, 0.16f, 0.28f)
 
-        val bassStrength = prefs.getInt("bass_strength", 40).coerceIn(0, 100)
-        val virtStrength = prefs.getInt("virtualizer_strength", 35).coerceIn(0, 100)
+        val bassStrength = prefs.getInt("bass_strength", 35).coerceIn(0, 100)
+        val virtStrength = prefs.getInt("virtualizer_strength", 30).coerceIn(0, 100)
         val loudnessGain = prefs.getInt("loudness_gain", 0).coerceIn(0, 100)
 
-        // حساب سقف الحماية من التشويش الرقمي (Headroom Attenuation) لمنع أي غروشة في السماعة
-        val safeScale = if (antiClipping) 0.62f else 0.88f
+        val safeScale = if (antiClipping) 0.58f else 0.85f
         val maxPeak = gains.maxOrNull()?.coerceAtLeast(0f) ?: 0f
-        val headroomDrop = if (antiClipping && (maxPeak > 0.55f || bassStrength > 60)) {
-            ((maxPeak - 0.45f).coerceAtLeast(0f) * 0.25f) + ((bassStrength - 60).coerceAtLeast(0) / 400f)
+        val headroomDrop = if (antiClipping && (maxPeak > 0.50f || bassStrength > 55)) {
+            ((maxPeak - 0.45f).coerceAtLeast(0f) * 0.25f) + ((bassStrength - 55).coerceAtLeast(0) / 400f)
         } else 0f
 
         runCatching {
@@ -192,8 +217,8 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
             val centerLvl = (minLvl + maxLvl) / 2
             val halfSpan = (maxLvl - minLvl) / 2f
 
-            val subBass0 = (bassStrength / 100f) * (if (antiClipping) 0.22f else 0.38f)
-            val subBass1 = (bassStrength / 100f) * (if (antiClipping) 0.12f else 0.22f)
+            val subBass0 = (bassStrength / 100f) * (if (antiClipping) 0.20f else 0.36f)
+            val subBass1 = (bassStrength / 100f) * (if (antiClipping) 0.10f else 0.20f)
 
             for (b in 0 until minOf(numBands, gains.size)) {
                 val extra = when (b) {
@@ -211,7 +236,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
             bassBoost?.let { bb ->
                 bb.enabled = bassStrength > 0
                 if (bb.strengthSupported) {
-                    val maxBb = if (antiClipping) 650 else 950
+                    val maxBb = if (antiClipping) 600 else 920
                     bb.setStrength(((bassStrength * maxBb) / 100).coerceIn(0, 1000).toShort())
                 }
             }
@@ -229,8 +254,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
 
         runCatching {
             loudnessEnhancer?.let { le ->
-                // في وضع منع الغروشة يتم تحجيم المضخم الإضافي برفق شديد لمنع تكسير الصوت
-                val safeLoudness = if (antiClipping) (loudnessGain * 4) else (loudnessGain * 8)
+                val safeLoudness = if (antiClipping) (loudnessGain * 3) else (loudnessGain * 7)
                 le.enabled = safeLoudness > 0
                 le.setTargetGain(safeLoudness)
             }
@@ -249,7 +273,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         when (key) {
             "band_gains", "bass_strength", "virtualizer_strength", "loudness_gain", "anti_clipping", "spatial_8d_enabled" -> applyDspLevels()
             "playback_speed", "playback_pitch" -> applyPlaybackParams()
-            "widget_style" -> VyroWidgetProvider.updateAllWidgets(this)
+            "widget_style", "accent_color_id" -> VyroWidgetProvider.updateAllWidgets(this)
         }
     }
 
@@ -273,6 +297,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
     }
 
     override fun onDestroy() {
+        flushListeningTime()
         prefs.unregisterOnSharedPreferenceChangeListener(this)
         releaseDsp()
         mediaSession?.run {
@@ -331,41 +356,53 @@ class VyroWidgetProvider : AppWidgetProvider() {
         private fun updateSingleWidget(context: Context, mgr: AppWidgetManager, widgetId: Int) {
             runCatching {
                 val prefs = context.getSharedPreferences("vyro_prefs", Context.MODE_PRIVATE)
-                val title = prefs.getString("last_title", "VYRO MUSIC ROYAL") ?: "VYRO MUSIC ROYAL"
-                val artist = prefs.getString("last_artist", "Mohamed Tarek Studio") ?: "Mohamed Tarek Studio"
+                val title = prefs.getString("last_title", "VYRO MUSIC") ?: "VYRO MUSIC"
+                val artist = prefs.getString("last_artist", "Mohamed Tarek") ?: "Mohamed Tarek"
+                val songUriStr = prefs.getString("last_song_uri", "") ?: ""
                 val albumId = prefs.getLong("last_album_id", -1L)
                 val isPlaying = prefs.getBoolean("is_playing_now", false)
-                val savedStyle = prefs.getString("widget_style", "Auto Adaptive") ?: "Auto Adaptive"
+                val savedStyle = prefs.getString("widget_style", "Full Poster") ?: "Full Poster"
 
                 val options = mgr.getAppWidgetOptions(widgetId)
-                val minW = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 220)
-                val minH = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 80)
+                val minW = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 200)
+                val minH = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 120)
 
                 val useSquareLayout = when (savedStyle) {
-                    "Square Card 2x2" -> true
-                    "Wide Pill 4x1", "Glass Studio 4x2", "Neon Capsule" -> false
-                    else -> (minH >= 115 && minW <= 210) || (abs(minW - minH) < 45)
+                    "Full Poster", "Square Glass" -> true
+                    "Wide Bar" -> false
+                    else -> (minH >= 110 && minW <= 240) || (abs(minW - minH) < 60)
                 }
+
+                val isFullBleedPoster = useSquareLayout && (savedStyle == "Full Poster" || savedStyle == "Auto Adaptive")
 
                 val views = RemoteViews(context.packageName, R.layout.vyro_widget)
                 views.setViewVisibility(R.id.widget_square_box, if (useSquareLayout) View.VISIBLE else View.GONE)
                 views.setViewVisibility(R.id.widget_wide_box, if (useSquareLayout) View.GONE else View.VISIBLE)
+                views.setViewVisibility(
+                    R.id.widget_art_square,
+                    if (isFullBleedPoster) View.GONE else View.VISIBLE
+                )
 
-                val (rawCover, domColor) = loadAlbumBitmapAndColor(context, albumId)
-                val bgBmp = renderDynamicWidgetBg(domColor, savedStyle, useSquareLayout)
-                val artBmp = renderShapedAlbumArt(rawCover, domColor, savedStyle)
+                val rawCover = loadRobustAlbumArt(context, songUriStr, albumId)
+                val domColor = extractSoftDominantColor(rawCover)
+
+                val bgBmp = renderSleekWidgetBackground(
+                    rawCover = rawCover,
+                    domColor = domColor,
+                    isSquare = useSquareLayout,
+                    fullBleedPoster = isFullBleedPoster
+                )
+                val artBmp = renderRoundedCover(rawCover, domColor)
 
                 views.setImageViewBitmap(R.id.widget_bg, bgBmp)
 
                 val playIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
 
-                // ربط بيانات الوضع الأفقي
                 views.setTextViewText(R.id.widget_title_wide, title)
                 views.setTextViewText(R.id.widget_artist_wide, artist)
                 views.setImageViewBitmap(R.id.widget_art_wide, artBmp)
                 views.setImageViewResource(R.id.widget_play_wide, playIcon)
 
-                // ربط بيانات الوضع المربع
                 views.setTextViewText(R.id.widget_title_square, title)
                 views.setTextViewText(R.id.widget_artist_square, artist)
                 views.setImageViewBitmap(R.id.widget_art_square, artBmp)
@@ -399,114 +436,157 @@ class VyroWidgetProvider : AppWidgetProvider() {
             }
         }
 
-        private fun loadAlbumBitmapAndColor(context: Context, albumId: Long): Pair<Bitmap?, Int> {
-            var art: Bitmap? = null
-            var dominant = 0xFF7B4DFF.toInt()
-            if (albumId > 0) {
-                runCatching {
-                    val uri = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
-                    context.contentResolver.openInputStream(uri)?.use { stream ->
-                        art = BitmapFactory.decodeStream(stream)
+        // محرك تحميل الصور الثلاثي لضمان ظهور صورة الأغنية على أندرويد 14/15/16 بنسبة 100%
+        fun loadRobustAlbumArt(context: Context, songUriStr: String, albumId: Long): Bitmap? {
+            if (songUriStr.isNotBlank()) {
+                val uri = Uri.parse(songUriStr)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    runCatching {
+                        val thumb = context.contentResolver.loadThumbnail(uri, Size(360, 360), null)
+                        if (thumb != null) return thumb
                     }
-                    art?.let { bmp ->
-                        var r = 0L
-                        var g = 0L
-                        var b = 0L
-                        var c = 0L
-                        val sx = (bmp.width / 8).coerceAtLeast(1)
-                        val sy = (bmp.height / 8).coerceAtLeast(1)
-                        for (x in 0 until bmp.width step sx) {
-                            for (y in 0 until bmp.height step sy) {
-                                val px = bmp.getPixel(x, y)
-                                r += android.graphics.Color.red(px)
-                                g += android.graphics.Color.green(px)
-                                b += android.graphics.Color.blue(px)
-                                c++
-                            }
-                        }
-                        if (c > 0) {
-                            dominant = android.graphics.Color.rgb(
-                                ((r / c) * 1.2f).toInt().coerceIn(55, 245),
-                                ((g / c) * 1.2f).toInt().coerceIn(55, 245),
-                                ((b / c) * 1.25f).toInt().coerceIn(70, 255)
-                            )
-                        }
+                }
+                runCatching {
+                    val mmr = MediaMetadataRetriever()
+                    mmr.setDataSource(context, uri)
+                    val bytes = mmr.embeddedPicture
+                    mmr.release()
+                    if (bytes != null) {
+                        val opts = BitmapFactory.Options().apply { inSampleSize = 1 }
+                        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+                        if (decoded != null) return decoded
                     }
                 }
             }
-            return art to dominant
+            if (albumId > 0) {
+                runCatching {
+                    val artUri = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
+                    context.contentResolver.openInputStream(artUri)?.use { stream ->
+                        val decoded = BitmapFactory.decodeStream(stream)
+                        if (decoded != null) return decoded
+                    }
+                }
+            }
+            return null
         }
 
-        private fun renderDynamicWidgetBg(domColor: Int, style: String, isSquare: Boolean): Bitmap {
-            val w = if (isSquare) 320 else 600
-            val h = if (isSquare) 320 else 180
+        private fun extractSoftDominantColor(bmp: Bitmap?): Int {
+            if (bmp == null) return 0xFF1D2C49.toInt()
+            var r = 0L
+            var g = 0L
+            var b = 0L
+            var c = 0L
+            val sx = (bmp.width / 8).coerceAtLeast(1)
+            val sy = (bmp.height / 8).coerceAtLeast(1)
+            for (x in 0 until bmp.width step sx) {
+                for (y in 0 until bmp.height step sy) {
+                    val px = bmp.getPixel(x, y)
+                    r += android.graphics.Color.red(px)
+                    g += android.graphics.Color.green(px)
+                    b += android.graphics.Color.blue(px)
+                    c++
+                }
+            }
+            if (c == 0L) return 0xFF1D2C49.toInt()
+            return android.graphics.Color.rgb(
+                ((r / c) * 0.72f).toInt().coerceIn(22, 165),
+                ((g / c) * 0.72f).toInt().coerceIn(22, 165),
+                ((b / c) * 0.78f).toInt().coerceIn(28, 175)
+            )
+        }
+
+        private fun renderSleekWidgetBackground(
+            rawCover: Bitmap?,
+            domColor: Int,
+            isSquare: Boolean,
+            fullBleedPoster: Boolean
+        ): Bitmap {
+            val w = if (isSquare) 360 else 640
+            val h = if (isSquare) 360 else 190
             val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(out)
+            val corner = 48f
+            val rect = RectF(0f, 0f, w.toFloat(), h.toFloat())
 
-            val corner = when (style) {
-                "Neon Capsule" -> h / 2f
-                "Square Card 2x2" -> 54f
-                else -> 44f
-            }
+            if (fullBleedPoster && rawCover != null) {
+                // بوستر سينمائي: صورة الأغنية تملأ المربع بالكامل مع تدرج داكن أنيق في الأسفل للأزرار
+                val scaled = centerCropBitmap(rawCover, w, h)
+                val coverPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    shader = BitmapShader(scaled, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+                }
+                canvas.drawRoundRect(rect, corner, corner, coverPaint)
 
-            val darkBase = 0xFF0A0C16.toInt()
-            val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                shader = LinearGradient(
-                    0f, 0f, w.toFloat(), h.toFloat(),
-                    intArrayOf(domColor, darkBase, 0xFF05060B.toInt()),
-                    floatArrayOf(0f, 0.58f, 1f),
-                    Shader.TileMode.CLAMP
-                )
-                alpha = 238
+                val scrimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    shader = LinearGradient(
+                        0f, h * 0.25f, 0f, h.toFloat(),
+                        intArrayOf(0x18000000, 0xB0080A12.toInt(), 0xEE06070D.toInt()),
+                        floatArrayOf(0f, 0.58f, 1f),
+                        Shader.TileMode.CLAMP
+                    )
+                }
+                canvas.drawRoundRect(rect, corner, corner, scrimPaint)
+            } else {
+                // بطاقة زجاجية فاخرة بألوان هادئة مستوحاة من غلاف الأغنية
+                val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    shader = LinearGradient(
+                        0f, 0f, w.toFloat(), h.toFloat(),
+                        intArrayOf(domColor, 0xFF10131C.toInt(), 0xFF0A0C12.toInt()),
+                        floatArrayOf(0f, 0.62f, 1f),
+                        Shader.TileMode.CLAMP
+                    )
+                }
+                canvas.drawRoundRect(rect, corner, corner, bgPaint)
             }
-            val rect = RectF(4f, 4f, w - 4f, h - 4f)
-            canvas.drawRoundRect(rect, corner, corner, bgPaint)
 
             val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                this.style = Paint.Style.STROKE
-                strokeWidth = 3.5f
-                color = domColor
-                alpha = 190
+                style = Paint.Style.STROKE
+                strokeWidth = 2.5f
+                color = 0x33FFFFFF
             }
-            canvas.drawRoundRect(rect, corner, corner, borderPaint)
+            canvas.drawRoundRect(RectF(1.5f, 1.5f, w - 1.5f, h - 1.5f), corner, corner, borderPaint)
             return out
         }
 
-        private fun renderShapedAlbumArt(rawArt: Bitmap?, domColor: Int, style: String): Bitmap {
-            val size = 160
+        private fun renderRoundedCover(rawArt: Bitmap?, domColor: Int): Bitmap {
+            val size = 180
             val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(out)
-            val radius = when (style) {
-                "Neon Capsule" -> size / 2f
-                "Square Card 2x2" -> 38f
-                else -> 32f
-            }
-            val rect = RectF(4f, 4f, size - 4f, size - 4f)
+            val rect = RectF(0f, 0f, size.toFloat(), size.toFloat())
+            val radius = 32f
 
             if (rawArt != null) {
-                val scaled = Bitmap.createScaledBitmap(rawArt, size, size, true)
+                val cropped = centerCropBitmap(rawArt, size, size)
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    shader = BitmapShader(scaled, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+                    shader = BitmapShader(cropped, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
                 }
                 canvas.drawRoundRect(rect, radius, radius, paint)
             } else {
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     shader = LinearGradient(
                         0f, 0f, size.toFloat(), size.toFloat(),
-                        intArrayOf(domColor, 0xFF141829.toInt()),
+                        intArrayOf(domColor, 0xFF171D2B.toInt()),
                         null, Shader.TileMode.CLAMP
                     )
                 }
                 canvas.drawRoundRect(rect, radius, radius, paint)
+                val notePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = 0xCCFFFFFF.toInt()
+                    textSize = 72f
+                    textAlign = Paint.Align.CENTER
+                }
+                canvas.drawText("♪", size / 2f, size * 0.64f, notePaint)
             }
-
-            val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                this.style = Paint.Style.STROKE
-                strokeWidth = 3f
-                color = domColor
-            }
-            canvas.drawRoundRect(rect, radius, radius, ringPaint)
             return out
+        }
+
+        private fun centerCropBitmap(src: Bitmap, targetW: Int, targetH: Int): Bitmap {
+            val scale = maxOf(targetW.toFloat() / src.width, targetH.toFloat() / src.height)
+            val scaledW = (src.width * scale).toInt().coerceAtLeast(targetW)
+            val scaledH = (src.height * scale).toInt().coerceAtLeast(targetH)
+            val scaled = Bitmap.createScaledBitmap(src, scaledW, scaledH, true)
+            val x = ((scaledW - targetW) / 2).coerceAtLeast(0)
+            val y = ((scaledH - targetH) / 2).coerceAtLeast(0)
+            return Bitmap.createBitmap(scaled, x, y, targetW, targetH)
         }
     }
 }
