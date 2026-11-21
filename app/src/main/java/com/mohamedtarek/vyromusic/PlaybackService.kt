@@ -186,7 +186,6 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         applyDspLevels()
     }
 
-    // محرك تنقية الصوت الإجباري الصامت: يضمن أعلى نقاء وبيز عميق بدون أي تشويش أو غروشة
     private fun applyDspLevels() {
         val spatial8D = prefs.getBoolean("spatial_8d_enabled", false)
         val gainsJson = prefs.getString("band_gains", null)
@@ -202,7 +201,6 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         val virtStrength = prefs.getInt("virtualizer_strength", 30).coerceIn(0, 100)
         val loudnessGain = prefs.getInt("loudness_gain", 0).coerceIn(0, 100)
 
-        // موازنة ديناميكية لسقف الصوت (Dynamic Headroom Limiter) مطبقة إجبارياً في الخلفية
         val maxPeak = gains.maxOrNull()?.coerceAtLeast(0f) ?: 0f
         val headroomDrop = ((maxPeak - 0.42f).coerceAtLeast(0f) * 0.28f) +
             ((bassStrength - 50).coerceAtLeast(0) / 380f) +
@@ -368,12 +366,13 @@ class VyroWidgetProvider : AppWidgetProvider() {
                 val minH = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 120)
 
                 val useSquareLayout = when (savedStyle) {
-                    "Full Poster", "Glassify Frost", "Stadium Glass" -> true
-                    "Wide Glass" -> false
-                    else -> (minH >= 110 && minW <= 240) || (abs(minW - minH) < 60)
+                    "Wide Glass", "Dynamic Pill", "Minimal Split" -> false
+                    "Transparent Clear" -> (minH >= 115 && minW <= 230) || (abs(minW - minH) < 55)
+                    else -> true
                 }
 
-                val isFullBleedPoster = useSquareLayout && (savedStyle == "Full Poster" || savedStyle == "Auto Adaptive")
+                val isFullBleedPoster = useSquareLayout && (savedStyle == "Full Poster")
+                val isCircleCover = savedStyle == "Vinyl Deck" || savedStyle == "Dynamic Pill"
 
                 val views = RemoteViews(context.packageName, R.layout.vyro_widget)
                 views.setViewVisibility(R.id.widget_square_box, if (useSquareLayout) View.VISIBLE else View.GONE)
@@ -383,14 +382,14 @@ class VyroWidgetProvider : AppWidgetProvider() {
                 val rawCover = loadRobustAlbumArt(context, songUriStr, albumId)
                 val domColor = extractSoftDominantColor(rawCover)
 
-                val bgBmp = renderGlassifyWidgetBackground(
+                val bgBmp = renderWidgetBackground(
                     rawCover = rawCover,
                     domColor = domColor,
                     style = savedStyle,
                     isSquare = useSquareLayout,
                     fullBleedPoster = isFullBleedPoster
                 )
-                val artBmp = renderRoundedCover(rawCover, domColor)
+                val artBmp = renderRoundedCover(rawCover, domColor, isCircleCover)
 
                 views.setImageViewBitmap(R.id.widget_bg, bgBmp)
 
@@ -493,7 +492,7 @@ class VyroWidgetProvider : AppWidgetProvider() {
             )
         }
 
-        private fun renderGlassifyWidgetBackground(
+        private fun renderWidgetBackground(
             rawCover: Bitmap?,
             domColor: Int,
             style: String,
@@ -504,8 +503,14 @@ class VyroWidgetProvider : AppWidgetProvider() {
             val h = if (isSquare) 380 else 196
             val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(out)
-            val corner = 54f
+            val corner = when (style) {
+                "Dynamic Pill" -> h / 2f
+                "Retro Cassette" -> 28f
+                else -> 54f
+            }
             val rect = RectF(0f, 0f, w.toFloat(), h.toFloat())
+            var rimColors = intArrayOf(0x66FFFFFF, 0x1AFFFFFF, 0x44FFFFFF)
+            var rimWidth = 3f
 
             when {
                 fullBleedPoster && rawCover != null -> {
@@ -514,7 +519,6 @@ class VyroWidgetProvider : AppWidgetProvider() {
                         shader = BitmapShader(scaled, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
                     }
                     canvas.drawRoundRect(rect, corner, corner, coverPaint)
-
                     val scrimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         shader = LinearGradient(
                             0f, h * 0.22f, 0f, h.toFloat(),
@@ -536,7 +540,6 @@ class VyroWidgetProvider : AppWidgetProvider() {
                         )
                     }
                     canvas.drawRoundRect(rect, corner, corner, pitchPaint)
-
                     val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         this.style = Paint.Style.STROKE
                         strokeWidth = 3f
@@ -544,7 +547,6 @@ class VyroWidgetProvider : AppWidgetProvider() {
                     }
                     canvas.drawLine(0f, h * 0.5f, w.toFloat(), h * 0.5f, linePaint)
                     canvas.drawCircle(w * 0.5f, h * 0.5f, minOf(w, h) * 0.24f, linePaint)
-
                     val spotlight = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         shader = RadialGradient(
                             w * 0.2f, h * 0.1f, w * 0.65f,
@@ -555,8 +557,145 @@ class VyroWidgetProvider : AppWidgetProvider() {
                     canvas.drawRoundRect(rect, corner, corner, spotlight)
                 }
 
+                style == "AMOLED Pure" -> {
+                    val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF000000.toInt() }
+                    canvas.drawRoundRect(rect, corner, corner, p)
+                    rimColors = intArrayOf(0xFF00E5FF.toInt(), 0x4400E5FF, 0xFF00E5FF.toInt())
+                    rimWidth = 4f
+                }
+
+                style == "Cyber Neon" -> {
+                    val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = LinearGradient(
+                            0f, 0f, w.toFloat(), h.toFloat(),
+                            intArrayOf(0xF00B0622.toInt(), 0xF01C0933.toInt(), 0xF0050A18.toInt()),
+                            null, Shader.TileMode.CLAMP
+                        )
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, p)
+                    val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = RadialGradient(w * 0.8f, h * 0.2f, w * 0.7f, intArrayOf(0x55FF007A, 0x00000000), null, Shader.TileMode.CLAMP)
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, glow)
+                    rimColors = intArrayOf(0xFF00E5FF.toInt(), 0xFFFF007A.toInt(), 0xFF7B61FF.toInt())
+                    rimWidth = 5f
+                }
+
+                style == "Vinyl Deck" -> {
+                    val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = LinearGradient(0f, 0f, 0f, h.toFloat(), intArrayOf(0xF2151822.toInt(), 0xF5090B10.toInt()), null, Shader.TileMode.CLAMP)
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, p)
+                    val groove = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        this.style = Paint.Style.STROKE
+                        strokeWidth = 2.5f
+                        color = 0x26FFFFFF
+                    }
+                    for (r in 70..165 step 16) {
+                        canvas.drawCircle(w * 0.5f, h * 0.34f, r.toFloat(), groove)
+                    }
+                    rimColors = intArrayOf(0x55FFFFFF, 0x15FFFFFF, 0x4400E5FF)
+                }
+
+                style == "Blaugrana Pitch" -> {
+                    val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = LinearGradient(
+                            0f, 0f, w.toFloat(), h.toFloat(),
+                            intArrayOf(0xEE002A70.toInt(), 0xEE180D2B.toInt(), 0xEE8A0D32.toInt()),
+                            floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP
+                        )
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, p)
+                    val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        this.style = Paint.Style.STROKE
+                        strokeWidth = 3f
+                        color = 0x2AFFFFFF
+                    }
+                    canvas.drawCircle(w * 0.5f, h * 0.5f, minOf(w, h) * 0.25f, linePaint)
+                    rimColors = intArrayOf(0xFF2196F3.toInt(), 0xFFFFC857.toInt(), 0xFFED1B4E.toInt())
+                    rimWidth = 4.5f
+                }
+
+                style == "Golden Luxury" -> {
+                    val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = LinearGradient(
+                            0f, 0f, w.toFloat(), h.toFloat(),
+                            intArrayOf(0xF514110A.toInt(), 0xF50B0A08.toInt(), 0xF5211A0C.toInt()),
+                            null, Shader.TileMode.CLAMP
+                        )
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, p)
+                    val shimmer = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = RadialGradient(w * 0.5f, 0f, w * 0.7f, intArrayOf(0x44FFC857, 0x00000000), null, Shader.TileMode.CLAMP)
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, shimmer)
+                    rimColors = intArrayOf(0xFFFFD56B.toInt(), 0xFF9C7120.toInt(), 0xFFFFE082.toInt())
+                    rimWidth = 4.5f
+                }
+
+                style == "Aurora Mesh" -> {
+                    val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = LinearGradient(
+                            0f, 0f, w.toFloat(), h.toFloat(),
+                            intArrayOf(0xE80A2A3B.toInt(), (domColor and 0x00FFFFFF) or 0xDD000000.toInt(), 0xE8261042.toInt()),
+                            null, Shader.TileMode.CLAMP
+                        )
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, p)
+                    val orb = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = RadialGradient(w * 0.25f, h * 0.25f, w * 0.6f, intArrayOf(0x4800FFA3, 0x00000000), null, Shader.TileMode.CLAMP)
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, orb)
+                }
+
+                style == "Dynamic Pill" -> {
+                    val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = LinearGradient(
+                            0f, 0f, w.toFloat(), 0f,
+                            intArrayOf(0xF20D111C.toInt(), 0xF2151B2B.toInt(), 0xF20D111C.toInt()),
+                            null, Shader.TileMode.CLAMP
+                        )
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, p)
+                    rimColors = intArrayOf(0x88FFFFFF.toInt(), 0x22FFFFFF, 0x8800E5FF.toInt())
+                    rimWidth = 3.5f
+                }
+
+                style == "Transparent Clear" -> {
+                    val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x33000000 }
+                    canvas.drawRoundRect(rect, corner, corner, p)
+                    rimColors = intArrayOf(0x55FFFFFF, 0x18FFFFFF, 0x55FFFFFF)
+                    rimWidth = 2.5f
+                }
+
+                style == "Retro Cassette" -> {
+                    val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = LinearGradient(0f, 0f, 0f, h.toFloat(), intArrayOf(0xF21D212E.toInt(), 0xF212141D.toInt()), null, Shader.TileMode.CLAMP)
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, p)
+                    val stripe = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xCCFF6B35.toInt() }
+                    canvas.drawRect(0f, h * 0.14f, w.toFloat(), h * 0.17f, stripe)
+                    val stripe2 = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xCCFFC857.toInt() }
+                    canvas.drawRect(0f, h * 0.17f, w.toFloat(), h * 0.20f, stripe2)
+                    rimColors = intArrayOf(0x88FFC857.toInt(), 0x44FF6B35, 0x88FFFFFF.toInt())
+                    rimWidth = 4f
+                }
+
+                style == "Minimal Split" -> {
+                    val darkP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xF40B0D14.toInt() }
+                    canvas.drawRoundRect(rect, corner, corner, darkP)
+                    val tintP = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        shader = LinearGradient(
+                            0f, 0f, w * 0.45f, 0f,
+                            intArrayOf((domColor and 0x00FFFFFF) or 0xCC000000.toInt(), 0x00000000),
+                            null, Shader.TileMode.CLAMP
+                        )
+                    }
+                    canvas.drawRoundRect(rect, corner, corner, tintP)
+                    rimColors = intArrayOf(0x77FFFFFF, 0x22FFFFFF, 0x44FFFFFF)
+                }
+
                 else -> {
-                    // Glassify Frosted Glass: شفافية زجاجية فاخرة مع انعكاس ضوئي علوي متدرج
                     val glassBase = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         shader = LinearGradient(
                             0f, 0f, w.toFloat(), h.toFloat(),
@@ -570,7 +709,6 @@ class VyroWidgetProvider : AppWidgetProvider() {
                         )
                     }
                     canvas.drawRoundRect(rect, corner, corner, glassBase)
-
                     val specularSheen = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         shader = LinearGradient(
                             0f, 0f, 0f, h * 0.45f,
@@ -582,26 +720,21 @@ class VyroWidgetProvider : AppWidgetProvider() {
                 }
             }
 
-            // إطار زجاجي لامع (Glass Specular Rim)
             val rimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 this.style = Paint.Style.STROKE
-                strokeWidth = 3f
-                shader = LinearGradient(
-                    0f, 0f, w.toFloat(), h.toFloat(),
-                    intArrayOf(0x66FFFFFF, 0x1AFFFFFF, 0x44FFFFFF),
-                    null, Shader.TileMode.CLAMP
-                )
+                strokeWidth = rimWidth
+                shader = LinearGradient(0f, 0f, w.toFloat(), h.toFloat(), rimColors, null, Shader.TileMode.CLAMP)
             }
-            canvas.drawRoundRect(RectF(2f, 2f, w - 2f, h - 2f), corner, corner, rimPaint)
+            canvas.drawRoundRect(RectF(2.5f, 2.5f, w - 2.5f, h - 2.5f), corner, corner, rimPaint)
             return out
         }
 
-        private fun renderRoundedCover(rawArt: Bitmap?, domColor: Int): Bitmap {
+        private fun renderRoundedCover(rawArt: Bitmap?, domColor: Int, isCircle: Boolean): Bitmap {
             val size = 200
             val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(out)
             val rect = RectF(0f, 0f, size.toFloat(), size.toFloat())
-            val radius = 36f
+            val radius = if (isCircle) size / 2f else 36f
 
             if (rawArt != null) {
                 val cropped = centerCropBitmap(rawArt, size, size)
