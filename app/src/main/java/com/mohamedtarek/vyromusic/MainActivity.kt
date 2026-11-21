@@ -169,7 +169,6 @@ object VyroMediaCache {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // ترحيل وتنظيف البيانات القديمة قبل فتح الواجهة لمنع أي كراش بعد التحديث
         runCatching {
             val prefs = getSharedPreferences("vyro_prefs", Context.MODE_PRIVATE)
             VyroSafePrefs.sanitizeOnUpgrade(prefs)
@@ -230,7 +229,6 @@ fun VyroMusicApp() {
         }.getOrDefault("5.0.3-TITAN")
     }
 
-    // Safe Preferences State
     var isArabic by remember { mutableStateOf(VyroSafePrefs.getBoolean(prefs, "lang_ar", true)) }
     var themeMode by remember { mutableStateOf(VyroSafePrefs.getString(prefs, "theme_mode", "dark")) }
     var bgStyle by remember { mutableStateOf(VyroSafePrefs.getString(prefs, "bg_style", "aura")) }
@@ -243,7 +241,6 @@ fun VyroMusicApp() {
     var showTour by remember { mutableStateOf(!VyroSafePrefs.getBoolean(prefs, "tour_done_v5", false)) }
     var tourStep by remember { mutableIntStateOf(0) }
 
-    // Audio DSP State
     var bandGains by remember { mutableStateOf(VyroSafePrefs.getBandGains(prefs)) }
     var bassStrength by remember { mutableIntStateOf(VyroSafePrefs.getInt(prefs, "bass_strength", 35).coerceIn(0, 100)) }
     var virtStrength by remember { mutableIntStateOf(VyroSafePrefs.getInt(prefs, "virtualizer_strength", 30).coerceIn(0, 100)) }
@@ -251,7 +248,6 @@ fun VyroMusicApp() {
     var playbackSpeed by remember { mutableFloatStateOf(VyroSafePrefs.getFloat(prefs, "playback_speed", 1f).coerceIn(0.5f, 2.0f)) }
     var playbackPitch by remember { mutableFloatStateOf(VyroSafePrefs.getFloat(prefs, "playback_pitch", 1f).coerceIn(0.5f, 2.0f)) }
 
-    // Library & Playlists State
     var allSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var hiddenIds by remember { mutableStateOf(VyroSafePrefs.getLongSet(prefs, "hidden_ids")) }
     var favoriteIds by remember { mutableStateOf(VyroSafePrefs.getLongSet(prefs, "favorite_ids")) }
@@ -259,7 +255,6 @@ fun VyroMusicApp() {
     var playCounts by remember { mutableStateOf(VyroSafePrefs.getPlayCounts(prefs)) }
     var customPlaylists by remember { mutableStateOf(loadPlaylistsSafe(prefs)) }
 
-    // Navigation & Sheets State
     var currentScreen by remember { mutableStateOf(AppScreen.MAIN) }
     var activeTab by remember { mutableIntStateOf(0) }
     var selectedFolder by remember { mutableStateOf<String?>(null) }
@@ -287,7 +282,6 @@ fun VyroMusicApp() {
     var isCheckingUpdate by remember { mutableStateOf(false) }
     var updateAvailable by remember { mutableStateOf(false) }
 
-    // MediaController State
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var currentSong by remember { mutableStateOf<Song?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
@@ -553,7 +547,6 @@ fun VyroMusicApp() {
         }
     }
 
-    // زر الرجوع الرئيسي للتنقل بين التبويبات والمجلدات قبل الخروج من التطبيق
     BackHandler(
         enabled = searchVisible || selectedFolder != null || selectedArtist != null || selectedPlaylistTitle != null || activeTab != 0
     ) {
@@ -793,7 +786,6 @@ fun VyroMusicApp() {
                     }
                 }
 
-                // لوحة المشغل بملء الشاشة — تدعم زر الرجوع للنظام للعودة لصفحة الأغاني فوراً
                 AnimatedVisibility(
                     visible = showNowPlaying && currentSong != null,
                     enter = slideInVertically(initialOffsetY = { it / 3 }) + fadeIn(),
@@ -851,7 +843,6 @@ fun VyroMusicApp() {
                     }
                 }
 
-                // وضع السيارة
                 if (showCarMode && currentSong != null) {
                     CarModeOverlay(
                         song = currentSong!!,
@@ -864,7 +855,6 @@ fun VyroMusicApp() {
                     )
                 }
 
-                // الجولة التعليمية
                 if (showTour && currentScreen == AppScreen.MAIN) {
                     OnboardingTourOverlay(
                         isArabic = isArabic,
@@ -884,8 +874,6 @@ fun VyroMusicApp() {
                     )
                 }
             }
-
-            // ==================== DIALOGS ====================
 
             if (showEqSheet) {
                 AudioStudioDialog(
@@ -1215,7 +1203,6 @@ fun MainLibraryScreen(
     updateAvailable: Boolean
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        // Header ثابت ونظيف بدون تكسير
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1584,7 +1571,6 @@ fun MainLibraryScreen(
             }
         }
 
-        // شريط المشغل المصغر السفلي
         currentSong?.let { song ->
             Column(
                 modifier = Modifier
@@ -2092,7 +2078,7 @@ fun ThemeStudioScreen(
     }
 }
 
-// ==================== NOW PLAYING OVERLAY (ZERO OVERLAP + SYSTEM BACK SUPPORT) ====================
+// ==================== NOW PLAYING OVERLAY ====================
 
 @Composable
 fun NowPlayingOverlay(
@@ -2122,7 +2108,6 @@ fun NowPlayingOverlay(
     onOpenCarMode: () -> Unit,
     onAddToPlaylist: () -> Unit
 ) {
-    // زر الرجوع بتاع النظام يرجّعك فوراً لصفحة الأغاني وميخرجش من التطبيق
     BackHandler(enabled = true) { onClose() }
 
     val inf = rememberInfiniteTransition(label = "np")
@@ -2154,7 +2139,9 @@ fun NowPlayingOverlay(
                 onClick = {}
             )
     ) {
-        val artSize = minOf(maxWidth * 0.74f, maxHeight * 0.34f).coerceIn(170.dp, 300.dp)
+        val wArt = maxWidth * 0.74f
+        val hArt = maxHeight * 0.34f
+        val artSize = (if (wArt < hArt) wArt else hArt).coerceIn(170.dp, 300.dp)
 
         Column(
             modifier = Modifier
@@ -2162,7 +2149,6 @@ fun NowPlayingOverlay(
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // شريط علوي متوازن
             Row(
                 modifier = Modifier.fillMaxWidth().height(44.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -2191,7 +2177,6 @@ fun NowPlayingOverlay(
 
             Spacer(Modifier.weight(0.6f))
 
-            // غلاف الأغنية بمقاس متجاوب يمنع تداخل أي عناصر
             Box(
                 modifier = Modifier
                     .size(artSize)
@@ -2213,7 +2198,6 @@ fun NowPlayingOverlay(
 
             Spacer(Modifier.height(14.dp))
 
-            // موجات الصوت
             if (showWaves) {
                 Canvas(modifier = Modifier.fillMaxWidth().height(26.dp)) {
                     val bars = 36
@@ -2234,7 +2218,6 @@ fun NowPlayingOverlay(
                 Spacer(Modifier.height(10.dp))
             }
 
-            // اسم الأغنية والفنان + المفضلة
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -2270,7 +2253,6 @@ fun NowPlayingOverlay(
 
             Spacer(Modifier.height(6.dp))
 
-            // شريط التقديم وأزرار التشغيل (ثابتة LTR بمسافات واضحة بدون أي تداخل)
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Slider(
@@ -2329,7 +2311,6 @@ fun NowPlayingOverlay(
 
             Spacer(Modifier.weight(1f))
 
-            // أزرار الأدوات السفلية (أيقونة فوق النص لضمان عدم تداخلها أو قصها أبداً)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -2791,6 +2772,8 @@ fun OnboardingTourOverlay(
     onNext: () -> Unit,
     onSkip: () -> Unit
 ) {
+    BackHandler(enabled = true) { onSkip() }
+
     val steps = if (isArabic) listOf(
         "أهلاً بك في VYRO MUSIC TITAN 🎧" to "مشغلك الاحترافي السريع بدون أي إعلانات وبصوت نقي تلقائياً.",
         "استوديو ويدجت Glassify 🎛️" to "اضغط أيقونة المربعات الذهبية فوق للاختيار من بين 14 شكل ويدجت فاخر للشاشة الرئيسية.",
@@ -3266,7 +3249,8 @@ fun loadPlaylistsSafe(prefs: SharedPreferences): List<CustomPlaylist> {
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
                 val id = o.optString("id").ifBlank { i.toString() }
-                val name = o.optString("name").ifBlank { continue }
+                val name = o.optString("name").trim()
+                if (name.isEmpty()) continue
                 val ids = o.optJSONArray("songIds")
                 val idList = buildList {
                     if (ids != null) {
