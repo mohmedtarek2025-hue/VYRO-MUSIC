@@ -39,7 +39,195 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.math.abs
+
+// ==================== SAFE UPGRADE PREFS ENGINE ====================
+// يمنع حدوث ClassCastException عند تثبيت نسخة جديدة فوق نسخة قديمة بدون مسح البيانات
+
+object VyroSafePrefs {
+    private fun raw(prefs: SharedPreferences, key: String): Any? =
+        runCatching { prefs.all[key] }.getOrNull()
+
+    fun getString(prefs: SharedPreferences, key: String, def: String): String {
+        return when (val v = raw(prefs, key)) {
+            null -> def
+            is String -> v
+            is Number, is Boolean -> v.toString()
+            else -> def
+        }
+    }
+
+    fun getInt(prefs: SharedPreferences, key: String, def: Int): Int {
+        return when (val v = raw(prefs, key)) {
+            null -> def
+            is Int -> v
+            is Number -> v.toInt()
+            is String -> v.trim().toIntOrNull() ?: v.trim().toFloatOrNull()?.toInt() ?: def
+            else -> def
+        }
+    }
+
+    fun getLong(prefs: SharedPreferences, key: String, def: Long): Long {
+        return when (val v = raw(prefs, key)) {
+            null -> def
+            is Long -> v
+            is Number -> v.toLong()
+            is String -> v.trim().toLongOrNull() ?: def
+            else -> def
+        }
+    }
+
+    fun getFloat(prefs: SharedPreferences, key: String, def: Float): Float {
+        return when (val v = raw(prefs, key)) {
+            null -> def
+            is Float -> v
+            is Number -> v.toFloat()
+            is String -> v.trim().toFloatOrNull() ?: def
+            else -> def
+        }
+    }
+
+    fun getBoolean(prefs: SharedPreferences, key: String, def: Boolean): Boolean {
+        return when (val v = raw(prefs, key)) {
+            null -> def
+            is Boolean -> v
+            is Number -> v.toInt() != 0
+            is String -> when (v.trim().lowercase()) {
+                "true", "1", "yes", "ar" -> true
+                "false", "0", "no", "en" -> false
+                else -> def
+            }
+            else -> def
+        }
+    }
+
+    fun getLongSet(prefs: SharedPreferences, key: String): Set<Long> {
+        val v = raw(prefs, key) ?: return emptySet()
+        return runCatching {
+            when (v) {
+                is Set<*> -> v.mapNotNull { it?.toString()?.trim()?.toLongOrNull() }.toSet()
+                is String -> {
+                    val t = v.trim()
+                    if (t.isEmpty()) emptySet()
+                    else if (t.startsWith("[")) {
+                        val arr = JSONArray(t)
+                        buildSet {
+                            for (i in 0 until arr.length()) {
+                                arr.optString(i).toLongOrNull()?.let { add(it) }
+                            }
+                        }
+                    } else {
+                        t.split(",").mapNotNull { it.trim().toLongOrNull() }.toSet()
+                    }
+                }
+                else -> emptySet()
+            }
+        }.getOrDefault(emptySet())
+    }
+
+    fun getLongList(prefs: SharedPreferences, key: String): List<Long> {
+        val v = raw(prefs, key) ?: return emptyList()
+        return runCatching {
+            when (v) {
+                is Set<*> -> v.mapNotNull { it?.toString()?.trim()?.toLongOrNull() }
+                is String -> {
+                    val t = v.trim()
+                    if (t.isEmpty()) emptyList()
+                    else if (t.startsWith("[")) {
+                        val arr = JSONArray(t)
+                        buildList {
+                            for (i in 0 until arr.length()) {
+                                arr.optString(i).toLongOrNull()?.let { add(it) }
+                            }
+                        }
+                    } else {
+                        t.split(",").mapNotNull { it.trim().toLongOrNull() }
+                    }
+                }
+                else -> emptyList()
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    fun getBandGains(prefs: SharedPreferences): List<Float> {
+        val defaultGains = listOf(0.28f, 0.16f, 0.0f, 0.14f, 0.24f)
+        val rawStr = getString(prefs, "band_gains", "")
+        if (rawStr.isBlank()) return defaultGains
+        return runCatching {
+            if (rawStr.trim().startsWith("[")) {
+                val arr = JSONArray(rawStr)
+                List(5) { i -> arr.optDouble(i, defaultGains[i].toDouble()).toFloat().coerceIn(-1f, 1f) }
+            } else {
+                val parts = rawStr.split(",").mapNotNull { it.trim().toFloatOrNull() }
+                List(5) { i -> parts.getOrElse(i) { defaultGains[i] }.coerceIn(-1f, 1f) }
+            }
+        }.getOrDefault(defaultGains)
+    }
+
+    fun getPlayCounts(prefs: SharedPreferences): Map<Long, Int> {
+        val rawStr = getString(prefs, "play_counts_json", "")
+        if (rawStr.isBlank()) return emptyMap()
+        return runCatching {
+            val obj = JSONObject(rawStr)
+            buildMap {
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    k.toLongOrNull()?.let { put(it, obj.optInt(k, 0)) }
+                }
+            }
+        }.getOrDefault(emptyMap())
+    }
+
+    fun sanitizeOnUpgrade(prefs: SharedPreferences) {
+        runCatching {
+            val currentSchema = getInt(prefs, "vyro_prefs_schema", 0)
+            if (currentSchema >= 503) return
+
+            val favs = getLongSet(prefs, "favorite_ids")
+            val hidden = getLongSet(prefs, "hidden_ids")
+            val recents = getLongList(prefs, "recent_ids")
+            val gains = getBandGains(prefs)
+            val accent = getInt(prefs, "accent_color_id", 0)
+            val bass = getInt(prefs, "bass_strength", 35)
+            val virt = getInt(prefs, "virtualizer_strength", 30)
+            val loud = getInt(prefs, "loudness_gain", 0)
+            val speed = getFloat(prefs, "playback_speed", 1f)
+            val pitch = getFloat(prefs, "playback_pitch", 1f)
+            val listenSec = getLong(prefs, "stat_listen_seconds", 0L)
+            val tracksPlayed = getInt(prefs, "stat_tracks_played", 0)
+            val lastSongId = getLong(prefs, "last_song_id", -1L)
+            val lastAlbumId = getLong(prefs, "last_album_id", -1L)
+            val langAr = getBoolean(prefs, "lang_ar", true)
+            val spatial8D = getBoolean(prefs, "spatial_8d_enabled", false)
+            val sortMode = getInt(prefs, "sort_mode", 0)
+
+            prefs.edit()
+                .putString("favorite_ids", JSONArray(favs.toList()).toString())
+                .putString("hidden_ids", JSONArray(hidden.toList()).toString())
+                .putString("recent_ids", JSONArray(recents).toString())
+                .putString("band_gains", JSONArray(gains).toString())
+                .putInt("accent_color_id", accent)
+                .putInt("bass_strength", bass)
+                .putInt("virtualizer_strength", virt)
+                .putInt("loudness_gain", loud)
+                .putFloat("playback_speed", speed)
+                .putFloat("playback_pitch", pitch)
+                .putLong("stat_listen_seconds", listenSec)
+                .putInt("stat_tracks_played", tracksPlayed)
+                .putLong("last_song_id", lastSongId)
+                .putLong("last_album_id", lastAlbumId)
+                .putBoolean("lang_ar", langAr)
+                .putBoolean("spatial_8d_enabled", spatial8D)
+                .putInt("sort_mode", sortMode)
+                .putInt("vyro_prefs_schema", 503)
+                .apply()
+        }
+    }
+}
+
+// ==================== PLAYBACK SERVICE ====================
 
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPreferenceChangeListener {
@@ -64,6 +252,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
     override fun onCreate() {
         super.onCreate()
         prefs = getSharedPreferences("vyro_prefs", Context.MODE_PRIVATE)
+        VyroSafePrefs.sanitizeOnUpgrade(prefs)
         prefs.registerOnSharedPreferenceChangeListener(this)
 
         val audioAttributes = AudioAttributes.Builder()
@@ -104,7 +293,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
                 val songUriStr = mediaItem.localConfiguration?.uri?.toString()
                     ?: mediaItem.requestMetadata.extras?.getString("song_uri")
                     ?: ""
-                val totalPlayed = prefs.getInt("stat_tracks_played", 0) + 1
+                val totalPlayed = VyroSafePrefs.getInt(prefs, "stat_tracks_played", 0) + 1
 
                 prefs.edit()
                     .putLong("last_song_id", id)
@@ -140,7 +329,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         if (playSessionStartMs > 0L) {
             val deltaSec = ((System.currentTimeMillis() - playSessionStartMs) / 1000L).coerceIn(0L, 14400L)
             if (deltaSec > 0L) {
-                val prev = prefs.getLong("stat_listen_seconds", 0L)
+                val prev = VyroSafePrefs.getLong(prefs, "stat_listen_seconds", 0L)
                 prefs.edit().putLong("stat_listen_seconds", prev + deltaSec).apply()
             }
             playSessionStartMs = 0L
@@ -148,18 +337,20 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_WIDGET_TOGGLE -> {
-                if (player.isPlaying) player.pause() else player.play()
-                VyroWidgetProvider.updateAllWidgets(this)
-            }
-            ACTION_WIDGET_NEXT -> {
-                player.seekToNext()
-                VyroWidgetProvider.updateAllWidgets(this)
-            }
-            ACTION_WIDGET_PREV -> {
-                player.seekToPrevious()
-                VyroWidgetProvider.updateAllWidgets(this)
+        runCatching {
+            when (intent?.action) {
+                ACTION_WIDGET_TOGGLE -> {
+                    if (player.isPlaying) player.pause() else player.play()
+                    VyroWidgetProvider.updateAllWidgets(this)
+                }
+                ACTION_WIDGET_NEXT -> {
+                    player.seekToNext()
+                    VyroWidgetProvider.updateAllWidgets(this)
+                }
+                ACTION_WIDGET_PREV -> {
+                    player.seekToPrevious()
+                    VyroWidgetProvider.updateAllWidgets(this)
+                }
             }
         }
         return super.onStartCommand(intent, flags, startId)
@@ -187,19 +378,11 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
     }
 
     private fun applyDspLevels() {
-        val spatial8D = prefs.getBoolean("spatial_8d_enabled", false)
-        val gainsJson = prefs.getString("band_gains", null)
-        val gains = runCatching {
-            if (gainsJson.isNullOrBlank()) null
-            else {
-                val arr = JSONArray(gainsJson)
-                (0 until arr.length()).map { arr.getDouble(it).toFloat() }
-            }
-        }.getOrNull() ?: listOf(0.28f, 0.16f, 0.0f, 0.14f, 0.24f)
-
-        val bassStrength = prefs.getInt("bass_strength", 35).coerceIn(0, 100)
-        val virtStrength = prefs.getInt("virtualizer_strength", 30).coerceIn(0, 100)
-        val loudnessGain = prefs.getInt("loudness_gain", 0).coerceIn(0, 100)
+        val spatial8D = VyroSafePrefs.getBoolean(prefs, "spatial_8d_enabled", false)
+        val gains = VyroSafePrefs.getBandGains(prefs)
+        val bassStrength = VyroSafePrefs.getInt(prefs, "bass_strength", 35).coerceIn(0, 100)
+        val virtStrength = VyroSafePrefs.getInt(prefs, "virtualizer_strength", 30).coerceIn(0, 100)
+        val loudnessGain = VyroSafePrefs.getInt(prefs, "loudness_gain", 0).coerceIn(0, 100)
 
         val maxPeak = gains.maxOrNull()?.coerceAtLeast(0f) ?: 0f
         val headroomDrop = ((maxPeak - 0.42f).coerceAtLeast(0f) * 0.28f) +
@@ -260,8 +443,8 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
     }
 
     private fun applyPlaybackParams() {
-        val speed = prefs.getFloat("playback_speed", 1f).coerceIn(0.5f, 2.0f)
-        val pitch = prefs.getFloat("playback_pitch", 1f).coerceIn(0.5f, 2.0f)
+        val speed = VyroSafePrefs.getFloat(prefs, "playback_speed", 1f).coerceIn(0.5f, 2.0f)
+        val pitch = VyroSafePrefs.getFloat(prefs, "playback_pitch", 1f).coerceIn(0.5f, 2.0f)
         runCatching {
             player.playbackParameters = PlaybackParameters(speed, pitch)
         }
@@ -306,6 +489,8 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         super.onDestroy()
     }
 }
+
+// ==================== WIDGET PROVIDER ====================
 
 class VyroWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
@@ -354,12 +539,12 @@ class VyroWidgetProvider : AppWidgetProvider() {
         private fun updateSingleWidget(context: Context, mgr: AppWidgetManager, widgetId: Int) {
             runCatching {
                 val prefs = context.getSharedPreferences("vyro_prefs", Context.MODE_PRIVATE)
-                val title = prefs.getString("last_title", "VYRO MUSIC") ?: "VYRO MUSIC"
-                val artist = prefs.getString("last_artist", "Mohamed Tarek") ?: "Mohamed Tarek"
-                val songUriStr = prefs.getString("last_song_uri", "") ?: ""
-                val albumId = prefs.getLong("last_album_id", -1L)
-                val isPlaying = prefs.getBoolean("is_playing_now", false)
-                val savedStyle = prefs.getString("widget_style", "Glassify Frost") ?: "Glassify Frost"
+                val title = VyroSafePrefs.getString(prefs, "last_title", "VYRO MUSIC")
+                val artist = VyroSafePrefs.getString(prefs, "last_artist", "Mohamed Tarek")
+                val songUriStr = VyroSafePrefs.getString(prefs, "last_song_uri", "")
+                val albumId = VyroSafePrefs.getLong(prefs, "last_album_id", -1L)
+                val isPlaying = VyroSafePrefs.getBoolean(prefs, "is_playing_now", false)
+                val savedStyle = VyroSafePrefs.getString(prefs, "widget_style", "Glassify Frost")
 
                 val options = mgr.getAppWidgetOptions(widgetId)
                 val minW = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 200)
