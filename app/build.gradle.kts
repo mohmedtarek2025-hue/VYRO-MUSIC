@@ -12,7 +12,7 @@ val drawableDir = File(resDir, "drawable").apply { mkdirs() }
 val xmlDir = File(resDir, "xml").apply { mkdirs() }
 val layoutDir = File(resDir, "layout").apply { mkdirs() }
 
-// 1. أيقونة التطبيق الكاملة (تظهر كأيقونة لملف الـ APK نفسه في مدير الملفات وعند التثبيت)
+// 1. أيقونة التطبيق الكاملة
 File(drawableDir, "ic_vyro_bg.xml").writeText(
     """
     <?xml version="1.0" encoding="utf-8"?>
@@ -51,7 +51,6 @@ File(drawableDir, "ic_vyro_fg.xml").writeText(
     """.trimIndent()
 )
 
-// نسخة Fallback في drawable/ لضمان ظهور الأيقونة على ملف الـ APK في كل الأجهزة
 File(drawableDir, "ic_vyro_launcher.xml").writeText(
     """
     <?xml version="1.0" encoding="utf-8"?>
@@ -100,7 +99,7 @@ File(xmlDir, "file_paths.xml").writeText(
     """.trimIndent()
 )
 
-// 3. تخطيط الويدجت الزجاجي (14 شكل متنوع: Glassify + Full Poster + Stadium + AMOLED + Pill)
+// 3. تخطيط الويدجت (14 شكل متنوع)
 File(layoutDir, "vyro_widget.xml").writeText(
     """
     <?xml version="1.0" encoding="utf-8"?>
@@ -288,7 +287,7 @@ File(xmlDir, "vyro_widget_info.xml").writeText(
 )
 
 base {
-    archivesName.set("VYRO_MUSIC_5.0.1_TITAN")
+    archivesName.set("VYRO_MUSIC_5.0.3_TITAN")
 }
 
 android {
@@ -299,11 +298,10 @@ android {
         applicationId = "com.mohamedtarek.vyromusic"
         minSdk = 26
         targetSdk = 34
-        versionCode = 12
-        versionName = "5.0.1-TITAN"
+        versionCode = 14
+        versionName = "5.0.3-TITAN"
     }
 
-    // توقيع ثابت للتحديث فوق النسخة المثبتة بدون حذفها (لو ملف vyro.jks موجود في مجلد app)
     val fixedKeystore = File(projectDir, "vyro.jks")
     val fixedKeyPass = (System.getenv("VYRO_KEY_PASS") ?: "vyro2026").trim()
     signingConfigs {
