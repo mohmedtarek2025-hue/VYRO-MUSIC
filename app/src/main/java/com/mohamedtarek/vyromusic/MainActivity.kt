@@ -35,6 +35,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -142,7 +143,7 @@ data class ReleaseInfo(
 )
 
 enum class AppScreen {
-    MAIN, THEME_STUDIO, WIDGET_STUDIO, SETTINGS
+    MAIN, THEME_STUDIO, WIDGET_STUDIO, UPDATE_CENTER, SETTINGS
 }
 
 // ==================== ALBUM ART CACHE ====================
@@ -225,8 +226,8 @@ fun VyroMusicApp() {
 
     val appVersion = remember {
         runCatching {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "5.0.3-TITAN"
-        }.getOrDefault("5.0.3-TITAN")
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "5.0.4-TITAN"
+        }.getOrDefault("5.0.4-TITAN")
     }
 
     var isArabic by remember { mutableStateOf(VyroSafePrefs.getBoolean(prefs, "lang_ar", true)) }
@@ -256,6 +257,7 @@ fun VyroMusicApp() {
     var customPlaylists by remember { mutableStateOf(loadPlaylistsSafe(prefs)) }
 
     var currentScreen by remember { mutableStateOf(AppScreen.MAIN) }
+    var previousScreenBeforeUpdate by remember { mutableStateOf(AppScreen.MAIN) }
     var activeTab by remember { mutableIntStateOf(0) }
     var selectedFolder by remember { mutableStateOf<String?>(null) }
     var selectedArtist by remember { mutableStateOf<String?>(null) }
@@ -270,7 +272,6 @@ fun VyroMusicApp() {
     var showLyricsDialog by remember { mutableStateOf(false) }
     var showCarMode by remember { mutableStateOf(false) }
     var showSleepDialog by remember { mutableStateOf(false) }
-    var showUpdateDialog by remember { mutableStateOf(false) }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var songForPlaylistDialog by remember { mutableStateOf<Song?>(null) }
     var showHiddenDialog by remember { mutableStateOf(false) }
@@ -281,6 +282,7 @@ fun VyroMusicApp() {
     var latestRelease by remember { mutableStateOf<ReleaseInfo?>(null) }
     var isCheckingUpdate by remember { mutableStateOf(false) }
     var updateAvailable by remember { mutableStateOf(false) }
+    var updateBannerDismissed by remember { mutableStateOf(false) }
 
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var currentSong by remember { mutableStateOf<Song?>(null) }
@@ -353,6 +355,18 @@ fun VyroMusicApp() {
         }
     }
 
+    fun checkUpdatesNow() {
+        scope.launch {
+            isCheckingUpdate = true
+            val rel = fetchLatestRelease()
+            if (rel != null) {
+                latestRelease = rel
+                updateAvailable = isNewerVersion(appVersion, rel.tag)
+            }
+            isCheckingUpdate = false
+        }
+    }
+
     LaunchedEffect(Unit) {
         val toAsk = mutableListOf<String>()
         if (!hasAudioPerm) toAsk.add(audioPerm)
@@ -377,13 +391,7 @@ fun VyroMusicApp() {
     }
 
     LaunchedEffect(Unit) {
-        val rel = fetchLatestRelease()
-        if (rel != null) {
-            latestRelease = rel
-            if (isNewerVersion(appVersion, rel.tag)) {
-                updateAvailable = true
-            }
-        }
+        checkUpdatesNow()
     }
 
     DisposableEffect(context) {
@@ -405,6 +413,7 @@ fun VyroMusicApp() {
                 ctrl.addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         isPlaying = playing
+                        if (playing) runCatching { ctrl.volume = 1f }
                     }
 
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -452,14 +461,23 @@ fun VyroMusicApp() {
         }
     }
 
+    // مؤقت النوم التدريجي (Fade-Out في آخر 10 ثواني)
     LaunchedEffect(sleepMinutesLeft) {
-        if (sleepMinutesLeft > 0) {
+        if (sleepMinutesLeft > 1) {
             delay(60_000L)
             sleepMinutesLeft -= 1
-            if (sleepMinutesLeft == 0) {
-                controller?.pause()
-                Toast.makeText(context, if (isArabic) "انتهى مؤقت النوم وتم إيقاف التشغيل" else "Sleep timer ended", Toast.LENGTH_SHORT).show()
+        } else if (sleepMinutesLeft == 1) {
+            delay(50_000L)
+            for (step in 9 downTo 1) {
+                runCatching { controller?.volume = step / 10f }
+                delay(1_000L)
             }
+            runCatching {
+                controller?.pause()
+                controller?.volume = 1f
+            }
+            sleepMinutesLeft = 0
+            Toast.makeText(context, if (isArabic) "انتهى مؤقت النوم التدريجي وتم إيقاف التشغيل" else "Fade-out sleep timer ended", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -500,6 +518,7 @@ fun VyroMusicApp() {
                 .build()
         }
         runCatching {
+            ctrl.volume = 1f
             ctrl.setMediaItems(items, safeIdx, 0L)
             ctrl.prepare()
             ctrl.play()
@@ -653,7 +672,14 @@ fun VyroMusicApp() {
                             onOpenThemeStudio = { currentScreen = AppScreen.THEME_STUDIO },
                             onOpenWidgetStudio = { currentScreen = AppScreen.WIDGET_STUDIO },
                             onOpenSettings = { currentScreen = AppScreen.SETTINGS },
-                            updateAvailable = updateAvailable
+                            updateAvailable = updateAvailable,
+                            showUpdateBanner = updateAvailable && !updateBannerDismissed,
+                            latestReleaseTag = latestRelease?.tag ?: "",
+                            onOpenUpdateCenter = {
+                                previousScreenBeforeUpdate = AppScreen.MAIN
+                                currentScreen = AppScreen.UPDATE_CENTER
+                            },
+                            onDismissUpdateBanner = { updateBannerDismissed = true }
                         )
                     }
 
@@ -715,6 +741,21 @@ fun VyroMusicApp() {
                         )
                     }
 
+                    AppScreen.UPDATE_CENTER -> {
+                        UpdateCenterScreen(
+                            isArabic = isArabic,
+                            currentVersion = appVersion,
+                            accent = accent,
+                            cardColor = cardColor,
+                            textPrimary = textPrimary,
+                            textSecondary = textSecondary,
+                            release = latestRelease,
+                            isChecking = isCheckingUpdate,
+                            onRefresh = { checkUpdatesNow() },
+                            onBack = { currentScreen = previousScreenBeforeUpdate }
+                        )
+                    }
+
                     AppScreen.SETTINGS -> {
                         SettingsScreen(
                             isArabic = isArabic,
@@ -731,7 +772,10 @@ fun VyroMusicApp() {
                             widgetStyle = widgetStyle,
                             sleepMinutesLeft = sleepMinutesLeft,
                             hiddenCount = hiddenIds.size,
-                            onOpenUpdates = { showUpdateDialog = true },
+                            onOpenUpdates = {
+                                previousScreenBeforeUpdate = AppScreen.SETTINGS
+                                currentScreen = AppScreen.UPDATE_CENTER
+                            },
                             onExportBackup = { exportLauncher.launch("vyro_backup_${System.currentTimeMillis()}.json") },
                             onImportBackup = { importLauncher.launch(arrayOf("application/json", "*/*")) },
                             onOpenThemeStudio = { currentScreen = AppScreen.THEME_STUDIO },
@@ -943,7 +987,7 @@ fun VyroMusicApp() {
             if (showSleepDialog) {
                 AlertDialog(
                     onDismissRequest = { showSleepDialog = false },
-                    title = { Text(if (isArabic) "مؤقت النوم" else "Sleep Timer", fontWeight = FontWeight.Bold) },
+                    title = { Text(if (isArabic) "مؤقت النوم التدريجي" else "Fade-Out Sleep Timer", fontWeight = FontWeight.Bold) },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(0, 15, 30, 45, 60).forEach { mins ->
@@ -961,7 +1005,7 @@ fun VyroMusicApp() {
                                 ) {
                                     Text(
                                         text = if (mins == 0) (if (isArabic) "إيقاف المؤقت" else "Turn Off")
-                                        else (if (isArabic) "$mins دقيقة" else "$mins Minutes"),
+                                        else (if (isArabic) "$mins دقيقة (خفض تدريجي)" else "$mins Minutes (Fade-Out)"),
                                         fontWeight = FontWeight.Medium
                                     )
                                 }
@@ -1109,26 +1153,6 @@ fun VyroMusicApp() {
                 )
             }
 
-            if (showUpdateDialog) {
-                UpdateCenterDialog(
-                    isArabic = isArabic,
-                    currentVersion = appVersion,
-                    accent = accent,
-                    release = latestRelease,
-                    isChecking = isCheckingUpdate,
-                    onRefresh = {
-                        scope.launch {
-                            isCheckingUpdate = true
-                            val rel = fetchLatestRelease()
-                            latestRelease = rel
-                            updateAvailable = rel != null && isNewerVersion(appVersion, rel.tag)
-                            isCheckingUpdate = false
-                        }
-                    },
-                    onDismiss = { showUpdateDialog = false }
-                )
-            }
-
             if (showAboutDialog) {
                 AlertDialog(
                     onDismissRequest = { showAboutDialog = false },
@@ -1136,14 +1160,301 @@ fun VyroMusicApp() {
                     text = {
                         Text(
                             if (isArabic)
-                                "مشغل موسيقى احترافي متكامل بتطوير محمد طارق.\n\n• محرك صوت نقي + 8D محيطي\n• 14 شكل ويدجت Glassify فاخرة\n• استوديو سمات حي وتخصيص كامل\n• تحديثات آمنة بدون مسح البيانات عبر GitHub"
+                                "مشغل موسيقى احترافي متكامل بتطوير محمد طارق.\n\n• محرك صوت نقي + 8D محيطي + مانع غروشة\n• 14 شكل ويدجت Glassify فاخرة\n• استوديو سمات حي وتخصيص كامل\n• مركز تحديثات متكامل مع «ما الجديد» وتثبيت آمن بدون مسح البيانات"
                             else
-                                "Professional music player built by Mohamed Tarek.\n\n• Crystal Audio & 8D Surround\n• 14 Glassify Widgets\n• Live Theme Studio\n• Safe Seamless Updates via GitHub"
+                                "Professional music player built by Mohamed Tarek.\n\n• Crystal Audio & 8D Surround\n• 14 Glassify Widgets\n• Live Theme Studio\n• Full Update Center with What's New & Safe Seamless Updates"
                         )
                     },
                     confirmButton = { TextButton(onClick = { showAboutDialog = false }) { Text(if (isArabic) "إغلاق" else "Close") } }
                 )
             }
+        }
+    }
+}
+
+// ==================== FULL-SCREEN UPDATE CENTER + WHAT'S NEW ====================
+
+@Composable
+fun UpdateCenterScreen(
+    isArabic: Boolean,
+    currentVersion: String,
+    accent: Color,
+    cardColor: Color,
+    textPrimary: Color,
+    textSecondary: Color,
+    release: ReleaseInfo?,
+    isChecking: Boolean,
+    onRefresh: () -> Unit,
+    onBack: () -> Unit
+) {
+    BackHandler(enabled = true) { onBack() }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var downloadProgress by remember { mutableFloatStateOf(-1f) }
+    var showWhatsNewPanel by remember { mutableStateOf(false) }
+
+    val hasNew = release != null && isNewerVersion(currentVersion, release.tag)
+    val whatsNewText = remember(release, isArabic) {
+        val remoteNotes = release?.notes?.trim().orEmpty()
+        if (remoteNotes.isNotBlank()) remoteNotes
+        else if (isArabic) {
+            "• إعادة تصميم صفحة التحديثات الكاملة وإرجاع زر «ما الجديد» لعرض تفاصيل الإصدار.\n• إصلاح العطل الفني عند التثبيت فوق النسخة القديمة بدون مسح بيانات التطبيق.\n• إصلاح تداخل الأزرار في لوحة المشغل وتنظيم أزرار المعادل و8D والكلمات.\n• ربط زر الرجوع في النظام للعودة لصفحة الأغاني مباشرة.\n• دعم 14 شكل ويدجت Glassify مع محرك صوت نقي و8D."
+        } else {
+            "• Restored full-screen Update Center with dedicated What's New button.\n• Fixed upgrade crash when installing over older versions without wiping data.\n• Fixed Now Playing controls overlap and system Back navigation.\n• 14 Glassify Widgets & Crystal 8D Audio."
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        // Top Bar
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Rounded.ArrowBack, null, tint = textPrimary)
+            }
+            Spacer(Modifier.width(4.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = if (isArabic) "مركز التحديثات" else "Update Center",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 21.sp,
+                    color = textPrimary
+                )
+                Text(
+                    text = if (isArabic) "تحديثات VYRO MUSIC الرسمية عبر GitHub" else "Official VYRO MUSIC GitHub Updates",
+                    fontSize = 12.sp,
+                    color = textSecondary
+                )
+            }
+            IconButton(
+                onClick = { if (!isChecking) onRefresh() }
+            ) {
+                Icon(Icons.Rounded.Refresh, null, tint = accent)
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Main Hero Status Card
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(26.dp))
+                .background(cardColor)
+                .border(
+                    width = 1.5.dp,
+                    color = if (hasNew) Color(0xFF00E676).copy(0.75f) else accent.copy(0.35f),
+                    shape = RoundedCornerShape(26.dp)
+                )
+                .padding(22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .background(if (hasNew) Color(0xFF00E676).copy(0.18f) else accent.copy(0.16f)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isChecking) {
+                    CircularProgressIndicator(color = accent, strokeWidth = 3.dp, modifier = Modifier.size(34.dp))
+                } else {
+                    Icon(
+                        imageVector = if (hasNew) Icons.Rounded.SystemUpdate else Icons.Rounded.Verified,
+                        contentDescription = null,
+                        tint = if (hasNew) Color(0xFF00E676) else accent,
+                        modifier = Modifier.size(38.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            Text(
+                text = when {
+                    isChecking -> if (isArabic) "جاري فحص أحدث إصدار..." else "Checking for updates..."
+                    hasNew -> if (isArabic) "تحديث جديد متوفر الآن!" else "New Update Available!"
+                    else -> if (isArabic) "تطبيقك محدّث لآخر إصدار" else "Your App is Up to Date"
+                },
+                fontWeight = FontWeight.Black,
+                fontSize = 19.sp,
+                color = textPrimary,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(6.dp))
+
+            Text(
+                text = if (isArabic) "الإصدار المثبّت حالياً: $currentVersion" else "Installed Version: $currentVersion",
+                fontSize = 13.sp,
+                color = textSecondary
+            )
+
+            if (release != null) {
+                Spacer(Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(accent.copy(0.14f))
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = if (isArabic) "أحدث إصدار على السيرفر: ${release.name}" else "Latest Release: ${release.name}",
+                        color = accent,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+
+            // شريط تقدم التحميل المباشر
+            if (downloadProgress >= 0f) {
+                LinearProgressIndicator(
+                    progress = { downloadProgress },
+                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(8.dp)),
+                    color = accent
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = if (isArabic) "جاري تنزيل التحديث... ${(downloadProgress * 100).toInt()}%" else "Downloading update... ${(downloadProgress * 100).toInt()}%",
+                    color = accent,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+
+            // زر التحميل والتثبيت المباشر أو الفحص
+            if (hasNew && release != null && release.apkUrl.isNotBlank()) {
+                Button(
+                    enabled = downloadProgress < 0f,
+                    onClick = {
+                        scope.launch {
+                            downloadProgress = 0.05f
+                            downloadAndInstallApk(context, release.apkUrl, release.htmlUrl) { p ->
+                                downloadProgress = p
+                            }
+                            downloadProgress = -1f
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(Icons.Rounded.Download, null, tint = Color.Black)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (isArabic) "تنزيل وتثبيت التحديث الآن" else "Download & Install Now",
+                        color = Color.Black,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 14.sp
+                    )
+                }
+            } else {
+                Button(
+                    enabled = !isChecking,
+                    onClick = onRefresh,
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = accent),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(Icons.Rounded.Refresh, null, tint = Color.Black)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (isArabic) "فحص التحديثات الآن" else "Check for Updates",
+                        color = Color.Black,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            // زر «ما الجديد» المستقل لعرض تفاصيل الإصدار والمميزات
+            OutlinedButton(
+                onClick = { showWhatsNewPanel = !showWhatsNewPanel },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                border = BorderStroke(1.2.dp, accent.copy(0.65f)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Icon(Icons.Rounded.NewReleases, null, tint = accent, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (showWhatsNewPanel) {
+                        if (isArabic) "إخفاء «ما الجديد»" else "Hide What's New"
+                    } else {
+                        if (isArabic) "ما الجديد في هذا الإصدار" else "What's New"
+                    },
+                    color = accent,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+            }
+        }
+
+        // بطاقة تفاصيل «ما الجديد» (تظهر عند الضغط على زر ما الجديد أو تلقائياً لو فيه تحديث جديد)
+        AnimatedVisibility(visible = showWhatsNewPanel || hasNew) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(cardColor)
+                    .border(1.dp, accent.copy(0.3f), RoundedCornerShape(22.dp))
+                    .padding(18.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.AutoAwesome, null, tint = Color(0xFFFFC857), modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (isArabic) "ما الجديد (سجل التغييرات)" else "What's New (Changelog)",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 16.sp,
+                        color = textPrimary
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = whatsNewText,
+                    color = textPrimary.copy(0.9f),
+                    fontSize = 13.5.sp,
+                    lineHeight = 22.sp
+                )
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+
+        // خيار فتح صفحة الإصدارات على GitHub
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(cardColor)
+                .clickable {
+                    val targetUrl = release?.htmlUrl ?: "https://github.com/mohmedtarek2025-hue/VYRO-MUSIC/releases"
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl))) }
+                }
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Rounded.OpenInNew, null, tint = accent, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = if (isArabic) "عرض جميع الإصدارات على GitHub" else "View all releases on GitHub",
+                color = textPrimary,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(Icons.Rounded.ChevronLeft, null, tint = textSecondary)
         }
     }
 }
@@ -1200,7 +1511,11 @@ fun MainLibraryScreen(
     onOpenThemeStudio: () -> Unit,
     onOpenWidgetStudio: () -> Unit,
     onOpenSettings: () -> Unit,
-    updateAvailable: Boolean
+    updateAvailable: Boolean,
+    showUpdateBanner: Boolean,
+    latestReleaseTag: String,
+    onOpenUpdateCenter: () -> Unit,
+    onDismissUpdateBanner: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -1240,6 +1555,7 @@ fun MainLibraryScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(7.dp))
                             .background(accent.copy(alpha = 0.18f))
+                            .clickable { onOpenUpdateCenter() }
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
@@ -1282,6 +1598,43 @@ fun MainLibraryScreen(
                 softWrap = false,
                 modifier = Modifier.padding(start = 48.dp)
             )
+        }
+
+        // بطاقة الإشعار الذكية عند توفر تحديث جديد
+        AnimatedVisibility(visible = showUpdateBanner) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFF00E676).copy(0.14f))
+                    .border(1.dp, Color(0xFF00E676).copy(0.6f), RoundedCornerShape(16.dp))
+                    .clickable { onOpenUpdateCenter() }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Rounded.SystemUpdate, null, tint = Color(0xFF00E676), modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = if (isArabic) "تحديث جديد متوفر ($latestReleaseTag)" else "Update Available ($latestReleaseTag)",
+                        color = textPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = if (isArabic) "اضغط لعرض «ما الجديد» والتثبيت المباشر" else "Tap to view What's New & install",
+                        color = textSecondary,
+                        fontSize = 11.sp,
+                        maxLines = 1
+                    )
+                }
+                IconButton(onClick = onDismissUpdateBanner, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Rounded.Close, null, tint = textSecondary, modifier = Modifier.size(16.dp))
+                }
+            }
         }
 
         AnimatedVisibility(visible = searchVisible) {
@@ -1658,36 +2011,39 @@ fun SongsListArea(
         return
     }
 
-    if (listLayout == "grid") {
+    if (listLayout == "grid" || listLayout == "grid3") {
+        val cols = if (listLayout == "grid3") 3 else 2
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+            columns = GridCells.Fixed(cols),
             contentPadding = PaddingValues(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(songs.indices.toList()) { idx ->
                 val song = songs[idx]
                 val active = song.id == currentSongId
                 Column(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(18.dp))
+                        .clip(RoundedCornerShape(16.dp))
                         .background(if (active) accent.copy(0.18f) else cardColor)
-                        .border(1.dp, if (active) accent else Color.White.copy(0.06f), RoundedCornerShape(18.dp))
+                        .border(1.dp, if (active) accent else Color.White.copy(0.06f), RoundedCornerShape(16.dp))
                         .clickable { onPlay(songs, idx) }
-                        .padding(10.dp)
+                        .padding(8.dp)
                 ) {
-                    SongCoverImage(song, accent, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(14.dp)))
-                    Spacer(Modifier.height(8.dp))
-                    Text(song.title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (active) accent else textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${song.artist} • ${formatMs(song.duration)}", fontSize = 11.sp, color = textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    SongCoverImage(song, accent, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp)))
+                    Spacer(Modifier.height(6.dp))
+                    Text(song.title, fontWeight = FontWeight.Bold, fontSize = if (cols == 3) 11.sp else 13.sp, color = if (active) accent else textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(song.artist, fontSize = if (cols == 3) 9.sp else 11.sp, color = textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
     } else {
         val compact = listLayout == "compact"
+        val circleArt = listLayout == "circle"
+        val minimal = listLayout == "minimal"
         LazyColumn(
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 10.dp)
+            verticalArrangement = Arrangement.spacedBy(if (compact || minimal) 6.dp else 10.dp)
         ) {
             itemsIndexed(songs, key = { _, s -> s.id }) { idx, song ->
                 val active = song.id == currentSongId
@@ -1695,20 +2051,28 @@ fun SongsListArea(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(if (compact) 14.dp else 18.dp))
+                        .clip(RoundedCornerShape(if (compact || minimal) 14.dp else 18.dp))
                         .background(if (active) accent.copy(0.18f) else cardColor.copy(0.92f))
-                        .border(1.dp, if (active) accent.copy(0.8f) else Color.White.copy(0.06f), RoundedCornerShape(if (compact) 14.dp else 18.dp))
+                        .border(1.dp, if (active) accent.copy(0.8f) else Color.White.copy(0.06f), RoundedCornerShape(if (compact || minimal) 14.dp else 18.dp))
                         .clickable { onPlay(songs, idx) }
-                        .padding(horizontal = 12.dp, vertical = if (compact) 8.dp else 11.dp),
+                        .padding(horizontal = 12.dp, vertical = if (compact || minimal) 8.dp else 11.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    SongCoverImage(song, accent, Modifier.size(if (compact) 44.dp else 54.dp).clip(RoundedCornerShape(12.dp)))
-                    Spacer(Modifier.width(12.dp))
+                    if (!minimal) {
+                        SongCoverImage(
+                            song = song,
+                            accent = accent,
+                            modifier = Modifier
+                                .size(if (compact) 44.dp else 54.dp)
+                                .clip(if (circleArt) CircleShape else RoundedCornerShape(12.dp))
+                        )
+                        Spacer(Modifier.width(12.dp))
+                    }
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             song.title,
                             fontWeight = FontWeight.Bold,
-                            fontSize = if (compact) 14.sp else 15.sp,
+                            fontSize = if (compact || minimal) 14.sp else 15.sp,
                             color = if (active) accent else textPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -1942,14 +2306,17 @@ fun ThemeStudioScreen(
         val layouts = listOf(
             "medium" to (if (isArabic) "العرض المتوسط" else "Medium View"),
             "compact" to (if (isArabic) "العرض المدمج" else "Compact View"),
-            "grid" to (if (isArabic) "شبكة البوسترات 2x2" else "Poster Grid 2x2")
+            "circle" to (if (isArabic) "أغلفة دائرية" else "Circle Covers"),
+            "grid" to (if (isArabic) "شبكة البوسترات 2x2" else "Poster Grid 2x2"),
+            "grid3" to (if (isArabic) "شبكة مدمجة 3x3" else "Compact Grid 3x3"),
+            "minimal" to (if (isArabic) "قائمة نصية سريعة" else "Minimal List")
         )
         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(layouts) { (id, label) ->
                 val selected = listLayout == id
                 Column(
                     modifier = Modifier
-                        .width(210.dp)
+                        .width(205.dp)
                         .clip(RoundedCornerShape(22.dp))
                         .background(cardColor)
                         .border(if (selected) 2.dp else 1.dp, if (selected) accent else Color.White.copy(0.08f), RoundedCornerShape(22.dp))
@@ -1957,16 +2324,16 @@ fun ThemeStudioScreen(
                         .padding(12.dp)
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(label, fontWeight = FontWeight.Bold, color = accent, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                        if (selected) Icon(Icons.Rounded.CheckCircle, null, tint = accent, modifier = Modifier.size(20.dp))
+                        Text(label, fontWeight = FontWeight.Bold, color = accent, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        if (selected) Icon(Icons.Rounded.CheckCircle, null, tint = accent, modifier = Modifier.size(18.dp))
                     }
                     Spacer(Modifier.height(10.dp))
-                    if (id == "grid") {
+                    if (id == "grid" || id == "grid3") {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            sampleSongs.take(2).forEach { s ->
+                            sampleSongs.take(if (id == "grid3") 3 else 2).forEach { s ->
                                 Column(Modifier.weight(1f)) {
-                                    SongCoverImage(s, accent, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp)))
-                                    Text(s.title, fontSize = 9.sp, color = textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    SongCoverImage(s, accent, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(9.dp)))
+                                    Text(s.title, fontSize = 8.sp, color = textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                         }
@@ -1976,8 +2343,16 @@ fun ThemeStudioScreen(
                                 Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                SongCoverImage(s, accent, Modifier.size(if (id == "compact") 28.dp else 36.dp).clip(RoundedCornerShape(8.dp)))
-                                Spacer(Modifier.width(8.dp))
+                                if (id != "minimal") {
+                                    SongCoverImage(
+                                        s,
+                                        accent,
+                                        Modifier
+                                            .size(if (id == "compact") 28.dp else 34.dp)
+                                            .clip(if (id == "circle") CircleShape else RoundedCornerShape(8.dp))
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                }
                                 Column(Modifier.weight(1f)) {
                                     Text(s.title, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(s.artist, fontSize = 9.sp, color = textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -2010,7 +2385,7 @@ fun ThemeStudioScreen(
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             listOf(
-                "pure" to (if (isArabic) "سادة نقي" else "AMOLED"),
+                "pure" to (if (isArabic) "سادة AMOLED" else "AMOLED"),
                 "aura" to (if (isArabic) "هالة الغلاف 🎨" else "Cover Aura"),
                 "stadium" to (if (isArabic) "استاد الأبطال 🏟️" else "Stadium")
             ).forEach { (id, label) ->
@@ -2424,7 +2799,7 @@ fun SettingsScreen(
                 icon = Icons.Rounded.SystemUpdate,
                 tint = if (updateAvailable) Color(0xFF00E676) else accent,
                 title = if (isArabic) "تحديثات التطبيق" else "App Updates",
-                subtitle = if (isArabic) "فحص التحديثات وما الجديد" else "Check updates & changelog",
+                subtitle = if (isArabic) "صفحة التحديثات وزر «ما الجديد»" else "Update Center & What's New",
                 trailing = if (updateAvailable) (if (isArabic) "تحديث جديد!" else "Update!") else (if (isArabic) "محدث" else "Latest"),
                 textPrimary = textPrimary,
                 textSecondary = textSecondary,
@@ -2498,7 +2873,7 @@ fun SettingsScreen(
             SettingsRow(
                 icon = Icons.Rounded.Bedtime,
                 tint = textPrimary,
-                title = if (isArabic) "مؤقت النوم" else "Sleep Timer",
+                title = if (isArabic) "مؤقت النوم التدريجي" else "Fade-Out Sleep Timer",
                 subtitle = null,
                 trailing = if (sleepMinutesLeft > 0) "${sleepMinutesLeft}m" else (if (isArabic) "إيقاف" else "Off"),
                 textPrimary = textPrimary,
@@ -2736,7 +3111,8 @@ fun CarModeOverlay(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("DRIVE & GYM MODE", color = accent, fontWeight = FontWeight.Bold, fontSize = 13.sp, letterSpacing = 1.sp)
             IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, null, tint = Color.White, modifier = Modifier.size(34.dp)) }
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -2775,15 +3151,15 @@ fun OnboardingTourOverlay(
     BackHandler(enabled = true) { onSkip() }
 
     val steps = if (isArabic) listOf(
-        "أهلاً بك في VYRO MUSIC TITAN 🎧" to "مشغلك الاحترافي السريع بدون أي إعلانات وبصوت نقي تلقائياً.",
+        "أهلاً بك في VYRO MUSIC TITAN 🎧" to "مشغلك الاحترافي السريع بدون أي إعلانات وبصوت نقي ومانع غروشة تلقائياً.",
         "استوديو ويدجت Glassify 🎛️" to "اضغط أيقونة المربعات الذهبية فوق للاختيار من بين 14 شكل ويدجت فاخر للشاشة الرئيسية.",
-        "استوديو السمات الحي 🎨" to "اضغط أيقونة الألوان لتغيير شكل عرض أغانيك ولون التطبيق ووضع الإضاءة فوراً.",
-        "صوت محيطي 8D وتحديثات تلقائية ⚡" to "من شاشة المشغل فعّل 8D والمعادل، ومن الإعدادات تابع التحديثات التلقائية."
+        "استوديو السمات الحي 🎨" to "اضغط أيقونة الألوان لتغيير شكل عرض أغانيك ولون التطبيق وخلفية AMOLED فوراً.",
+        "مركز التحديثات وما الجديد 🚀" to "من الإعدادات افتح مركز التحديثات لعرض «ما الجديد» وتثبيت أي تحديث مباشر فوق القديم."
     ) else listOf(
         "Welcome to VYRO MUSIC TITAN 🎧" to "Fast, ad-free music player with Crystal Audio.",
         "Glassify Widget Studio 🎛️" to "Tap the gold grid icon to pick from 14 premium home screen widgets.",
         "Live Theme Studio 🎨" to "Tap the palette icon to customize layouts, atmosphere, and accent colors.",
-        "8D Surround & Auto-Updates ⚡" to "Toggle 8D & EQ in the player, and get seamless updates in Settings."
+        "Update Center & What's New 🚀" to "Open Update Center from Settings to inspect What's New and install updates."
     )
     val (title, body) = steps[step.coerceIn(0, steps.lastIndex)]
 
@@ -2820,96 +3196,6 @@ fun OnboardingTourOverlay(
             }
         }
     }
-}
-
-@Composable
-fun UpdateCenterDialog(
-    isArabic: Boolean,
-    currentVersion: String,
-    accent: Color,
-    release: ReleaseInfo?,
-    isChecking: Boolean,
-    onRefresh: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var downloadProgress by remember { mutableFloatStateOf(-1f) }
-
-    val hasNew = release != null && isNewerVersion(currentVersion, release.tag)
-
-    AlertDialog(
-        onDismissRequest = { if (downloadProgress < 0f) onDismiss() },
-        title = {
-            Text(
-                if (hasNew) (if (isArabic) "تحديث جديد متوفر 🚀" else "Update Available 🚀")
-                else (if (isArabic) "مركز التحديثات" else "Update Center"),
-                fontWeight = FontWeight.Black
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (isArabic) "الإصدار الحالي: $currentVersion" else "Current: $currentVersion", fontSize = 13.sp)
-                if (isChecking) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = accent)
-                        Spacer(Modifier.width(10.dp))
-                        Text(if (isArabic) "جاري فحص التحديثات..." else "Checking...")
-                    }
-                } else if (release != null) {
-                    Text(
-                        if (isArabic) "أحدث إصدار: ${release.name}" else "Latest: ${release.name}",
-                        fontWeight = FontWeight.Bold,
-                        color = accent
-                    )
-                    if (release.notes.isNotBlank()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 180.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color.White.copy(0.06f))
-                                .verticalScroll(rememberScrollState())
-                                .padding(10.dp)
-                        ) {
-                            Text(release.notes, fontSize = 12.sp)
-                        }
-                    }
-                } else {
-                    Text(if (isArabic) "اضغط فحص للتحقق من آخر إصدار على GitHub." else "Tap Check to inspect latest GitHub release.")
-                }
-
-                if (downloadProgress >= 0f) {
-                    LinearProgressIndicator(progress = { downloadProgress }, modifier = Modifier.fillMaxWidth(), color = accent)
-                    Text("${(downloadProgress * 100).toInt()}%", fontSize = 12.sp, color = accent)
-                }
-            }
-        },
-        confirmButton = {
-            if (hasNew && release != null && release.apkUrl.isNotBlank()) {
-                Button(
-                    enabled = downloadProgress < 0f,
-                    onClick = {
-                        scope.launch {
-                            downloadProgress = 0.05f
-                            downloadAndInstallApk(context, release.apkUrl, release.htmlUrl) { p -> downloadProgress = p }
-                            downloadProgress = -1f
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = accent)
-                ) {
-                    Text(if (isArabic) "تنزيل وتثبيت الآن" else "Download & Install", color = Color.Black, fontWeight = FontWeight.Bold)
-                }
-            } else {
-                Button(onClick = onRefresh, colors = ButtonDefaults.buttonColors(containerColor = accent)) {
-                    Text(if (isArabic) "فحص الآن" else "Check Now", color = Color.Black, fontWeight = FontWeight.Bold)
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(if (isArabic) "إغلاق" else "Close") }
-        }
-    )
 }
 
 // ==================== REUSABLE UI HELPERS ====================
@@ -3104,7 +3390,7 @@ suspend fun fetchLatestRelease(): ReleaseInfo? = withContext(Dispatchers.IO) {
             connectTimeout = 10000
             readTimeout = 10000
             setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("User-Agent", "VyroMusicApp/5.0.3")
+            setRequestProperty("User-Agent", "VyroMusicApp/5.0.4")
         }
         if (conn.responseCode !in 200..299) {
             conn.disconnect()
