@@ -1,98 +1,97 @@
 package com.mohamedtarek.vyromusic
 
 import android.Manifest
-import android.app.Activity
 import android.app.WallpaperManager
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.ContentUris
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
-import android.database.ContentObserver
 import android.graphics.Bitmap
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
-import android.media.MediaExtractor
-import android.media.MediaFormat
-import android.media.MediaMuxer
-import android.media.RingtoneManager
-import android.media.audiofx.AudioEffect
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
+import android.os.PowerManager
 import android.provider.MediaStore
 import android.provider.Settings
-import android.speech.RecognizerIntent
 import android.util.LruCache
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.IntentSenderRequest
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import coil.compose.AsyncImage
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -102,16 +101,13 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import java.nio.ByteBuffer
+import java.net.URLEncoder
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
-import kotlin.math.abs
-import kotlin.math.cos
 import kotlin.math.sin
-import kotlin.math.sqrt
 
-private const val APP_VERSION_NAME = "5.0.0-TITAN"
-private const val GITHUB_RELEASES_API = "https://api.github.com/repos/mohmedtarek2025-hue/VYRO-MUSIC/releases/latest"
-private const val MANDATORY_UPDATE_DAYS = 10L
+// ==================== DATA MODELS ====================
 
 data class Song(
     val id: Long,
@@ -119,1939 +115,1574 @@ data class Song(
     val artist: String,
     val album: String,
     val albumId: Long,
-    val uri: Uri,
     val duration: Long,
-    val dateAdded: Long,
-    val sizeBytes: Long,
-    val filePath: String?
-) {
-    val folderName: String
-        get() = filePath?.let { File(it).parentFile?.name } ?: "Music"
-}
-
-data class CoverPalette(
-    val dominant: Color = Color(0xFF00C2FF),
-    val secondary: Color = Color(0xFF6B5BFF),
-    val deepTint: Color = Color(0xFF070C18)
+    val uri: Uri,
+    val folder: String,
+    val dateAdded: Long
 )
 
-data class LrcLine(val timeMs: Long, val text: String)
+data class CustomPlaylist(
+    val id: String,
+    val name: String,
+    val songIds: List<Long>
+)
 
-data class AccentSwatch(val id: String, val label: String, val color: Color)
-
-data class UpdateInfo(
-    val tagName: String,
+data class OnlineWallpaper(
+    val id: String,
     val title: String,
-    val changelog: String,
-    val apkDownloadUrl: String?,
+    val thumbUrl: String,
+    val fullUrl: String,
+    val resolution: String,
+    val source: String
+)
+
+data class WidgetPreset(
+    val id: String,
+    val titleAr: String,
+    val titleEn: String,
+    val descAr: String,
+    val gradient: List<Color>,
+    val borderColor: Color,
+    val isWide: Boolean = false,
+    val isCircle: Boolean = false
+)
+
+data class ReleaseInfo(
+    val tag: String,
+    val name: String,
+    val notes: String,
+    val apkUrl: String,
     val htmlUrl: String
 )
 
-data class GlassPreset(
-    val id: String,
-    val title: String,
-    val subtitle: String,
-    val c1: Color,
-    val c2: Color,
-    val badge: String
-)
+enum class AppScreen {
+    MAIN, THEME_STUDIO, GLASSIFY_STUDIO, SETTINGS
+}
 
-private val ACCENT_SWATCHES = listOf(
-    AccentSwatch("DYNAMIC", "تلقائي بالغلاف", Color(0xFF7B61FF)),
-    AccentSwatch("CYAN", "سماوي TITAN", Color(0xFF00C2FF)),
-    AccentSwatch("BLUE", "أزرق ملكي", Color(0xFF2196F3)),
-    AccentSwatch("EMERALD", "أخضر الملاعب", Color(0xFF00E676)),
-    AccentSwatch("PURPLE", "بنفسجي نيون", Color(0xFFC55FFC)),
-    AccentSwatch("CRIMSON", "أحمر كتالوني", Color(0xFFED1B4E)),
-    AccentSwatch("GOLD", "ذهبي فاخر", Color(0xFFFFC857))
-)
+// ==================== IMAGE & NETWORK ENGINE ====================
 
-private val LIVE_BACKDROPS = listOf(
-    "NONE" to "سادة نقي",
-    "DYNAMIC_AURA" to "🎨 هالة الغلاف",
-    "STADIUM" to "🏟️ استاد الأبطال",
-    "BLAUGRANA" to "🔵🔴 كامب نو",
-    "OCEAN" to "🌊 البحر والفقاقيع",
-    "NEON" to "⚡ أضواء النيون",
-    "MATRIX" to "🟢 مطر الماتريكس"
-)
+object VyroMediaCache {
+    private val maxMem = (Runtime.getRuntime().maxMemory() / 1024).toInt()
+    private val artCache = object : LruCache<String, Bitmap>(maxMem / 10) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount / 1024
+    }
+    private val webCache = object : LruCache<String, Bitmap>(maxMem / 8) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount / 1024
+    }
 
-private val GLASS_WALLPAPER_PRESETS = listOf(
-    GlassPreset("CHAMPIONS_PITCH", "استاد الأبطال ليلاً", "تخطيط ملعب كرة قدم مع كشافات زجاجية", Color(0xFF00E676), Color(0xFF041C0E), "ملاعب"),
-    GlassPreset("BLAUGRANA_NIGHT", "ليالي كامب نو", "تدرج بلوجرانا زجاجي وأضواء مدرجات", Color(0xFFED1B4E), Color(0xFF0A1B47), "كرة قدم"),
-    GlassPreset("GLASSIFY_FROST", "زجاج Glassify الداكن", "طبقات زجاجية فاخرة وانعكاسات ضوئية", Color(0xFF00C2FF), Color(0xFF0B1020), "زجاجي"),
-    GlassPreset("PHONK_CARBON", "كربون الفونك والنيون", "أضواء سايبر حادة لشاشات AMOLED", Color(0xFFFF3D71), Color(0xFF0D0818), "نيون"),
-    GlassPreset("OCEAN_GLASS", "أعماق المحيط الزجاجي", "أمواج شفافة وفقاقيع مضيئة هادئة", Color(0xFF00E5FF), Color(0xFF041B30), "بحري")
-)
+    suspend fun loadSongArt(context: Context, song: Song): Bitmap? = withContext(Dispatchers.IO) {
+        val key = "song_${song.id}"
+        artCache.get(key)?.let { return@withContext it }
+        val bmp = VyroWidgetProvider.loadRobustAlbumArt(context, song.uri.toString(), song.albumId)
+        if (bmp != null) artCache.put(key, bmp)
+        bmp
+    }
 
-private val TUTORIAL_STEPS = listOf(
-    Triple("مرحباً بك في VYRO MUSIC 5.0", "مشغل موسيقى مصمم بهوية أصلية وصوت نقي فائق. اضغط التالي لنأخذك في جولة سريعة على أهم الأزرار.", Icons.Default.GraphicEq),
-    Triple("استوديو السمات بالمعاينة الحية", "من أيقونة الألوان في الأعلى يمكنك تغيير حجم العرض (صغير/وسط/كبير)، الوضع الليلي أو النهاري، وتجربة الألوان مباشرة على أغانيك الحقيقية.", Icons.Default.Palette),
-    Triple("استوديو Glassify للموبايل والويدجت", "رتّب شاشة هاتفك الرئيسية وشاشة القفل بخلفيات زجاجية وملاعب كرة قدم بضغطة زر، وأضف ويدجت زجاجي متفاعل مع أغلفة أغانيك.", Icons.Default.Widgets),
-    Triple("استوديو الصوت 8D والمشغل", "فعّل الصوت المحيطي 8D، قص أي أغنية كنغمة رنين، اعرض كلمات LRC المتزامنة، وكرر مقاطعك المفضلة بـ A-B Loop.", Icons.Default.Headphones),
-    Triple("مركز التحديثات الذكي", "سيتحقق التطبيق تلقائياً من أي إصدار جديد ويحمّله لك من داخل التطبيق مع قائمة كاملة بالمميزات الجديدة.", Icons.Default.SystemUpdate)
-)
+    suspend fun loadNetworkBitmap(urlStr: String, maxSize: Int = 520): Bitmap? = withContext(Dispatchers.IO) {
+        val key = "${urlStr}_$maxSize"
+        webCache.get(key)?.let { return@withContext it }
+        runCatching {
+            val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 12000
+                readTimeout = 15000
+                instanceFollowRedirects = true
+                setRequestProperty("User-Agent", "VyroMusicApp/5.0.1 (Android; Contact: mohmedtarek2025-hue)")
+            }
+            if (conn.responseCode !in 200..299) {
+                conn.disconnect()
+                return@withContext null
+            }
+            val bytes = conn.inputStream.use { it.readBytes() }
+            conn.disconnect()
 
-private object CoverArtCache {
-    private val cache = LruCache<Long, Bitmap>(64)
-    fun get(id: Long): Bitmap? = cache.get(id)
-    fun put(id: Long, bmp: Bitmap) {
-        cache.put(id, bmp)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            var sample = 1
+            while (bounds.outWidth / sample > maxSize * 2 || bounds.outHeight / sample > maxSize * 2) {
+                sample *= 2
+            }
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+            if (decoded != null) webCache.put(key, decoded)
+            decoded
+        }.getOrNull()
     }
 }
+
+object WallpaperStoreEngine {
+    private val arToEnMap = mapOf(
+        "كامب نو" to "Camp Nou Barcelona stadium",
+        "برشلونة" to "Camp Nou FC Barcelona stadium",
+        "برشلونه" to "Camp Nou FC Barcelona stadium",
+        "جبال" to "dramatic mountains landscape peak",
+        "جبل" to "mountain landscape sunset",
+        "بحار" to "ocean sea waves coast sunset",
+        "بحر" to "ocean sea waves aesthetic",
+        "انهار" to "river waterfall forest nature",
+        "أنهار" to "river waterfall forest nature",
+        "شلال" to "waterfall river nature",
+        "شلالات" to "waterfall nature landscape",
+        "سوداء" to "amoled pure black dark minimal",
+        "اسود" to "amoled pure black dark minimal",
+        "أسود" to "amoled pure black dark minimal",
+        "فضاء" to "space galaxy nebula planets stars",
+        "قمر" to "moon night sky stars",
+        "سيارات" to "supercar sports car dark night",
+        "سيارة" to "supercar sports car night",
+        "طبيعة" to "nature landscape forest lake sunset",
+        "نيون" to "cyberpunk neon dark aesthetic",
+        "ملاعب" to "football stadium night lights pitch",
+        "ملعب" to "football soccer stadium night",
+        "كورة" to "football stadium night lights",
+        "كرة قدم" to "football stadium pitch night",
+        "انمي" to "anime dark aesthetic wallpaper",
+        "أنمي" to "anime dark aesthetic wallpaper",
+        "غروب" to "sunset sky clouds ocean",
+        "مطر" to "rain night city lights",
+        "مدينة" to "night city skyline lights",
+        "الكعبة" to "Kaaba Mecca Masjid al-Haram",
+        "مكة" to "Mecca Kaaba night"
+    )
+
+    fun translateQuery(input: String): String {
+        val trimmed = input.trim()
+        if (trimmed.isEmpty()) return "nature mountains ocean dark"
+        arToEnMap.forEach { (ar, en) ->
+            if (trimmed.contains(ar, ignoreCase = true)) return en
+        }
+        return trimmed
+    }
+
+    suspend fun fetchWallpapers(categoryKey: String, customQuery: String, page: Int): List<OnlineWallpaper> =
+        withContext(Dispatchers.IO) {
+            val isCampNou = categoryKey == "camp_nou" ||
+                customQuery.contains("كامب نو", true) ||
+                customQuery.contains("camp nou", true)
+
+            if (isCampNou) {
+                val wiki = fetchWikimedia("Camp Nou Barcelona stadium", page)
+                val wh = fetchWallhaven("camp nou barcelona stadium", page, "relevance")
+                val combined = (wiki + wh).distinctBy { it.fullUrl }
+                if (combined.isNotEmpty()) return@withContext combined
+            }
+
+            val isMecca = customQuery.contains("كعبة", true) || customQuery.contains("الكعبة", true) || customQuery.contains("مكة", true)
+            if (isMecca) {
+                val wiki = fetchWikimedia("Masjid al-Haram Kaaba night", page)
+                if (wiki.isNotEmpty()) return@withContext wiki
+            }
+
+            val query = if (customQuery.isNotBlank()) {
+                translateQuery(customQuery)
+            } else {
+                when (categoryKey) {
+                    "top" -> ""
+                    "mountains" -> "mountains landscape peak dramatic"
+                    "water" -> "ocean sea river waterfall coast"
+                    "amoled" -> "amoled black dark minimal"
+                    "space" -> "space nebula galaxy planets"
+                    "cars" -> "supercar sports car night"
+                    "nature" -> "forest nature sunset lake"
+                    "neon" -> "neon cyberpunk abstract dark"
+                    "stadiums" -> "football stadium night pitch"
+                    else -> "landscape nature dark"
+                }
+            }
+
+            val sorting = if (categoryKey == "top" && customQuery.isBlank()) "toplist" else "relevance"
+            val whList = fetchWallhaven(query, page, sorting)
+            if (whList.isNotEmpty()) return@withContext whList
+
+            // Fallback to Wikimedia Commons so results always load
+            fetchWikimedia(if (query.isBlank()) "mountain ocean landscape" else query, page)
+        }
+
+    private fun fetchWallhaven(query: String, page: Int, sorting: String): List<OnlineWallpaper> {
+        return runCatching {
+            val encodedQ = URLEncoder.encode(query, "UTF-8")
+            val qPart = if (query.isBlank()) "" else "q=$encodedQ&"
+            val url = "https://wallhaven.cc/api/v1/search?${qPart}categories=111&purity=100&sorting=$sorting&order=desc&page=$page"
+            val jsonStr = httpGet(url) ?: return emptyList()
+            val arr = JSONObject(jsonStr).optJSONArray("data") ?: return emptyList()
+            val list = mutableListOf<OnlineWallpaper>()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val id = o.optString("id")
+                val full = o.optString("path")
+                val thumbs = o.optJSONObject("thumbs")
+                val thumb = thumbs?.optString("large").takeUnless { it.isNullOrBlank() }
+                    ?: thumbs?.optString("original").takeUnless { it.isNullOrBlank() }
+                    ?: full
+                val res = o.optString("resolution", "HD")
+                if (full.isNotBlank()) {
+                    list.add(
+                        OnlineWallpaper(
+                            id = "wh_$id",
+                            title = "HD Wallpaper #$id",
+                            thumbUrl = thumb,
+                            fullUrl = full,
+                            resolution = res,
+                            source = "HD"
+                        )
+                    )
+                }
+            }
+            list
+        }.getOrDefault(emptyList())
+    }
+
+    private fun fetchWikimedia(query: String, page: Int): List<OnlineWallpaper> {
+        return runCatching {
+            val offset = ((page - 1).coerceAtLeast(0)) * 20
+            val encoded = URLEncoder.encode("filetype:bitmap $query", "UTF-8")
+            val url = "https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=$encoded&gsrlimit=20&gsroffset=$offset&prop=imageinfo&iiprop=url|size&iiurlwidth=640&format=json"
+            val jsonStr = httpGet(url) ?: return emptyList()
+            val pagesObj = JSONObject(jsonStr).optJSONObject("query")?.optJSONObject("pages") ?: return emptyList()
+            val list = mutableListOf<OnlineWallpaper>()
+            val keys = pagesObj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val p = pagesObj.optJSONObject(key) ?: continue
+                val title = p.optString("title", "").removePrefix("File:").substringBeforeLast(".")
+                val infoArr = p.optJSONArray("imageinfo") ?: continue
+                if (infoArr.length() == 0) continue
+                val info = infoArr.getJSONObject(0)
+                val w = info.optInt("width", 0)
+                val h = info.optInt("height", 0)
+                val fullUrl = info.optString("url", "")
+                val thumbUrl = info.optString("thumburl", fullUrl)
+                val lower = fullUrl.lowercase(Locale.ROOT)
+                val validExt = lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".webp")
+                if (validExt && w >= 720 && h >= 500 && fullUrl.isNotBlank()) {
+                    list.add(
+                        OnlineWallpaper(
+                            id = "wiki_$key",
+                            title = title.take(36),
+                            thumbUrl = thumbUrl,
+                            fullUrl = fullUrl,
+                            resolution = "${w}x${h}",
+                            source = "REAL"
+                        )
+                    )
+                }
+            }
+            list
+        }.getOrDefault(emptyList())
+    }
+
+    private fun httpGet(urlStr: String): String? {
+        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10000
+            readTimeout = 12000
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "VyroMusicApp/5.0.1 (Android; Contact: mohmedtarek2025-hue)")
+        }
+        return try {
+            if (conn.responseCode in 200..299) {
+                conn.inputStream.bufferedReader().use { it.readText() }
+            } else null
+        } finally {
+            conn.disconnect()
+        }
+    }
+}
+
+// ==================== MAIN ACTIVITY ====================
 
 class MainActivity : ComponentActivity() {
-    private var controller: MediaController? = null
-    private var controllerFuture: ListenableFuture<MediaController>? = null
-    private var pendingExternalAudioUri: Uri? = null
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.BLACK
-        window.navigationBarColor = android.graphics.Color.BLACK
-        if (intent?.action == Intent.ACTION_VIEW) {
-            pendingExternalAudioUri = intent.data
+        enableEdgeToEdge()
+        setContent {
+            VyroMusicApp()
         }
-
-        val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
-        controllerFuture = MediaController.Builder(this, token).buildAsync()
-        controllerFuture?.addListener({
-            try {
-                controller = controllerFuture?.get()
-                setContent {
-                    controller?.let { VyroTitanApp(it, ::loadSongs, pendingExternalAudioUri) }
-                }
-            } catch (_: Exception) {
-                setContent {
-                    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-                        Text("VYRO MUSIC Initializing...", color = Color.White)
-                    }
-                }
-            }
-        }, ContextCompat.getMainExecutor(this))
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        if (intent.action == Intent.ACTION_VIEW && intent.data != null) {
-            controller?.let { p ->
-                p.setMediaItem(MediaItem.fromUri(intent.data!!))
-                p.prepare()
-                p.play()
-            }
-        }
-    }
-
-    private fun loadSongs(): List<Song> {
-        val list = mutableListOf<Song>()
-        val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-        val projection = arrayOf(
-            MediaStore.Audio.Media._ID,
-            MediaStore.Audio.Media.TITLE,
-            MediaStore.Audio.Media.ARTIST,
-            MediaStore.Audio.Media.ALBUM,
-            MediaStore.Audio.Media.ALBUM_ID,
-            MediaStore.Audio.Media.DURATION,
-            MediaStore.Audio.Media.DATE_ADDED,
-            MediaStore.Audio.Media.SIZE,
-            MediaStore.Audio.Media.DATA
-        )
-        contentResolver.query(
-            collection,
-            projection,
-            "${MediaStore.Audio.Media.IS_MUSIC} != 0",
-            null,
-            "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
-        )?.use { c ->
-            val idCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-            val titleCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-            val artistCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-            val albumCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-            val albumIdCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
-            val durationCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-            val dateCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
-            val sizeCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
-            val dataCol = c.getColumnIndex(MediaStore.Audio.Media.DATA)
-            while (c.moveToNext()) {
-                val id = c.getLong(idCol)
-                val path = if (dataCol >= 0) c.getString(dataCol) else null
-                list += Song(
-                    id = id,
-                    title = c.getString(titleCol) ?: "Unknown Track",
-                    artist = c.getString(artistCol) ?: "Unknown Artist",
-                    album = c.getString(albumCol) ?: "Unknown Album",
-                    albumId = c.getLong(albumIdCol),
-                    uri = Uri.withAppendedPath(collection, id.toString()),
-                    duration = c.getLong(durationCol),
-                    dateAdded = c.getLong(dateCol),
-                    sizeBytes = c.getLong(sizeCol),
-                    filePath = path
-                )
-            }
-        }
-        return list
-    }
-
-    override fun onDestroy() {
-        controllerFuture?.let { MediaController.releaseFuture(it) }
-        controllerFuture = null
-        controller = null
-        super.onDestroy()
     }
 }
 
+// ==================== CONSTANTS ====================
+
+val ACCENT_PALETTE = listOf(
+    Color(0xFF00C2FF), // Titan Cyan
+    Color(0xFF00E676), // Pitch Emerald
+    Color(0xFF3B82F6), // Royal Blue
+    Color(0xFF8B5CF6), // Electric Violet
+    Color(0xFFFF3366), // Blaugrana Crimson
+    Color(0xFFFFC857), // Luxury Gold
+    Color(0xFFFF6B35), // Sunset Orange
+    Color(0xFFEC4899)  // Neon Rose
+)
+
+val WIDGET_PRESETS = listOf(
+    WidgetPreset("Glassify Frost", "زجاج Glassify", "Glassify Frost", "زجاج ضبابي يتلوّن مع غلاف الأغنية", listOf(Color(0xFF163A5F), Color(0xFF0B1120)), Color(0x88FFFFFF)),
+    WidgetPreset("Full Poster", "بوستر كامل", "Full Poster", "غلاف الأغنية يملأ الويدجت بالكامل", listOf(Color(0xFF2B1C3D), Color(0xFF090B12)), Color(0x66FFFFFF)),
+    WidgetPreset("Stadium Glass", "زجاج الملعب", "Stadium Glass", "إضاءة ملاعب خضراء وتخطيط احترافي", listOf(Color(0xFF0A331C), Color(0xFF050B0F)), Color(0xFF00F57A)),
+    WidgetPreset("Wide Glass", "شريط عريض زجاجي", "Wide Glass", "تصميم أفقي أنيق للشاشة الرئيسية", listOf(Color(0xFF132C4A), Color(0xFF090E1A)), Color(0x66FFFFFF), isWide = true),
+    WidgetPreset("AMOLED Pure", "أسود AMOLED نقي", "AMOLED Pure", "أسود فحمي مع إطار نيون سماوي", listOf(Color(0xFF000000), Color(0xFF000000)), Color(0xFF00E5FF)),
+    WidgetPreset("Cyber Neon", "سايبر نيون", "Cyber Neon", "توهج أرجواني ووردي بطابع مستقبلي", listOf(Color(0xFF1A0836), Color(0xFF070A1A)), Color(0xFFFF007A)),
+    WidgetPreset("Vinyl Deck", "قرص الفينيل", "Vinyl Deck", "غلاف دائري مع حلقات أسطوانة كلاسيك", listOf(Color(0xFF191D29), Color(0xFF090B10)), Color(0xFF00E5FF), isCircle = true),
+    WidgetPreset("Blaugrana Pitch", "ملعب البلاوجرانا", "Blaugrana Pitch", "ألوان أزرق وقرمزي مستوحاة من كامب نو", listOf(Color(0xFF002A70), Color(0xFF8A0D32)), Color(0xFFFFC857)),
+    WidgetPreset("Golden Luxury", "ذهبي فاخر", "Golden Luxury", "أسود ملكي مع لمعان وإطار ذهبي", listOf(Color(0xFF1D170B), Color(0xFF090806)), Color(0xFFFFD56B)),
+    WidgetPreset("Aurora Mesh", "شفق قطبي", "Aurora Mesh", "تدرج شفق متداخل حيوي وسلس", listOf(Color(0xFF0A3242), Color(0xFF2A124C)), Color(0xFF00FFA3)),
+    WidgetPreset("Dynamic Pill", "كبسولة ديناميكية", "Dynamic Pill", "شريط كبسولي منحني مع غلاف دائري", listOf(Color(0xFF121826), Color(0xFF1A2236)), Color(0xFF00E5FF), isWide = true, isCircle = true),
+    WidgetPreset("Transparent Clear", "شفاف بالكامل", "Transparent Clear", "شفافية فائقة تُظهر خلفية موبايلك", listOf(Color(0x33000000), Color(0x22000000)), Color(0x77FFFFFF)),
+    WidgetPreset("Retro Cassette", "كاسيت كلاسيك", "Retro Cassette", "طابع أشرطة الكاسيت بخطوط دافئة", listOf(Color(0xFF1F2433), Color(0xFF12141E)), Color(0xFFFF6B35)),
+    WidgetPreset("Minimal Split", "تقسيم عصري", "Minimal Split", "شريط عريض مقسّم بتظليل ناعم", listOf(Color(0xFF16325C), Color(0xFF0B0D14)), Color(0x88FFFFFF), isWide = true)
+)
+
+// ==================== ROOT COMPOSABLE ====================
+
+@OptIn(UnstableApi::class)
 @Composable
-fun VyroTitanApp(player: Player, loadSongs: () -> List<Song>, externalUri: Uri?) {
+fun VyroMusicApp() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vyro_prefs", Context.MODE_PRIVATE) }
-    val appScope = rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
 
-    // الشاشة النشطة: MAIN | NOW_PLAYING | SETTINGS | THEME_STUDIO | GLASSIFY_STUDIO | PLAYBACK_SETTINGS | HIDDEN_FILES | UPDATES
-    var currentScreen by remember { mutableStateOf("MAIN") }
-    var activeTab by remember { mutableStateOf("Songs") }
+    val appVersion = remember {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "5.0.1-TITAN"
+        }.getOrDefault("5.0.1-TITAN")
+    }
 
-    // الجولة التعليمية العائمة عند أول تشغيل (زي الألعاب)
-    var tutorialStep by remember { mutableIntStateOf(if (prefs.getBoolean("tutorial_v5_done", false)) -1 else 0) }
-
-    // حالة التحديثات الذكية (فحص تلقائي + مهلة 10 أيام + تحميل داخلي + ما الجديد)
-    var availableUpdate by remember { mutableStateOf<UpdateInfo?>(null) }
-    var updateChecking by remember { mutableStateOf(false) }
-    var updateStatusMsg by remember { mutableStateOf<String?>(null) }
-    var showUpdatePopup by remember { mutableStateOf(false) }
-    var showChangelogDialog by remember { mutableStateOf(false) }
-    var isUpdateMandatory by remember { mutableStateOf(false) }
-    var updateDaysLeft by remember { mutableIntStateOf(MANDATORY_UPDATE_DAYS.toInt()) }
-    var isDownloadingUpdate by remember { mutableStateOf(false) }
-    var downloadProgress by remember { mutableFloatStateOf(0f) }
-    var downloadedApkFile by remember { mutableStateOf<File?>(null) }
-
-    // إعدادات المظهر
-    var langSetting by remember { mutableStateOf(prefs.getString("lang_setting", "AR") ?: "AR") }
-    var themeMode by remember { mutableStateOf(prefs.getString("theme_mode", "DARK") ?: "DARK") }
-    var viewSize by remember { mutableStateOf(prefs.getString("view_size", "MEDIUM") ?: "MEDIUM") }
-    var accentColorId by remember { mutableStateOf(prefs.getString("accent_color_id", "CYAN") ?: "CYAN") }
-    var liveBackdrop by remember { mutableStateOf(prefs.getString("live_backdrop", "DYNAMIC_AURA") ?: "DYNAMIC_AURA") }
-    var discStyle by remember { mutableStateOf(prefs.getString("disc_style", "Dynamic Card") ?: "Dynamic Card") }
-    var waveStyle by remember { mutableStateOf(prefs.getString("wave_style", "Smooth Wave") ?: "Smooth Wave") }
+    // Core Preferences State
+    var isArabic by remember { mutableStateOf(prefs.getBoolean("lang_ar", true)) }
+    var themeMode by remember { mutableStateOf(prefs.getString("theme_mode", "dark") ?: "dark") } // dark, light, system
+    var bgStyle by remember { mutableStateOf(prefs.getString("bg_style", "aura") ?: "aura") } // pure, aura, stadium
+    var listLayout by remember { mutableStateOf(prefs.getString("list_layout", "medium") ?: "medium") } // medium, compact, grid
+    var accentIndex by remember { mutableIntStateOf(prefs.getInt("accent_color_id", 0).coerceIn(0, ACCENT_PALETTE.lastIndex)) }
     var widgetStyle by remember { mutableStateOf(prefs.getString("widget_style", "Glassify Frost") ?: "Glassify Frost") }
-    var customBgUri by remember { mutableStateOf(prefs.getString("custom_bg_uri", null)) }
-    var bgDimAlpha by remember { mutableFloatStateOf(prefs.getFloat("bg_dim_alpha", 0.45f)) }
+    var spatial8D by remember { mutableStateOf(prefs.getBoolean("spatial_8d_enabled", false)) }
+    var vinylMode by remember { mutableStateOf(prefs.getBoolean("vinyl_disc_mode", false)) }
+    var showWaves by remember { mutableStateOf(prefs.getBoolean("show_waves", true)) }
+    var showTour by remember { mutableStateOf(!prefs.getBoolean("tour_done_v5", false)) }
+    var tourStep by remember { mutableIntStateOf(0) }
 
-    val isRtl = remember(langSetting) {
-        val code = if (langSetting == "SYSTEM") Locale.getDefault().language.uppercase() else langSetting.uppercase()
-        code.startsWith("AR")
-    }
-    val sysDark = isSystemInDarkTheme()
-    val isDark = when (themeMode) {
-        "LIGHT" -> false
-        "DARK" -> true
-        else -> sysDark
-    }
-
-    // بيانات المكتبة والتشغيل
-    var allSongs by remember { mutableStateOf(emptyList<Song>()) }
-    var permission by remember { mutableStateOf(false) }
-    var currentSongId by remember { mutableLongStateOf(prefs.getLong("last_song_id", -1L)) }
-    var position by remember { mutableLongStateOf(prefs.getLong("last_position_ms", 0L)) }
-    var duration by remember { mutableLongStateOf(0L) }
-    var playing by remember { mutableStateOf(player.isPlaying) }
-    var shuffle by remember { mutableStateOf(player.shuffleModeEnabled) }
-    var repeatMode by remember { mutableIntStateOf(player.repeatMode) }
-    var listenSeconds by remember { mutableLongStateOf(prefs.getLong("stat_listen_seconds", 0L)) }
-
-    var query by remember { mutableStateOf("") }
-    var searchExpanded by remember { mutableStateOf(false) }
-    var sortBy by remember { mutableStateOf(prefs.getString("sort_by", "TITLE") ?: "TITLE") }
-    var showSortMenu by remember { mutableStateOf(false) }
-
-    var likedIds by remember { mutableStateOf(loadIdSet(prefs.getString("liked_ids", "[]"))) }
-    var hiddenIds by remember { mutableStateOf(loadIdSet(prefs.getString("hidden_ids", "[]"))) }
-    var recentIds by remember { mutableStateOf(loadIdList(prefs.getString("recent_ids", "[]"))) }
-    var playCounts by remember { mutableStateOf(loadPlayCounts(prefs.getString("play_counts", "{}"))) }
-    var playlists by remember { mutableStateOf(loadPlaylists(prefs.getString("playlists", "{}"))) }
-    var customLyrics by remember { mutableStateOf(loadLyricsMap(prefs.getString("lyrics_map", "{}"))) }
-
-    var activeCollectionTitle by remember { mutableStateOf<String?>(null) }
-    var activeCollectionSongs by remember { mutableStateOf<List<Song>?>(null) }
-
-    // الصوت والـ DSP (بدون أي خيار لمانع الغروشة لأنه مدمج تلقائياً وإجبارياً في الخلفية)
-    var spatial8DEnabled by remember { mutableStateOf(prefs.getBoolean("spatial_8d_enabled", false)) }
-    var crossfadeSec by remember { mutableIntStateOf(prefs.getInt("crossfade_sec", 0)) }
-    var shakeSkipEnabled by remember { mutableStateOf(prefs.getBoolean("shake_skip_enabled", false)) }
-    var eqPreset by remember { mutableStateOf(prefs.getString("eq_preset", "Pure Hi-Fi") ?: "Pure Hi-Fi") }
-    var bandGains by remember {
-        mutableStateOf(loadFloatList(prefs.getString("band_gains", null)) ?: listOf(0.28f, 0.16f, 0.0f, 0.14f, 0.24f))
-    }
+    // Audio DSP State
+    var bandGains by remember { mutableStateOf(loadBandGains(prefs)) }
     var bassStrength by remember { mutableIntStateOf(prefs.getInt("bass_strength", 35)) }
-    var virtualizerStrength by remember { mutableIntStateOf(prefs.getInt("virtualizer_strength", 30)) }
+    var virtStrength by remember { mutableIntStateOf(prefs.getInt("virtualizer_strength", 30)) }
     var loudnessGain by remember { mutableIntStateOf(prefs.getInt("loudness_gain", 0)) }
     var playbackSpeed by remember { mutableFloatStateOf(prefs.getFloat("playback_speed", 1f)) }
     var playbackPitch by remember { mutableFloatStateOf(prefs.getFloat("playback_pitch", 1f)) }
 
-    var isDriveMode by remember { mutableStateOf(false) }
-    var loopPointA by remember { mutableLongStateOf(-1L) }
-    var loopPointB by remember { mutableLongStateOf(-1L) }
+    // Library & Playlists State
+    var allSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var hiddenIds by remember { mutableStateOf(loadIdSet(prefs, "hidden_ids")) }
+    var favoriteIds by remember { mutableStateOf(loadIdSet(prefs, "favorite_ids")) }
+    var recentIds by remember { mutableStateOf(loadIdList(prefs, "recent_ids")) }
+    var playCounts by remember { mutableStateOf(loadPlayCounts(prefs)) }
+    var customPlaylists by remember { mutableStateOf(loadPlaylists(prefs)) }
 
-    var sleepTimerJob by remember { mutableStateOf<Job?>(null) }
-    var sleepTimerRemainingSec by remember { mutableIntStateOf(0) }
+    // Navigation & Sheets State
+    var currentScreen by remember { mutableStateOf(AppScreen.MAIN) }
+    var activeTab by remember { mutableIntStateOf(0) } // 0: Library, 1: Playlists, 2: Folders, 3: Artists
+    var selectedFolder by remember { mutableStateOf<String?>(null) }
+    var selectedArtist by remember { mutableStateOf<String?>(null) }
+    var selectedPlaylistTitle by remember { mutableStateOf<String?>(null) }
+    var selectedPlaylistSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var searchVisible by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var sortMode by remember { mutableIntStateOf(prefs.getInt("sort_mode", 0)) } // 0: Title, 1: Newest, 2: Duration
 
-    var showResetConfirmDialog by remember { mutableStateOf(false) }
-    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
-    var showLanguageDialog by remember { mutableStateOf(false) }
-    var showAboutDialog by remember { mutableStateOf(false) }
-    var showStatsDialog by remember { mutableStateOf(false) }
+    var showNowPlaying by remember { mutableStateOf(false) }
+    var showEqSheet by remember { mutableStateOf(false) }
+    var showLyricsDialog by remember { mutableStateOf(false) }
+    var showCarMode by remember { mutableStateOf(false) }
     var showSleepDialog by remember { mutableStateOf(false) }
-    var songForMenu by remember { mutableStateOf<Song?>(null) }
-    var songForAddToPlaylist by remember { mutableStateOf<Song?>(null) }
-    var songForLyrics by remember { mutableStateOf<Song?>(null) }
-    var songForInfo by remember { mutableStateOf<Song?>(null) }
-    var songForRingtone by remember { mutableStateOf<Song?>(null) }
-    var songForDeleteConfirm by remember { mutableStateOf<Song?>(null) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+    var songForPlaylistDialog by remember { mutableStateOf<Song?>(null) }
+    var showHiddenDialog by remember { mutableStateOf(false) }
+    var showPlayerPrefsDialog by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
 
-    var coverPalette by remember { mutableStateOf(CoverPalette()) }
+    // Sleep Timer
+    var sleepMinutesLeft by remember { mutableIntStateOf(0) }
 
-    val visibleSongs = remember(allSongs, hiddenIds) {
-        allSongs.filterNot { hiddenIds.contains(it.id) }
+    // Update Checker
+    var latestRelease by remember { mutableStateOf<ReleaseInfo?>(null) }
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var updateAvailable by remember { mutableStateOf(false) }
+
+    // MediaController State
+    var controller by remember { mutableStateOf<MediaController?>(null) }
+    var currentSong by remember { mutableStateOf<Song?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var currentPosition by remember { mutableLongStateOf(0L) }
+    var totalDuration by remember { mutableLongStateOf(1L) }
+    var shuffleOn by remember { mutableStateOf(false) }
+    var repeatMode by remember { mutableIntStateOf(Player.REPEAT_MODE_OFF) }
+
+    // Permissions
+    val audioPerm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        Manifest.permission.READ_MEDIA_AUDIO
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+    var hasAudioPerm by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, audioPerm) == PackageManager.PERMISSION_GRANTED)
+    }
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
+        hasAudioPerm = res[audioPerm] == true ||
+            ContextCompat.checkSelfPermission(context, audioPerm) == PackageManager.PERMISSION_GRANTED
     }
 
-    fun saveState() {
-        prefs.edit()
-            .putString("lang_setting", langSetting)
-            .putString("theme_mode", themeMode)
-            .putString("view_size", viewSize)
-            .putString("accent_color_id", accentColorId)
-            .putString("live_backdrop", liveBackdrop)
-            .putString("disc_style", discStyle)
-            .putString("wave_style", waveStyle)
-            .putString("widget_style", widgetStyle)
-            .putString("custom_bg_uri", customBgUri)
-            .putFloat("bg_dim_alpha", bgDimAlpha)
-            .putString("sort_by", sortBy)
-            .putString("liked_ids", JSONArray(likedIds.toList()).toString())
-            .putString("hidden_ids", JSONArray(hiddenIds.toList()).toString())
-            .putString("recent_ids", JSONArray(recentIds).toString())
-            .putString("play_counts", encodePlayCounts(playCounts))
-            .putString("playlists", encodePlaylists(playlists))
-            .putString("lyrics_map", encodeLyricsMap(customLyrics))
-            .putBoolean("spatial_8d_enabled", spatial8DEnabled)
-            .putInt("crossfade_sec", crossfadeSec)
-            .putBoolean("shake_skip_enabled", shakeSkipEnabled)
-            .putString("eq_preset", eqPreset)
-            .putString("band_gains", JSONArray(bandGains).toString())
-            .putInt("bass_strength", bassStrength)
-            .putInt("virtualizer_strength", virtualizerStrength)
-            .putInt("loudness_gain", loudnessGain)
-            .putFloat("playback_speed", playbackSpeed)
-            .putFloat("playback_pitch", playbackPitch)
-            .apply()
-        VyroWidgetProvider.updateAllWidgets(context)
-    }
-
-    fun resetAllDefaults() {
-        themeMode = "DARK"
-        viewSize = "MEDIUM"
-        accentColorId = "CYAN"
-        liveBackdrop = "DYNAMIC_AURA"
-        discStyle = "Dynamic Card"
-        waveStyle = "Smooth Wave"
-        widgetStyle = "Glassify Frost"
-        customBgUri = null
-        bgDimAlpha = 0.45f
-        spatial8DEnabled = false
-        crossfadeSec = 0
-        shakeSkipEnabled = false
-        eqPreset = "Pure Hi-Fi"
-        bandGains = listOf(0.28f, 0.16f, 0.0f, 0.14f, 0.24f)
-        bassStrength = 35
-        virtualizerStrength = 30
-        loudnessGain = 0
-        playbackSpeed = 1f
-        playbackPitch = 1f
-        saveState()
-        Toast.makeText(context, "تمت إعادة ضبط الإعدادات الافتراضية ✓", Toast.LENGTH_SHORT).show()
-    }
-
-    fun triggerApkInstall(file: File) {
-        runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
-                Toast.makeText(context, "يرجى السماح لتطبيق VYRO بتثبيت التحديثات ثم اضغط تثبيت", Toast.LENGTH_LONG).show()
-                context.startActivity(
-                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-                return
-            }
-            val apkUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(apkUri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
-        }.onFailure {
-            Toast.makeText(context, "تعذر فتح المثبت تلقائياً: ${it.localizedMessage}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    fun startInAppUpdateDownload(info: UpdateInfo) {
-        val urlStr = info.apkDownloadUrl
-        if (urlStr.isNullOrBlank()) {
-            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(info.htmlUrl))) }
-            return
-        }
-        if (isDownloadingUpdate) return
-        isDownloadingUpdate = true
-        downloadProgress = 0f
-        downloadedApkFile = null
-
-        appScope.launch(Dispatchers.IO) {
-            try {
-                val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
-                val outFile = File(updatesDir, "VYRO_MUSIC_${info.tagName.replace(Regex("[^A-Za-z0-9._-]"), "_")}.apk")
-                if (outFile.exists()) outFile.delete()
-
-                val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
-                    instanceFollowRedirects = true
-                    connectTimeout = 15000
-                    readTimeout = 20000
-                    setRequestProperty("User-Agent", "VYRO-MUSIC-Updater")
+    // Backup Export/Import Launchers
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) {
+            runCatching {
+                val json = JSONObject().apply {
+                    put("favorites", JSONArray(favoriteIds.toList()))
+                    put("hidden", JSONArray(hiddenIds.toList()))
+                    put("accent_color_id", accentIndex)
+                    put("widget_style", widgetStyle)
+                    put("theme_mode", themeMode)
+                    put("bg_style", bgStyle)
+                    put("list_layout", listLayout)
+                    put("playlists", serializePlaylists(customPlaylists))
                 }
-                conn.connect()
-                val totalLen = conn.contentLengthLong.coerceAtLeast(1L)
-                conn.inputStream.use { inp ->
-                    FileOutputStream(outFile).use { out ->
-                        val buffer = ByteArray(16 * 1024)
-                        var readSoFar = 0L
-                        while (true) {
-                            val n = inp.read(buffer)
-                            if (n <= 0) break
-                            out.write(buffer, 0, n)
-                            readSoFar += n
-                            val pct = (readSoFar.toFloat() / totalLen.toFloat()).coerceIn(0f, 1f)
-                            withContext(Dispatchers.Main) { downloadProgress = pct }
-                        }
-                    }
-                }
-                withContext(Dispatchers.Main) {
-                    isDownloadingUpdate = false
-                    downloadProgress = 1f
-                    downloadedApkFile = outFile
-                    triggerApkInstall(outFile)
-                }
-            } catch (_: Exception) {
-                withContext(Dispatchers.Main) {
-                    isDownloadingUpdate = false
-                    Toast.makeText(context, "فشل التحميل المباشر، تحقق من الاتصال بالإنترنت", Toast.LENGTH_LONG).show()
-                }
+                context.contentResolver.openOutputStream(uri)?.use { it.write(json.toString(2).toByteArray()) }
+                Toast.makeText(context, if (isArabic) "تم تصدير النسخة الاحتياطية بنجاح" else "Backup exported", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    fun checkForUpdates(manual: Boolean) {
-        if (updateChecking) return
-        updateChecking = true
-        if (manual) updateStatusMsg = "جاري فحص التحديثات..."
-        appScope.launch(Dispatchers.IO) {
-            val result = fetchLatestGithubRelease()
-            withContext(Dispatchers.Main) {
-                updateChecking = false
-                if (result != null && isNewerVersion(result.tagName, APP_VERSION_NAME)) {
-                    availableUpdate = result
-                    val seenTag = prefs.getString("update_seen_tag", null)
-                    var firstSeenMs = prefs.getLong("update_first_seen_ms", 0L)
-                    val nowMs = System.currentTimeMillis()
-                    if (seenTag != result.tagName || firstSeenMs <= 0L) {
-                        firstSeenMs = nowMs
-                        prefs.edit()
-                            .putString("update_seen_tag", result.tagName)
-                            .putLong("update_first_seen_ms", firstSeenMs)
-                            .apply()
-                    }
-                    val elapsedDays = ((nowMs - firstSeenMs) / (1000L * 60L * 60L * 24L)).coerceAtLeast(0L)
-                    val left = (MANDATORY_UPDATE_DAYS - elapsedDays).toInt().coerceAtLeast(0)
-                    updateDaysLeft = left
-                    isUpdateMandatory = elapsedDays >= MANDATORY_UPDATE_DAYS
-                    updateStatusMsg = "يتوفر تحديث جديد: ${result.tagName}"
-                    if (!manual || isUpdateMandatory) {
-                        showUpdatePopup = true
-                    }
-                } else {
-                    availableUpdate = null
-                    isUpdateMandatory = false
-                    if (manual) {
-                        updateStatusMsg = "أنت تستخدم أحدث إصدار بالفعل ($APP_VERSION_NAME) ✓"
-                        Toast.makeText(context, "تطبيقك محدث لآخر إصدار ✓", Toast.LENGTH_SHORT).show()
-                    }
-                }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: return@runCatching
+                val json = JSONObject(text)
+                val favs = mutableSetOf<Long>()
+                json.optJSONArray("favorites")?.let { arr -> for (i in 0 until arr.length()) favs.add(arr.getLong(i)) }
+                favoriteIds = favs
+                saveIdSet(prefs, "favorite_ids", favs)
+
+                accentIndex = json.optInt("accent_color_id", accentIndex).coerceIn(0, ACCENT_PALETTE.lastIndex)
+                widgetStyle = json.optString("widget_style", widgetStyle)
+                themeMode = json.optString("theme_mode", themeMode)
+                bgStyle = json.optString("bg_style", bgStyle)
+                listLayout = json.optString("list_layout", listLayout)
+
+                prefs.edit()
+                    .putInt("accent_color_id", accentIndex)
+                    .putString("widget_style", widgetStyle)
+                    .putString("theme_mode", themeMode)
+                    .putString("bg_style", bgStyle)
+                    .putString("list_layout", listLayout)
+                    .apply()
+                VyroWidgetProvider.updateAllWidgets(context)
+                Toast.makeText(context, if (isArabic) "تمت استعادة النسخة الاحتياطية بنجاح" else "Backup restored", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
+    // Request permissions on launch
     LaunchedEffect(Unit) {
-        checkForUpdates(manual = false)
-    }
-
-    fun requestPinHomeWidget() {
-        runCatching {
-            val mgr = AppWidgetManager.getInstance(context)
-            val provider = ComponentName(context, VyroWidgetProvider::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && mgr.isRequestPinAppWidgetSupported) {
-                mgr.requestPinAppWidget(provider, null, null)
-            } else {
-                Toast.makeText(context, "اضغط مطولاً على الشاشة الرئيسية واختر ويدجت VYRO Glass Widget", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
-    fun applyGlassWallpaper(preset: GlassPreset, targetFlag: Int) {
-        appScope.launch(Dispatchers.IO) {
-            val ok = runCatching {
-                val bmp = generateHighResGlassWallpaper(preset.id)
-                val wm = WallpaperManager.getInstance(context)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    wm.setBitmap(bmp, null, true, targetFlag)
-                } else {
-                    wm.setBitmap(bmp)
-                }
-                true
-            }.getOrDefault(false)
-            withContext(Dispatchers.Main) {
-                Toast.makeText(
-                    context,
-                    if (ok) "تم تطبيق التصميم الزجاجي بنجاح ✓" else "تعذر تطبيق الخلفية، جرب مرة أخرى",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
-    }
-
-    val voiceSearchLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
-        if (res.resultCode == Activity.RESULT_OK) {
-            val spoken = res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
-            if (!spoken.isNullOrBlank()) {
-                query = spoken
-                searchExpanded = true
-                activeTab = "Songs"
-            }
-        }
-    }
-
-    val deleteResultLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
-        if (res.resultCode == Activity.RESULT_OK) {
-            allSongs = loadSongs()
-            Toast.makeText(context, "تم حذف الملف", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    val bgImagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            customBgUri = uri.toString()
-            saveState()
-            Toast.makeText(context, "تم تعيين الخلفية ✓", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) {
-            runCatching {
-                val root = JSONObject().apply {
-                    put("version", APP_VERSION_NAME)
-                    put("liked_ids", JSONArray(likedIds.toList()))
-                    put("hidden_ids", JSONArray(hiddenIds.toList()))
-                    put("recent_ids", JSONArray(recentIds))
-                    put("playlists", JSONObject(encodePlaylists(playlists)))
-                    put("lyrics_map", JSONObject(encodeLyricsMap(customLyrics)))
-                    put("stat_listen_seconds", listenSeconds)
-                }
-                context.contentResolver.openOutputStream(uri)?.use { it.write(root.toString(2).toByteArray()) }
-                Toast.makeText(context, "تم حفظ النسخة الاحتياطية ✓", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            runCatching {
-                val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: "{}"
-                val root = JSONObject(text)
-                if (root.has("liked_ids")) likedIds = loadIdSet(root.getJSONArray("liked_ids").toString())
-                if (root.has("hidden_ids")) hiddenIds = loadIdSet(root.getJSONArray("hidden_ids").toString())
-                if (root.has("recent_ids")) recentIds = loadIdList(root.getJSONArray("recent_ids").toString())
-                if (root.has("playlists")) playlists = loadPlaylists(root.getJSONObject("playlists").toString())
-                if (root.has("lyrics_map")) customLyrics = loadLyricsMap(root.getJSONObject("lyrics_map").toString())
-                if (root.has("stat_listen_seconds")) {
-                    listenSeconds = root.getLong("stat_listen_seconds")
-                    prefs.edit().putLong("stat_listen_seconds", listenSeconds).apply()
-                }
-                saveState()
-                Toast.makeText(context, "تمت الاستعادة بنجاح ✓", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    fun buildMediaItem(s: Song): MediaItem {
-        val extras = Bundle().apply {
-            putLong("album_id", s.albumId)
-            putString("song_uri", s.uri.toString())
-        }
-        return MediaItem.Builder()
-            .setMediaId(s.id.toString())
-            .setUri(s.uri)
-            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setExtras(extras).build())
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(s.title)
-                    .setArtist(s.artist)
-                    .setAlbumTitle(s.album)
-                    .setArtworkUri(ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), s.albumId))
-                    .build()
-            )
-            .build()
-    }
-
-    fun playQueue(queue: List<Song>, startIndex: Int, startPosMs: Long = 0L, autoPlay: Boolean = true) {
-        if (queue.isEmpty() || startIndex !in queue.indices) return
-        val chosen = queue[startIndex]
-        loopPointA = -1L
-        loopPointB = -1L
-        if (currentSongId == chosen.id && player.mediaItemCount > 0 && startPosMs == 0L) {
-            if (autoPlay) {
-                if (player.isPlaying) player.pause() else player.play()
-            }
-            return
-        }
-        currentSongId = chosen.id
-        recentIds = (listOf(chosen.id) + recentIds.filter { it != chosen.id }).take(60)
-        playCounts = playCounts + (chosen.id to ((playCounts[chosen.id] ?: 0) + 1))
-        prefs.edit()
-            .putLong("last_song_id", chosen.id)
-            .putString("last_song_uri", chosen.uri.toString())
-            .putLong("last_position_ms", startPosMs)
-            .putString("last_title", chosen.title)
-            .putString("last_artist", chosen.artist)
-            .putLong("last_album_id", chosen.albumId)
-            .apply()
-        saveState()
-
-        val mediaItems = queue.map { buildMediaItem(it) }
-        player.volume = 1f
-        player.setMediaItems(mediaItems, startIndex, startPosMs)
-        player.prepare()
-        if (autoPlay) player.play() else player.pause()
-        VyroWidgetProvider.updateAllWidgets(context)
-    }
-
-    val permissionName = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
-    val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        permission = granted
-        if (granted) {
-            val loaded = loadSongs()
-            allSongs = loaded
-            val activeId = player.currentMediaItem?.mediaId?.toLongOrNull()
-            if (activeId != null) {
-                currentSongId = activeId
-                position = player.currentPosition.coerceAtLeast(0L)
-            } else if (currentSongId != -1L) {
-                val idx = loaded.indexOfFirst { it.id == currentSongId }
-                if (idx >= 0) playQueue(loaded, idx, prefs.getLong("last_position_ms", 0L), autoPlay = false)
-            }
-        }
-        if (Build.VERSION.SDK_INT >= 33 &&
+        val toAsk = mutableListOf<String>()
+        if (!hasAudioPerm) toAsk.add(audioPerm)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
-            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            toAsk.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (toAsk.isNotEmpty()) permLauncher.launch(toAsk.toTypedArray())
+    }
+
+    // Scan Audio Library
+    LaunchedEffect(hasAudioPerm) {
+        if (hasAudioPerm) {
+            allSongs = scanDeviceSongs(context)
+            val lastId = prefs.getLong("last_song_id", -1L)
+            if (currentSong == null && allSongs.isNotEmpty()) {
+                currentSong = allSongs.find { it.id == lastId } ?: allSongs.first()
+            }
         }
     }
 
+    // Silent GitHub Update Check on launch
     LaunchedEffect(Unit) {
-        if (externalUri != null) {
-            player.setMediaItem(MediaItem.fromUri(externalUri))
-            player.prepare()
-            player.play()
-        }
-        permission = ContextCompat.checkSelfPermission(context, permissionName) == PackageManager.PERMISSION_GRANTED
-        if (permission) {
-            val loaded = loadSongs()
-            allSongs = loaded
-            val liveId = player.currentMediaItem?.mediaId?.toLongOrNull()
-            if (liveId != null) {
-                currentSongId = liveId
-                position = player.currentPosition.coerceAtLeast(0L)
-                duration = player.duration.coerceAtLeast(0L)
-                playing = player.isPlaying
-            } else if (currentSongId != -1L) {
-                val idx = loaded.indexOfFirst { it.id == currentSongId }
-                if (idx >= 0) playQueue(loaded, idx, prefs.getLong("last_position_ms", 0L), autoPlay = false)
-            } else if (loaded.isNotEmpty()) {
-                currentSongId = loaded.first().id
+        val rel = fetchLatestRelease()
+        if (rel != null) {
+            latestRelease = rel
+            if (isNewerVersion(appVersion, rel.tag)) {
+                updateAvailable = true
             }
-            if (Build.VERSION.SDK_INT >= 33 &&
-                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-            ) {
-                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        } else {
-            launcher.launch(permissionName)
         }
     }
 
-    DisposableEffect(shakeSkipEnabled, player) {
-        if (!shakeSkipEnabled) return@DisposableEffect onDispose { }
-        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
-        val accel = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        var lastShakeTime = 0L
-        val listener = object : SensorEventListener {
-            override fun onSensorChanged(event: SensorEvent?) {
-                val v = event?.values ?: return
-                val gForce = sqrt(
-                    (v[0] / SensorManager.GRAVITY_EARTH) * (v[0] / SensorManager.GRAVITY_EARTH) +
-                        (v[1] / SensorManager.GRAVITY_EARTH) * (v[1] / SensorManager.GRAVITY_EARTH) +
-                        (v[2] / SensorManager.GRAVITY_EARTH) * (v[2] / SensorManager.GRAVITY_EARTH)
-                )
-                if (gForce > 2.65f) {
-                    val now = System.currentTimeMillis()
-                    if (now - lastShakeTime > 1200L && player.isPlaying) {
-                        lastShakeTime = now
-                        player.seekToNext()
+    // Connect MediaController
+    DisposableEffect(context) {
+        val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+        val future: ListenableFuture<MediaController> = MediaController.Builder(context, sessionToken).buildAsync()
+        future.addListener({
+            runCatching {
+                val ctrl = future.get()
+                controller = ctrl
+                isPlaying = ctrl.isPlaying
+                shuffleOn = ctrl.shuffleModeEnabled
+                repeatMode = ctrl.repeatMode
+                ctrl.addListener(object : Player.Listener {
+                    override fun onIsPlayingChanged(playing: Boolean) {
+                        isPlaying = playing
                     }
-                }
+
+                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        val id = mediaItem?.mediaId?.toLongOrNull() ?: return
+                        allSongs.find { it.id == id }?.let { s ->
+                            currentSong = s
+                            totalDuration = s.duration.coerceAtLeast(1L)
+                            val updatedRecents = (listOf(s.id) + recentIds.filter { it != s.id }).take(40)
+                            recentIds = updatedRecents
+                            saveIdList(prefs, "recent_ids", updatedRecents)
+
+                            val updatedCounts = playCounts.toMutableMap()
+                            updatedCounts[s.id] = (updatedCounts[s.id] ?: 0) + 1
+                            playCounts = updatedCounts
+                            savePlayCounts(prefs, updatedCounts)
+                        }
+                    }
+
+                    override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                        shuffleOn = shuffleModeEnabled
+                    }
+
+                    override fun onRepeatModeChanged(mode: Int) {
+                        repeatMode = mode
+                    }
+                })
             }
-            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }, ContextCompat.getMainExecutor(context))
+
+        onDispose {
+            MediaController.releaseFuture(future)
         }
-        if (accel != null) sensorManager.registerListener(listener, accel, SensorManager.SENSOR_DELAY_UI)
-        onDispose { sensorManager?.unregisterListener(listener) }
     }
 
-    DisposableEffect(permission) {
-        if (!permission) return@DisposableEffect onDispose { }
-        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
-            override fun onChange(selfChange: Boolean) {
-                allSongs = loadSongs()
-            }
-        }
-        context.contentResolver.registerContentObserver(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, true, observer)
-        onDispose { context.contentResolver.unregisterContentObserver(observer) }
-    }
-
-    val currentSong = allSongs.firstOrNull { it.id == currentSongId }
-
-    LaunchedEffect(currentSong?.id) {
-        val song = currentSong ?: return@LaunchedEffect
-        withContext(Dispatchers.IO) {
-            val bmp = CoverArtCache.get(song.id)
-                ?: VyroWidgetProvider.loadRobustAlbumArt(context, song.uri.toString(), song.albumId)?.also {
-                    CoverArtCache.put(song.id, it)
-                }
-            val extracted = extractCoverPaletteFromBitmap(bmp)
-            withContext(Dispatchers.Main) { coverPalette = extracted }
-        }
-    }
-
-    DisposableEffect(player) {
-        val listener = object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                playing = isPlaying
-                listenSeconds = prefs.getLong("stat_listen_seconds", listenSeconds)
-            }
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                val id = mediaItem?.mediaId?.toLongOrNull()
-                if (id != null) {
-                    currentSongId = id
-                    loopPointA = -1L
-                    loopPointB = -1L
-                    recentIds = (listOf(id) + recentIds.filter { it != id }).take(60)
-                    playCounts = playCounts + (id to ((playCounts[id] ?: 0) + 1))
-                    saveState()
-                }
-            }
-        }
-        player.addListener(listener)
-        onDispose { player.removeListener(listener) }
-    }
-
-    LaunchedEffect(player, crossfadeSec, loopPointA, loopPointB, spatial8DEnabled) {
-        var tick = 0
-        var angle8D = 0f
+    // Progress Ticker
+    LaunchedEffect(controller, isPlaying) {
         while (true) {
-            val realDur = player.duration
-            if (player.isPlaying || player.mediaItemCount > 0) {
-                position = player.currentPosition.coerceAtLeast(0L)
-                duration = if (realDur > 0) realDur else (currentSong?.duration ?: 0L)
-
-                if (loopPointA >= 0L && loopPointB > loopPointA + 1000L && position >= loopPointB) {
-                    player.seekTo(loopPointA)
-                }
-
-                if (player.isPlaying) {
-                    tick++
-                    if (tick % 4 == 0) {
-                        listenSeconds++
-                        if (tick % 20 == 0) {
-                            prefs.edit()
-                                .putLong("last_song_id", currentSongId)
-                                .putLong("last_position_ms", position)
-                                .putLong("stat_listen_seconds", listenSeconds)
-                                .apply()
-                        }
-                    }
-                }
+            controller?.let { ctrl ->
+                currentPosition = ctrl.currentPosition.coerceAtLeast(0L)
+                val dur = ctrl.duration
+                if (dur > 0) totalDuration = dur
             }
-            if (sleepTimerRemainingSec <= 0) {
-                if (spatial8DEnabled && player.isPlaying) {
-                    angle8D += 0.16f
-                    player.volume = (0.86f + 0.14f * sin(angle8D)).coerceIn(0.72f, 1f)
-                } else if (crossfadeSec > 0 && realDur > crossfadeSec * 2500L && player.isPlaying) {
-                    val fadeWindow = crossfadeSec * 1000L
-                    val remaining = realDur - position
-                    player.volume = if (remaining in 1..fadeWindow) {
-                        (remaining.toFloat() / fadeWindow.toFloat()).coerceIn(0.25f, 1f)
-                    } else 1f
-                } else {
-                    player.volume = 1f
-                }
-            }
-            delay(250)
+            delay(450L)
         }
     }
 
-    val primaryAccent by animateColorAsState(
-        targetValue = if (accentColorId == "DYNAMIC") coverPalette.dominant
-        else ACCENT_SWATCHES.firstOrNull { it.id == accentColorId }?.color ?: Color(0xFF00C2FF),
-        tween(350),
-        label = "accent"
-    )
-
-    val bgColor = if (isDark) Color(0xFF000000) else Color(0xFFF3F6FB)
-    val cardColor = if (isDark) Color(0xFF12151E) else Color(0xFFFFFFFF)
-    val pillBgColor = if (isDark) Color(0xFF1A1E2A) else Color(0xFFE6EBF4)
-    val textPrimary = if (isDark) Color(0xFFFFFFFF) else Color(0xFF10131A)
-    val textSecondary = if (isDark) Color(0xFF8C93A6) else Color(0xFF606878)
-
-    val sortedSongs = remember(visibleSongs, query, sortBy, likedIds) {
-        val base = if (sortBy == "FAV") visibleSongs.filter { likedIds.contains(it.id) } else visibleSongs
-        val filtered = base.filter {
-            it.title.contains(query, true) || it.artist.contains(query, true) || it.album.contains(query, true)
-        }
-        when (sortBy) {
-            "ARTIST" -> filtered.sortedBy { it.artist.lowercase() }
-            "DURATION" -> filtered.sortedByDescending { it.duration }
-            "NEWEST" -> filtered.sortedByDescending { it.dateAdded }
-            else -> filtered.sortedBy { it.title.lowercase() }
-        }
-    }
-
-    fun startSleepTimer(minutes: Int) {
-        sleepTimerJob?.cancel()
-        if (minutes <= 0) {
-            sleepTimerRemainingSec = 0
-            player.volume = 1f
-        } else {
-            sleepTimerRemainingSec = minutes * 60
-            sleepTimerJob = appScope.launch {
-                while (sleepTimerRemainingSec > 0) {
-                    delay(1000L)
-                    sleepTimerRemainingSec--
-                    if (sleepTimerRemainingSec in 1..15) {
-                        player.volume = (sleepTimerRemainingSec / 15f).coerceIn(0.08f, 1f)
-                    }
-                }
-                player.pause()
-                player.volume = 1f
+    // Sleep Timer Countdown
+    LaunchedEffect(sleepMinutesLeft) {
+        if (sleepMinutesLeft > 0) {
+            delay(60_000L)
+            sleepMinutesLeft -= 1
+            if (sleepMinutesLeft == 0) {
+                controller?.pause()
+                Toast.makeText(context, if (isArabic) "انتهى مؤقت النوم وتم إيقاف التشغيل" else "Sleep timer ended", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    // الحوارات
-    if (showChangelogDialog && availableUpdate != null) {
-        AlertDialog(
-            onDismissRequest = { showChangelogDialog = false },
-            containerColor = cardColor,
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.NewReleases, null, tint = primaryAccent)
-                    Spacer(Modifier.width(8.dp))
-                    Text("ما الجديد في ${availableUpdate!!.tagName}", color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                }
-            },
-            text = {
-                Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
-                    Text(
-                        availableUpdate!!.changelog.ifBlank { "تحسينات شاملة في الأداء والواجهة وإصلاح المشكلات." },
-                        color = textPrimary,
-                        fontSize = 13.5.sp,
-                        lineHeight = 22.sp
-                    )
-                }
-            },
-            confirmButton = { TextButton(onClick = { showChangelogDialog = false }) { Text("فهمت", color = primaryAccent, fontWeight = FontWeight.Bold) } }
-        )
-    }
-
-    if (showResetConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showResetConfirmDialog = false },
-            containerColor = cardColor,
-            title = { Text("إعادة ضبط الإعدادات", color = textPrimary, fontWeight = FontWeight.Bold) },
-            text = { Text("هل أنت متأكد من أنك تريد إعادة ضبط الإعدادات الافتراضية؟", color = textSecondary) },
-            confirmButton = {
-                Button(
-                    onClick = { resetAllDefaults(); showResetConfirmDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = primaryAccent)
-                ) { Text("تأكيد", color = Color.Black, fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showResetConfirmDialog = false }) { Text("إلغاء", color = textSecondary) }
-            }
-        )
-    }
-
-    if (showLanguageDialog) {
-        AlertDialog(
-            onDismissRequest = { showLanguageDialog = false },
-            containerColor = cardColor,
-            title = { Text("لغة التطبيق", color = textPrimary, fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    listOf("AR" to "العربية", "EN" to "English", "SYSTEM" to "لغة النظام").forEach { (code, name) ->
-                        Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
-                                langSetting = code; saveState(); showLanguageDialog = false
-                            }.padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(name, color = textPrimary, fontWeight = if (langSetting == code) FontWeight.Bold else FontWeight.Normal)
-                            if (langSetting == code) Icon(Icons.Default.Check, null, tint = primaryAccent)
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showLanguageDialog = false }) { Text("إغلاق", color = primaryAccent) } }
-        )
-    }
-
-    if (showStatsDialog) {
-        val topSong = playCounts.maxByOrNull { it.value }?.key?.let { id -> allSongs.firstOrNull { it.id == id } }
-        AlertDialog(
-            onDismissRequest = { showStatsDialog = false },
-            containerColor = cardColor,
-            title = { Text("إحصائيات الاستماع", color = textPrimary, fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    InfoItem("إجمالي وقت التشغيل", formatListenHours(listenSeconds), textPrimary, textSecondary)
-                    InfoItem("عدد مرات التشغيل", "${prefs.getInt("stat_tracks_played", 0)} مرة", textPrimary, textSecondary)
-                    InfoItem("إجمالي الأغاني", "${visibleSongs.size} أغنية", textPrimary, textSecondary)
-                    InfoItem("الأغاني المفضلة", "${likedIds.size} أغنية", textPrimary, textSecondary)
-                    if (topSong != null) {
-                        InfoItem("أكثر أغنية استماعاً", "${topSong.title} (${playCounts[topSong.id]} مرة)", textPrimary, textSecondary)
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showStatsDialog = false }) { Text("حسناً", color = primaryAccent) } }
-        )
-    }
-
-    if (showAboutDialog) {
-        AlertDialog(
-            onDismissRequest = { showAboutDialog = false },
-            containerColor = cardColor,
-            title = { Text("VYRO MUSIC $APP_VERSION_NAME", color = primaryAccent, fontWeight = FontWeight.Black) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("تطوير وتصميم: محمد طارق (Mohamed Tarek)", color = textPrimary, fontWeight = FontWeight.Bold)
-                    Text("مشغل موسيقى مستقل بتصميم VYRO الأصلي، صوت Hi-Fi نقي تلقائي، 8D محيطي، استوديو سمات حي بأغانيك، واستوديو Glassify للموبايل.", color = textSecondary, fontSize = 13.sp)
-                }
-            },
-            confirmButton = { TextButton(onClick = { showAboutDialog = false }) { Text("تم", color = primaryAccent) } }
-        )
-    }
-
-    if (showSleepDialog) {
-        AlertDialog(
-            onDismissRequest = { showSleepDialog = false },
-            containerColor = cardColor,
-            title = { Text("مؤقت النوم التدريجي", color = textPrimary, fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    listOf(5, 10, 15, 30, 45, 60).forEach { mins ->
-                        TextButton(onClick = { startSleepTimer(mins); showSleepDialog = false }, modifier = Modifier.fillMaxWidth()) {
-                            Text("$mins دقيقة (خفض تدريجي ناعم)", color = textPrimary)
-                        }
-                    }
-                    if (sleepTimerRemainingSec > 0) {
-                        TextButton(onClick = { startSleepTimer(0); showSleepDialog = false }, modifier = Modifier.fillMaxWidth()) {
-                            Text("إيقاف المؤقت", color = Color(0xFFFF5263))
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showSleepDialog = false }) { Text("إغلاق", color = primaryAccent) } }
-        )
-    }
-
-    songForMenu?.let { target ->
-        val isLiked = likedIds.contains(target.id)
-        AlertDialog(
-            onDismissRequest = { songForMenu = null },
-            containerColor = cardColor,
-            title = {
-                Column {
-                    Text(target.title, color = textPrimary, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(target.artist, color = primaryAccent, fontSize = 12.sp, maxLines = 1)
-                }
-            },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    MenuActionRow(Icons.Default.PlayArrow, "تشغيل الآن", primaryAccent) {
-                        val idx = visibleSongs.indexOfFirst { it.id == target.id }
-                        if (idx >= 0) playQueue(visibleSongs, idx, 0L, true)
-                        songForMenu = null
-                    }
-                    MenuActionRow(Icons.Default.QueuePlayNext, "تشغيل كالتالي في الطابور", textPrimary) {
-                        val nextIdx = (player.currentMediaItemIndex + 1).coerceAtMost(player.mediaItemCount)
-                        player.addMediaItem(nextIdx, buildMediaItem(target))
-                        Toast.makeText(context, "تمت الإضافة للتالي", Toast.LENGTH_SHORT).show()
-                        songForMenu = null
-                    }
-                    MenuActionRow(if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (isLiked) "إزالة من المفضلة" else "إضافة إلى المفضلة", textPrimary) {
-                        likedIds = if (isLiked) likedIds - target.id else likedIds + target.id
-                        saveState()
-                        songForMenu = null
-                    }
-                    MenuActionRow(Icons.Default.PlaylistAdd, "إضافة إلى قائمة تشغيل", textPrimary) {
-                        songForAddToPlaylist = target
-                        songForMenu = null
-                    }
-                    MenuActionRow(Icons.Default.RingVolume, "قص وتعيين كنغمة رنين", Color(0xFFFFC857)) {
-                        songForRingtone = target
-                        songForMenu = null
-                    }
-                    MenuActionRow(Icons.Default.Lyrics, "كلمات الأغنية (LRC)", textPrimary) {
-                        songForLyrics = target
-                        songForMenu = null
-                    }
-                    MenuActionRow(Icons.Default.VisibilityOff, "إخفاء هذا الملف من المكتبة", textPrimary) {
-                        hiddenIds = hiddenIds + target.id
-                        saveState()
-                        Toast.makeText(context, "تم نقل الملف إلى الملفات المخفية", Toast.LENGTH_SHORT).show()
-                        songForMenu = null
-                    }
-                    MenuActionRow(Icons.Default.Share, "مشاركة الملف الصوتي", textPrimary) {
-                        runCatching {
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "audio/*"
-                                putExtra(Intent.EXTRA_STREAM, target.uri)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, target.title))
-                        }
-                        songForMenu = null
-                    }
-                    MenuActionRow(Icons.Default.Info, "معلومات الملف", textPrimary) {
-                        songForInfo = target
-                        songForMenu = null
-                    }
-                    MenuActionRow(Icons.Default.DeleteForever, "حذف نهائي من الجهاز", Color(0xFFFF5263)) {
-                        songForDeleteConfirm = target
-                        songForMenu = null
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { songForMenu = null }) { Text("إغلاق", color = primaryAccent) } }
-        )
-    }
-
-    songForRingtone?.let { target ->
-        val safeTotal = (target.duration / 1000L).coerceAtLeast(6L).toFloat()
-        var startSec by remember { mutableFloatStateOf(0f) }
-        var endSec by remember { mutableFloatStateOf(minOf(30f, safeTotal)) }
-        var cutting by remember { mutableStateOf(false) }
-
-        AlertDialog(
-            onDismissRequest = { if (!cutting) songForRingtone = null },
-            containerColor = cardColor,
-            title = { Text("قص وتعيين كنغمة رنين", color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(target.title, color = primaryAccent, maxLines = 1)
-                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                        Column {
-                            Text("${formatTime((startSec * 1000).toLong())}  →  ${formatTime((endSec * 1000).toLong())}", color = textPrimary, fontSize = 12.sp)
-                            Slider(value = startSec, onValueChange = { startSec = it.coerceIn(0f, (endSec - 2f).coerceAtLeast(0f)) }, valueRange = 0f..safeTotal)
-                            Slider(value = endSec, onValueChange = { endSec = it.coerceIn((startSec + 2f).coerceAtMost(safeTotal), safeTotal) }, valueRange = 0f..safeTotal)
-                        }
-                    }
-                    Button(
-                        onClick = {
-                            if (!Settings.System.canWrite(context)) {
-                                context.startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}")))
-                            } else {
-                                cutting = true
-                                appScope.launch {
-                                    withContext(Dispatchers.IO) { cutAndSetRingtone(context, target, (startSec * 1000).toLong(), (endSec * 1000).toLong()) }
-                                    cutting = false
-                                    Toast.makeText(context, "تم تعيين النغمة بنجاح ✓", Toast.LENGTH_SHORT).show()
-                                    songForRingtone = null
-                                }
-                            }
-                        },
-                        enabled = !cutting,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = primaryAccent)
-                    ) {
-                        Text(if (cutting) "جاري القص..." else "قص وتعيين النغمة", color = Color.Black, fontWeight = FontWeight.Bold)
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { songForRingtone = null }) { Text("إغلاق", color = textSecondary) } }
-        )
-    }
-
-    songForInfo?.let { target ->
-        val mb = "%.2f MB".format(target.sizeBytes / (1024f * 1024f))
-        AlertDialog(
-            onDismissRequest = { songForInfo = null },
-            containerColor = cardColor,
-            title = { Text("معلومات الملف", color = primaryAccent, fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    InfoItem("الأغنية", target.title, textPrimary, textSecondary)
-                    InfoItem("الفنان", target.artist, textPrimary, textSecondary)
-                    InfoItem("الألبوم", target.album, textPrimary, textSecondary)
-                    InfoItem("المجلد", target.folderName, textPrimary, textSecondary)
-                    InfoItem("المدة والحجم", "${formatTime(target.duration)} • $mb", textPrimary, textSecondary)
-                    InfoItem("مرات الاستماع", "${playCounts[target.id] ?: 0}", textPrimary, textSecondary)
-                }
-            },
-            confirmButton = { TextButton(onClick = { songForInfo = null }) { Text("حسناً", color = primaryAccent) } }
-        )
-    }
-
-    songForDeleteConfirm?.let { target ->
-        AlertDialog(
-            onDismissRequest = { songForDeleteConfirm = null },
-            containerColor = cardColor,
-            title = { Text("حذف من الجهاز", color = Color(0xFFFF5263), fontWeight = FontWeight.Bold) },
-            text = { Text(target.title, color = textPrimary) },
-            confirmButton = {
-                TextButton(onClick = {
-                    runCatching {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                            val pi = MediaStore.createDeleteRequest(context.contentResolver, listOf(target.uri))
-                            deleteResultLauncher.launch(IntentSenderRequest.Builder(pi.intentSender).build())
-                        } else {
-                            context.contentResolver.delete(target.uri, null, null)
-                            allSongs = loadSongs()
-                        }
-                    }
-                    songForDeleteConfirm = null
-                }) { Text("تأكيد الحذف", color = Color(0xFFFF5263), fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = { TextButton(onClick = { songForDeleteConfirm = null }) { Text("إلغاء", color = textSecondary) } }
-        )
-    }
-
-    songForAddToPlaylist?.let { targetSong ->
-        AlertDialog(
-            onDismissRequest = { songForAddToPlaylist = null },
-            containerColor = cardColor,
-            title = { Text("إضافة إلى قائمة تشغيل", color = textPrimary) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    playlists.keys.forEach { pName ->
-                        TextButton(
-                            onClick = {
-                                val currentList = playlists[pName] ?: emptyList()
-                                if (!currentList.contains(targetSong.id)) {
-                                    playlists = playlists + (pName to (currentList + targetSong.id))
-                                    saveState()
-                                }
-                                Toast.makeText(context, "تمت الإضافة إلى $pName", Toast.LENGTH_SHORT).show()
-                                songForAddToPlaylist = null
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text(pName, color = textPrimary) }
-                    }
-                    OutlinedButton(onClick = { songForAddToPlaylist = null; showCreatePlaylistDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("+ إنشاء قائمة جديدة", color = primaryAccent)
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { songForAddToPlaylist = null }) { Text("إغلاق") } }
-        )
-    }
-
-    if (showCreatePlaylistDialog) {
-        var newName by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { showCreatePlaylistDialog = false },
-            containerColor = cardColor,
-            title = { Text("قائمة تشغيل جديدة", color = textPrimary) },
-            text = { OutlinedTextField(value = newName, onValueChange = { newName = it }, placeholder = { Text("تراكات الجيم / فونك") }, singleLine = true) },
-            confirmButton = {
-                TextButton(onClick = {
-                    val trimmed = newName.trim()
-                    if (trimmed.isNotEmpty()) {
-                        playlists = playlists + (trimmed to (playlists[trimmed] ?: emptyList()))
-                        saveState()
-                        showCreatePlaylistDialog = false
-                    }
-                }) { Text("إنشاء", color = primaryAccent) }
-            },
-            dismissButton = { TextButton(onClick = { showCreatePlaylistDialog = false }) { Text("إلغاء") } }
-        )
-    }
-
-    songForLyrics?.let { targetSong ->
-        val rawLyrics = remember(targetSong.id, customLyrics) {
-            customLyrics[targetSong.id] ?: readRawSidecarLyrics(targetSong.filePath) ?: ""
+    // Visible filtered & sorted songs
+    val visibleSongs = remember(allSongs, hiddenIds, searchQuery, sortMode) {
+        val base = allSongs.filter { it.id !in hiddenIds }.filter {
+            searchQuery.isBlank() ||
+                it.title.contains(searchQuery, ignoreCase = true) ||
+                it.artist.contains(searchQuery, ignoreCase = true) ||
+                it.folder.contains(searchQuery, ignoreCase = true)
         }
-        val parsedLrc = remember(rawLyrics) { parseLrcLines(rawLyrics) }
-        var editingMode by remember { mutableStateOf(rawLyrics.isBlank()) }
-        var draftText by remember { mutableStateOf(rawLyrics) }
-
-        AlertDialog(
-            onDismissRequest = { songForLyrics = null },
-            containerColor = cardColor,
-            title = { Text("كلمات الأغنية • ${targetSong.title}", color = textPrimary, fontSize = 15.sp, maxLines = 1) },
-            text = {
-                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (editingMode) {
-                        OutlinedTextField(
-                            value = draftText,
-                            onValueChange = { draftText = it },
-                            placeholder = { Text("[00:12.00] الصق الكلمات هنا...") },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp)
-                        )
-                    } else if (parsedLrc.isNotEmpty()) {
-                        val activeIdx = parsedLrc.indexOfLast { it.timeMs <= position }.coerceAtLeast(0)
-                        parsedLrc.forEachIndexed { idx, line ->
-                            val isCurrent = idx == activeIdx
-                            Text(
-                                text = line.text,
-                                color = if (isCurrent) primaryAccent else textSecondary,
-                                fontWeight = if (isCurrent) FontWeight.ExtraBold else FontWeight.Normal,
-                                fontSize = if (isCurrent) 16.sp else 13.sp,
-                                modifier = Modifier.fillMaxWidth().clickable { player.seekTo(line.timeMs) }.padding(vertical = 3.dp)
-                            )
-                        }
-                    } else {
-                        Text(draftText.ifBlank { "لا توجد كلمات محفوظة بعد." }, color = textPrimary, lineHeight = 22.sp)
-                    }
-                }
-            },
-            confirmButton = {
-                if (editingMode) {
-                    TextButton(onClick = {
-                        customLyrics = customLyrics + (targetSong.id to draftText.trim())
-                        saveState()
-                        editingMode = false
-                    }) { Text("حفظ", color = primaryAccent) }
-                } else {
-                    TextButton(onClick = { editingMode = true }) { Text("تعديل", color = primaryAccent) }
-                }
-            },
-            dismissButton = { TextButton(onClick = { songForLyrics = null }) { Text("إغلاق") } }
-        )
+        when (sortMode) {
+            1 -> base.sortedByDescending { it.dateAdded }
+            2 -> base.sortedByDescending { it.duration }
+            else -> base.sortedBy { it.title.lowercase(Locale.ROOT) }
+        }
     }
+
+    fun playFromQueue(queue: List<Song>, startIndex: Int) {
+        val ctrl = controller ?: return
+        if (queue.isEmpty()) return
+        val safeIdx = startIndex.coerceIn(0, queue.lastIndex)
+        val items = queue.map { song ->
+            val extras = Bundle().apply {
+                putLong("album_id", song.albumId)
+                putString("song_uri", song.uri.toString())
+            }
+            MediaItem.Builder()
+                .setMediaId(song.id.toString())
+                .setUri(song.uri)
+                .setRequestMetadata(MediaItem.RequestMetadata.Builder().setExtras(extras).build())
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(song.title)
+                        .setArtist(song.artist)
+                        .setAlbumTitle(song.album)
+                        .build()
+                )
+                .build()
+        }
+        ctrl.setMediaItems(items, safeIdx, 0L)
+        ctrl.prepare()
+        ctrl.play()
+        currentSong = queue[safeIdx]
+    }
+
+    fun toggleFavorite(songId: Long) {
+        val next = favoriteIds.toMutableSet()
+        if (songId in next) next.remove(songId) else next.add(songId)
+        favoriteIds = next
+        saveIdSet(prefs, "favorite_ids", next)
+    }
+
+    fun hideSong(songId: Long) {
+        val next = hiddenIds.toMutableSet().apply { add(songId) }
+        hiddenIds = next
+        saveIdSet(prefs, "hidden_ids", next)
+    }
+
+    // Theme Setup
+    val isDark = when (themeMode) {
+        "light" -> false
+        "system" -> isSystemInDarkTheme()
+        else -> true
+    }
+    val accent = ACCENT_PALETTE[accentIndex]
+    val bgBase = if (isDark) Color(0xFF06080D) else Color(0xFFF3F6FA)
+    val cardColor = if (isDark) Color(0xFF101520) else Color(0xFFFFFFFF)
+    val textPrimary = if (isDark) Color(0xFFF8FAFC) else Color(0xFF0F172A)
+    val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
 
     val colorScheme = if (isDark) {
-        darkColorScheme(background = bgColor, surface = cardColor, primary = primaryAccent, onBackground = textPrimary, onSurface = textPrimary)
+        darkColorScheme(primary = accent, background = bgBase, surface = cardColor, onBackground = textPrimary, onSurface = textPrimary)
     } else {
-        lightColorScheme(background = bgColor, surface = cardColor, primary = primaryAccent, onBackground = textPrimary, onSurface = textPrimary)
+        lightColorScheme(primary = accent, background = bgBase, surface = cardColor, onBackground = textPrimary, onSurface = textPrimary)
     }
 
-    CompositionLocalProvider(LocalLayoutDirection provides if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr) {
+    val backgroundBrush = remember(isDark, bgStyle, accent) {
+        when {
+            !isDark -> Brush.verticalGradient(listOf(Color(0xFFEAF2FA), Color(0xFFF8FAFC)))
+            bgStyle == "pure" -> Brush.verticalGradient(listOf(Color(0xFF000000), Color(0xFF000000)))
+            bgStyle == "stadium" -> Brush.verticalGradient(listOf(Color(0xFF072B18), Color(0xFF050E0A), Color(0xFF030508)))
+            else -> Brush.verticalGradient(listOf(accent.copy(alpha = 0.22f), Color(0xFF080D16), Color(0xFF04060A)))
+        }
+    }
+
+    BackHandler(enabled = showCarMode || showNowPlaying || currentScreen != AppScreen.MAIN || selectedFolder != null || selectedArtist != null || selectedPlaylistTitle != null) {
+        when {
+            showCarMode -> showCarMode = false
+            showNowPlaying -> showNowPlaying = false
+            currentScreen != AppScreen.MAIN -> currentScreen = AppScreen.MAIN
+            selectedFolder != null -> selectedFolder = null
+            selectedArtist != null -> selectedArtist = null
+            selectedPlaylistTitle != null -> selectedPlaylistTitle = null
+        }
+    }
+
+    CompositionLocalProvider(LocalLayoutDirection provides if (isArabic) LayoutDirection.Rtl else LayoutDirection.Ltr) {
         MaterialTheme(colorScheme = colorScheme) {
-            Box(Modifier.fillMaxSize().background(bgColor)) {
-                // الخلفية الحية الاختيارية
-                if (liveBackdrop != "NONE" && currentScreen != "SETTINGS") {
-                    AnimatedThemeBackdrop(liveBackdrop, primaryAccent, coverPalette.secondary, playing)
-                }
-
-                if (!customBgUri.isNullOrBlank() && currentScreen != "SETTINGS") {
-                    AsyncImage(model = Uri.parse(customBgUri), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = bgDimAlpha.coerceIn(0.15f, 0.85f))))
-                }
-
-                // قفل التطبيق الإجباري في حال مرور 10 أيام بدون تحديث
-                if (isUpdateMandatory && availableUpdate != null) {
-                    TitanUpdateDownloadScreen(
-                        info = availableUpdate!!,
-                        isMandatory = true,
-                        daysLeft = 0,
-                        isDownloading = isDownloadingUpdate,
-                        progress = downloadProgress,
-                        downloadedFile = downloadedApkFile,
-                        accent = primaryAccent,
-                        bgColor = bgColor,
-                        cardColor = cardColor,
-                        textPrimary = textPrimary,
-                        textSecondary = textSecondary,
-                        onBack = null,
-                        onShowChangelog = { showChangelogDialog = true },
-                        onDownload = { startInAppUpdateDownload(availableUpdate!!) },
-                        onInstall = { downloadedApkFile?.let { triggerApkInstall(it) } }
-                    )
-                } else {
-                    when {
-                        isDriveMode && currentSong != null -> {
-                            DriveGymModeScreen(
-                                song = currentSong,
-                                playing = playing,
-                                position = position,
-                                duration = duration.coerceAtLeast(currentSong.duration),
-                                accent = primaryAccent,
-                                onTogglePlay = { if (player.isPlaying) player.pause() else player.play() },
-                                onNext = { player.seekToNext() },
-                                onPrev = { player.seekToPrevious() },
-                                onExit = { isDriveMode = false }
-                            )
-                        }
-
-                        currentScreen == "UPDATES" -> {
-                            TitanUpdatesCenterScreen(
-                                availableUpdate = availableUpdate,
-                                checking = updateChecking,
-                                statusMsg = updateStatusMsg,
-                                daysLeft = updateDaysLeft,
-                                isDownloading = isDownloadingUpdate,
-                                progress = downloadProgress,
-                                downloadedFile = downloadedApkFile,
-                                accent = primaryAccent,
-                                bgColor = bgColor,
-                                cardColor = cardColor,
-                                textPrimary = textPrimary,
-                                textSecondary = textSecondary,
-                                onBack = { currentScreen = "SETTINGS" },
-                                onCheckNow = { checkForUpdates(manual = true) },
-                                onShowChangelog = { showChangelogDialog = true },
-                                onDownload = { availableUpdate?.let { startInAppUpdateDownload(it) } },
-                                onInstall = { downloadedApkFile?.let { triggerApkInstall(it) } }
-                            )
-                        }
-
-                        currentScreen == "THEME_STUDIO" -> {
-                            TitanLiveThemeStudioScreen(
-                                sampleSongs = visibleSongs.take(6),
-                                viewSize = viewSize,
-                                themeMode = themeMode,
-                                accentColorId = accentColorId,
-                                liveBackdrop = liveBackdrop,
-                                accent = primaryAccent,
-                                isDark = isDark,
-                                bgColor = bgColor,
-                                cardColor = cardColor,
-                                pillBgColor = pillBgColor,
-                                textPrimary = textPrimary,
-                                textSecondary = textSecondary,
-                                hasCustomWallpaper = !customBgUri.isNullOrBlank(),
-                                onBack = { currentScreen = "MAIN" },
-                                onSelectSize = { viewSize = it; saveState() },
-                                onSelectMode = { themeMode = it; saveState() },
-                                onSelectAccent = { accentColorId = it; saveState() },
-                                onSelectBackdrop = {
-                                    liveBackdrop = if (liveBackdrop == it) "NONE" else it
-                                    saveState()
-                                },
-                                onPickWallpaper = { bgImagePicker.launch(arrayOf("image/*")) },
-                                onClearWallpaper = { customBgUri = null; saveState() },
-                                onApplyAndClose = {
-                                    saveState()
-                                    currentScreen = "MAIN"
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(backgroundBrush)
+                    .systemBarsPadding()
+            ) {
+                when (currentScreen) {
+                    AppScreen.MAIN -> {
+                        MainLibraryScreen(
+                            isArabic = isArabic,
+                            appVersion = appVersion,
+                            accent = accent,
+                            cardColor = cardColor,
+                            textPrimary = textPrimary,
+                            textSecondary = textSecondary,
+                            songs = visibleSongs,
+                            allSongs = allSongs,
+                            listLayout = listLayout,
+                            activeTab = activeTab,
+                            onTabChange = {
+                                activeTab = it
+                                selectedFolder = null
+                                selectedArtist = null
+                                selectedPlaylistTitle = null
+                            },
+                            searchVisible = searchVisible,
+                            onToggleSearch = {
+                                searchVisible = !searchVisible
+                                if (!searchVisible) searchQuery = ""
+                            },
+                            searchQuery = searchQuery,
+                            onSearchQueryChange = { searchQuery = it },
+                            onCycleSort = {
+                                sortMode = (sortMode + 1) % 3
+                                prefs.edit().putInt("sort_mode", sortMode).apply()
+                                val msg = when (sortMode) {
+                                    1 -> if (isArabic) "الترتيب: الأحدث" else "Sort: Newest"
+                                    2 -> if (isArabic) "الترتيب: الأطول مدة" else "Sort: Duration"
+                                    else -> if (isArabic) "الترتيب: أبجدي" else "Sort: A-Z"
                                 }
-                            )
-                        }
-
-                        currentScreen == "GLASSIFY_STUDIO" -> {
-                            TitanGlassifyStudioScreen(
-                                currentSong = currentSong,
-                                widgetStyle = widgetStyle,
-                                accent = primaryAccent,
-                                bgColor = bgColor,
-                                cardColor = cardColor,
-                                textPrimary = textPrimary,
-                                textSecondary = textSecondary,
-                                onBack = { currentScreen = "MAIN" },
-                                onSelectWidgetStyle = { widgetStyle = it; saveState() },
-                                onPinWidget = { requestPinHomeWidget() },
-                                onApplyWallpaper = { preset, flag -> applyGlassWallpaper(preset, flag) }
-                            )
-                        }
-
-                        currentScreen == "HIDDEN_FILES" -> {
-                            val hiddenList = allSongs.filter { hiddenIds.contains(it.id) }
-                            TitanHiddenFilesScreen(
-                                hiddenSongs = hiddenList,
-                                accent = primaryAccent,
-                                bgColor = bgColor,
-                                cardColor = cardColor,
-                                textPrimary = textPrimary,
-                                textSecondary = textSecondary,
-                                onBack = { currentScreen = "SETTINGS" },
-                                onUnhide = { id -> hiddenIds = hiddenIds - id; saveState() },
-                                onUnhideAll = { hiddenIds = emptySet(); saveState() }
-                            )
-                        }
-
-                        currentScreen == "PLAYBACK_SETTINGS" -> {
-                            TitanPlaybackSettingsScreen(
-                                spatial8D = spatial8DEnabled,
-                                shakeSkip = shakeSkipEnabled,
-                                crossfadeSec = crossfadeSec,
-                                discStyle = discStyle,
-                                waveStyle = waveStyle,
-                                accent = primaryAccent,
-                                bgColor = bgColor,
-                                cardColor = cardColor,
-                                textPrimary = textPrimary,
-                                textSecondary = textSecondary,
-                                onBack = { currentScreen = "SETTINGS" },
-                                onToggle8D = { spatial8DEnabled = !spatial8DEnabled; saveState() },
-                                onToggleShake = { shakeSkipEnabled = !shakeSkipEnabled; saveState() },
-                                onChangeCrossfade = { crossfadeSec = it; saveState() },
-                                onSelectDisc = { discStyle = it; saveState() },
-                                onSelectWave = { waveStyle = it; saveState() }
-                            )
-                        }
-
-                        currentScreen == "SETTINGS" -> {
-                            TitanSettingsScreen(
-                                listenSeconds = listenSeconds,
-                                viewSize = viewSize,
-                                liveBackdrop = liveBackdrop,
-                                langSetting = langSetting,
-                                sleepRemainingSec = sleepTimerRemainingSec,
-                                hiddenCount = hiddenIds.size,
-                                widgetStyle = widgetStyle,
-                                hasUpdate = availableUpdate != null,
-                                updateTag = availableUpdate?.tagName,
-                                accent = primaryAccent,
-                                bgColor = bgColor,
-                                cardColor = cardColor,
-                                textPrimary = textPrimary,
-                                textSecondary = textSecondary,
-                                onBack = { currentScreen = "MAIN" },
-                                onOpenStats = { showStatsDialog = true },
-                                onOpenUpdates = { currentScreen = "UPDATES" },
-                                onBackup = { backupLauncher.launch("vyro_titan_backup.json") },
-                                onRestore = { restoreLauncher.launch(arrayOf("application/json", "*/*")) },
-                                onOpenThemeStudio = { currentScreen = "THEME_STUDIO" },
-                                onOpenGlassify = { currentScreen = "GLASSIFY_STUDIO" },
-                                onOpenLanguage = { showLanguageDialog = true },
-                                onOpenSleep = { showSleepDialog = true },
-                                onOpenHiddenFiles = { currentScreen = "HIDDEN_FILES" },
-                                onOpenPlaybackSettings = { currentScreen = "PLAYBACK_SETTINGS" },
-                                onPreventStop = {
-                                    runCatching {
-                                        context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-                                    }.onFailure {
-                                        runCatching {
-                                            context.startActivity(
-                                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
-                                            )
-                                        }
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            },
+                            listenSeconds = prefs.getLong("stat_listen_seconds", 0L),
+                            favoriteIds = favoriteIds,
+                            recentIds = recentIds,
+                            playCounts = playCounts,
+                            customPlaylists = customPlaylists,
+                            selectedFolder = selectedFolder,
+                            onSelectFolder = { selectedFolder = it },
+                            selectedArtist = selectedArtist,
+                            onSelectArtist = { selectedArtist = it },
+                            selectedPlaylistTitle = selectedPlaylistTitle,
+                            selectedPlaylistSongs = selectedPlaylistSongs,
+                            onOpenPlaylist = { title, list ->
+                                selectedPlaylistTitle = title
+                                selectedPlaylistSongs = list
+                            },
+                            onClosePlaylist = { selectedPlaylistTitle = null },
+                            onCreatePlaylistClick = { showCreatePlaylistDialog = true },
+                            onDeleteCustomPlaylist = { plId ->
+                                customPlaylists = customPlaylists.filterNot { it.id == plId }
+                                savePlaylists(prefs, customPlaylists)
+                            },
+                            currentSong = currentSong,
+                            isPlaying = isPlaying,
+                            progressFraction = (currentPosition.toFloat() / totalDuration.coerceAtLeast(1L)).coerceIn(0f, 1f),
+                            currentPosition = currentPosition,
+                            hasAudioPerm = hasAudioPerm,
+                            onRequestPerm = { permLauncher.launch(arrayOf(audioPerm)) },
+                            onPlaySong = { list, idx -> playFromQueue(list, idx) },
+                            onTogglePlay = {
+                                controller?.let { ctrl ->
+                                    if (ctrl.isPlaying) ctrl.pause()
+                                    else if (ctrl.mediaItemCount > 0) ctrl.play()
+                                    else currentSong?.let { s ->
+                                        val idx = visibleSongs.indexOfFirst { it.id == s.id }.coerceAtLeast(0)
+                                        playFromQueue(visibleSongs, idx)
                                     }
-                                },
-                                onOpenNotifications = {
-                                    runCatching {
-                                        context.startActivity(
-                                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                                                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                                            }
-                                        )
-                                    }
-                                },
-                                onReplayTutorial = {
-                                    currentScreen = "MAIN"
-                                    tutorialStep = 0
-                                },
-                                onRequestReset = { showResetConfirmDialog = true },
-                                onOpenAbout = { showAboutDialog = true }
-                            )
-                        }
+                                }
+                            },
+                            onNext = { controller?.seekToNext() },
+                            onPrev = { controller?.seekToPrevious() },
+                            onOpenNowPlaying = { if (currentSong != null) showNowPlaying = true },
+                            onToggleFav = { toggleFavorite(it) },
+                            onHideSong = { hideSong(it) },
+                            onAddToPlaylist = { songForPlaylistDialog = it },
+                            onOpenThemeStudio = { currentScreen = AppScreen.THEME_STUDIO },
+                            onOpenGlassify = { currentScreen = AppScreen.GLASSIFY_STUDIO },
+                            onOpenSettings = { currentScreen = AppScreen.SETTINGS },
+                            updateAvailable = updateAvailable
+                        )
+                    }
 
-                        currentScreen == "NOW_PLAYING" && currentSong != null -> {
-                            TitanNowPlayingScreen(
-                                song = currentSong,
-                                playing = playing,
-                                position = position,
-                                duration = duration.coerceAtLeast(currentSong.duration),
-                                isLiked = likedIds.contains(currentSong.id),
-                                shuffle = shuffle,
-                                repeatMode = repeatMode,
-                                sleepRemainingSec = sleepTimerRemainingSec,
-                                discStyle = discStyle,
-                                waveStyle = waveStyle,
-                                spatial8D = spatial8DEnabled,
-                                loopA = loopPointA,
-                                loopB = loopPointB,
-                                accent = coverPalette.dominant,
-                                palette = coverPalette,
-                                onBack = { currentScreen = "MAIN" },
-                                onTogglePlay = {
-                                    if (player.mediaItemCount == 0) {
-                                        val idx = visibleSongs.indexOfFirst { it.id == currentSong.id }.coerceAtLeast(0)
-                                        playQueue(visibleSongs, idx, position, true)
-                                    } else if (player.isPlaying) player.pause() else player.play()
-                                },
-                                onSeek = {
-                                    position = it
-                                    player.seekTo(it)
-                                    prefs.edit().putLong("last_position_ms", it).apply()
-                                },
-                                onPrevious = { player.seekToPrevious() },
-                                onNext = { player.seekToNext() },
-                                onToggleLike = {
-                                    likedIds = if (likedIds.contains(currentSong.id)) likedIds - currentSong.id else likedIds + currentSong.id
-                                    saveState()
-                                },
-                                onToggleShuffle = { shuffle = !shuffle; player.shuffleModeEnabled = shuffle },
-                                onCycleRepeat = {
-                                    repeatMode = when (repeatMode) {
+                    AppScreen.THEME_STUDIO -> {
+                        ThemeStudioScreen(
+                            isArabic = isArabic,
+                            accent = accent,
+                            accentIndex = accentIndex,
+                            cardColor = cardColor,
+                            textPrimary = textPrimary,
+                            textSecondary = textSecondary,
+                            sampleSongs = visibleSongs.take(4),
+                            listLayout = listLayout,
+                            bgStyle = bgStyle,
+                            themeMode = themeMode,
+                            onSelectLayout = {
+                                listLayout = it
+                                prefs.edit().putString("list_layout", it).apply()
+                            },
+                            onSelectBgStyle = {
+                                bgStyle = it
+                                prefs.edit().putString("bg_style", it).apply()
+                            },
+                            onSelectThemeMode = {
+                                themeMode = it
+                                prefs.edit().putString("theme_mode", it).apply()
+                            },
+                            onSelectAccent = {
+                                accentIndex = it
+                                prefs.edit().putInt("accent_color_id", it).apply()
+                                VyroWidgetProvider.updateAllWidgets(context)
+                            },
+                            onBack = { currentScreen = AppScreen.MAIN }
+                        )
+                    }
+
+                    AppScreen.GLASSIFY_STUDIO -> {
+                        GlassifyWallpaperAndWidgetStudio(
+                            isArabic = isArabic,
+                            accent = accent,
+                            cardColor = cardColor,
+                            textPrimary = textPrimary,
+                            textSecondary = textSecondary,
+                            selectedWidgetStyle = widgetStyle,
+                            currentSongTitle = currentSong?.title ?: "VYRO MUSIC",
+                            currentSongArtist = currentSong?.artist ?: "Mohamed Tarek",
+                            onSelectWidgetStyle = { style ->
+                                widgetStyle = style
+                                prefs.edit().putString("widget_style", style).apply()
+                                VyroWidgetProvider.updateAllWidgets(context)
+                                Toast.makeText(
+                                    context,
+                                    if (isArabic) "تم تفعيل ويدجت: $style" else "Widget applied: $style",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            onPinWidget = { pinVyroWidget(context, isArabic) },
+                            onBack = { currentScreen = AppScreen.MAIN }
+                        )
+                    }
+
+                    AppScreen.SETTINGS -> {
+                        SettingsScreen(
+                            isArabic = isArabic,
+                            appVersion = appVersion,
+                            accent = accent,
+                            cardColor = cardColor,
+                            textPrimary = textPrimary,
+                            textSecondary = textSecondary,
+                            updateAvailable = updateAvailable,
+                            listenSeconds = prefs.getLong("stat_listen_seconds", 0L),
+                            tracksPlayed = prefs.getInt("stat_tracks_played", 0),
+                            bgStyle = bgStyle,
+                            listLayout = listLayout,
+                            widgetStyle = widgetStyle,
+                            sleepMinutesLeft = sleepMinutesLeft,
+                            hiddenCount = hiddenIds.size,
+                            onOpenUpdates = { showUpdateDialog = true },
+                            onExportBackup = { exportLauncher.launch("vyro_backup_${System.currentTimeMillis()}.json") },
+                            onImportBackup = { importLauncher.launch(arrayOf("application/json", "*/*")) },
+                            onOpenThemeStudio = { currentScreen = AppScreen.THEME_STUDIO },
+                            onOpenGlassify = { currentScreen = AppScreen.GLASSIFY_STUDIO },
+                            onToggleLanguage = {
+                                isArabic = !isArabic
+                                prefs.edit().putBoolean("lang_ar", isArabic).apply()
+                            },
+                            onOpenSleepTimer = { showSleepDialog = true },
+                            onOpenHidden = { showHiddenDialog = true },
+                            onOpenPlayerPrefs = { showPlayerPrefsDialog = true },
+                            onBatteryOptimization = { openBatteryExemption(context) },
+                            onNotificationSettings = { openNotificationSettings(context) },
+                            onRestartTour = {
+                                tourStep = 0
+                                showTour = true
+                                currentScreen = AppScreen.MAIN
+                            },
+                            onResetDefaults = {
+                                themeMode = "dark"
+                                bgStyle = "aura"
+                                listLayout = "medium"
+                                accentIndex = 0
+                                widgetStyle = "Glassify Frost"
+                                spatial8D = false
+                                bassStrength = 35
+                                virtStrength = 30
+                                loudnessGain = 0
+                                playbackSpeed = 1f
+                                playbackPitch = 1f
+                                bandGains = listOf(0.28f, 0.16f, 0f, 0.14f, 0.24f)
+                                prefs.edit()
+                                    .putString("theme_mode", themeMode)
+                                    .putString("bg_style", bgStyle)
+                                    .putString("list_layout", listLayout)
+                                    .putInt("accent_color_id", 0)
+                                    .putString("widget_style", widgetStyle)
+                                    .putBoolean("spatial_8d_enabled", false)
+                                    .putInt("bass_strength", 35)
+                                    .putInt("virtualizer_strength", 30)
+                                    .putInt("loudness_gain", 0)
+                                    .putFloat("playback_speed", 1f)
+                                    .putFloat("playback_pitch", 1f)
+                                    .putString("band_gains", JSONArray(bandGains).toString())
+                                    .apply()
+                                VyroWidgetProvider.updateAllWidgets(context)
+                                Toast.makeText(context, if (isArabic) "تمت إعادة الضبط بنجاح" else "Defaults restored", Toast.LENGTH_SHORT).show()
+                            },
+                            onOpenAbout = { showAboutDialog = true },
+                            onBack = { currentScreen = AppScreen.MAIN }
+                        )
+                    }
+                }
+
+                // Fullscreen Now Playing Overlay
+                AnimatedVisibility(visible = showNowPlaying && currentSong != null) {
+                    currentSong?.let { song ->
+                        NowPlayingOverlay(
+                            song = song,
+                            isArabic = isArabic,
+                            accent = accent,
+                            isPlaying = isPlaying,
+                            position = currentPosition,
+                            duration = totalDuration,
+                            shuffleOn = shuffleOn,
+                            repeatMode = repeatMode,
+                            isFav = song.id in favoriteIds,
+                            spatial8D = spatial8D,
+                            vinylMode = vinylMode,
+                            showWaves = showWaves,
+                            onClose = { showNowPlaying = false },
+                            onSeek = { controller?.seekTo(it) },
+                            onTogglePlay = {
+                                controller?.let { if (it.isPlaying) it.pause() else it.play() }
+                            },
+                            onNext = { controller?.seekToNext() },
+                            onPrev = { controller?.seekToPrevious() },
+                            onToggleShuffle = {
+                                controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled }
+                            },
+                            onCycleRepeat = {
+                                controller?.let {
+                                    it.repeatMode = when (it.repeatMode) {
                                         Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
                                         Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
                                         else -> Player.REPEAT_MODE_OFF
                                     }
-                                    player.repeatMode = repeatMode
-                                },
-                                onToggle8D = { spatial8DEnabled = !spatial8DEnabled; saveState() },
-                                onToggleABLoop = {
-                                    when {
-                                        loopPointA < 0L -> {
-                                            loopPointA = position
-                                            Toast.makeText(context, "نقطة A: ${formatTime(position)}", Toast.LENGTH_SHORT).show()
-                                        }
-                                        loopPointB < 0L && position > loopPointA + 1000L -> {
-                                            loopPointB = position
-                                            Toast.makeText(context, "تم تفعيل تكرار A-B", Toast.LENGTH_SHORT).show()
-                                        }
-                                        else -> { loopPointA = -1L; loopPointB = -1L }
-                                    }
-                                },
-                                onOpenDriveMode = { isDriveMode = true },
-                                onOpenSleep = { showSleepDialog = true },
-                                onOpenLyrics = { songForLyrics = currentSong },
-                                onOpenEq = { activeTab = "EQ"; currentScreen = "MAIN" },
-                                onOpenMenu = { songForMenu = currentSong }
-                            )
-                        }
+                                }
+                            },
+                            onToggleFav = { toggleFavorite(song.id) },
+                            onOpenEq = { showEqSheet = true },
+                            onToggle8D = {
+                                spatial8D = !spatial8D
+                                prefs.edit().putBoolean("spatial_8d_enabled", spatial8D).apply()
+                                Toast.makeText(
+                                    context,
+                                    if (spatial8D) (if (isArabic) "تم تفعيل الصوت المحيطي 8D" else "8D Surround ON")
+                                    else (if (isArabic) "تم إيقاف 8D" else "8D Surround OFF"),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            onOpenLyrics = { showLyricsDialog = true },
+                            onOpenCarMode = { showCarMode = true },
+                            onAddToPlaylist = { songForPlaylistDialog = song }
+                        )
+                    }
+                }
 
-                        else -> {
-                            // الواجهة الرئيسية الأصلية لـ VYRO MUSIC 5.0 TITAN
-                            Scaffold(
-                                containerColor = Color.Transparent,
-                                bottomBar = {
-                                    if (currentSong != null) {
-                                        TitanFloatingMiniDock(
-                                            song = currentSong,
-                                            playing = playing,
-                                            position = position,
-                                            duration = duration,
-                                            accent = primaryAccent,
-                                            isDark = isDark,
-                                            onTogglePlay = {
-                                                if (player.mediaItemCount == 0) {
-                                                    val idx = visibleSongs.indexOfFirst { it.id == currentSong.id }.coerceAtLeast(0)
-                                                    playQueue(visibleSongs, idx, position, true)
-                                                } else if (player.isPlaying) player.pause() else player.play()
-                                            },
-                                            onPrev = { player.seekToPrevious() },
-                                            onNext = { player.seekToNext() },
-                                            onOpenFullPlayer = { currentScreen = "NOW_PLAYING" }
+                // Car Mode Overlay
+                if (showCarMode && currentSong != null) {
+                    CarModeOverlay(
+                        song = currentSong!!,
+                        accent = accent,
+                        isPlaying = isPlaying,
+                        onTogglePlay = { controller?.let { if (it.isPlaying) it.pause() else it.play() } },
+                        onNext = { controller?.seekToNext() },
+                        onPrev = { controller?.seekToPrevious() },
+                        onClose = { showCarMode = false }
+                    )
+                }
+
+                // Interactive Onboarding Tour
+                if (showTour && currentScreen == AppScreen.MAIN) {
+                    OnboardingTourOverlay(
+                        isArabic = isArabic,
+                        step = tourStep,
+                        accent = accent,
+                        onNext = {
+                            if (tourStep < 3) tourStep++
+                            else {
+                                showTour = false
+                                prefs.edit().putBoolean("tour_done_v5", true).apply()
+                            }
+                        },
+                        onSkip = {
+                            showTour = false
+                            prefs.edit().putBoolean("tour_done_v5", true).apply()
+                        }
+                    )
+                }
+            }
+
+            // ==================== DIALOGS & SHEETS ====================
+
+            if (showEqSheet) {
+                AudioStudioDialog(
+                    isArabic = isArabic,
+                    accent = accent,
+                    spatial8D = spatial8D,
+                    bandGains = bandGains,
+                    bassStrength = bassStrength,
+                    virtStrength = virtStrength,
+                    loudnessGain = loudnessGain,
+                    speed = playbackSpeed,
+                    pitch = playbackPitch,
+                    onToggle8D = {
+                        spatial8D = it
+                        prefs.edit().putBoolean("spatial_8d_enabled", it).apply()
+                    },
+                    onUpdateBand = { idx, value ->
+                        val next = bandGains.toMutableList()
+                        next[idx] = value
+                        bandGains = next
+                        prefs.edit().putString("band_gains", JSONArray(next).toString()).apply()
+                    },
+                    onUpdateBass = {
+                        bassStrength = it
+                        prefs.edit().putInt("bass_strength", it).apply()
+                    },
+                    onUpdateVirt = {
+                        virtStrength = it
+                        prefs.edit().putInt("virtualizer_strength", it).apply()
+                    },
+                    onUpdateLoudness = {
+                        loudnessGain = it
+                        prefs.edit().putInt("loudness_gain", it).apply()
+                    },
+                    onUpdateSpeed = {
+                        playbackSpeed = it
+                        prefs.edit().putFloat("playback_speed", it).apply()
+                    },
+                    onUpdatePitch = {
+                        playbackPitch = it
+                        prefs.edit().putFloat("playback_pitch", it).apply()
+                    },
+                    onApplyPreset = { gains, bass, virt ->
+                        bandGains = gains
+                        bassStrength = bass
+                        virtStrength = virt
+                        prefs.edit()
+                            .putString("band_gains", JSONArray(gains).toString())
+                            .putInt("bass_strength", bass)
+                            .putInt("virtualizer_strength", virt)
+                            .apply()
+                    },
+                    onDismiss = { showEqSheet = false }
+                )
+            }
+
+            if (showLyricsDialog && currentSong != null) {
+                LyricsDialog(
+                    song = currentSong!!,
+                    isArabic = isArabic,
+                    accent = accent,
+                    prefs = prefs,
+                    onDismiss = { showLyricsDialog = false }
+                )
+            }
+
+            if (showSleepDialog) {
+                AlertDialog(
+                    onDismissRequest = { showSleepDialog = false },
+                    title = { Text(if (isArabic) "مؤقت النوم" else "Sleep Timer", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(0, 15, 30, 45, 60).forEach { mins ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (sleepMinutesLeft == mins) accent.copy(0.2f) else Color.Transparent)
+                                        .clickable {
+                                            sleepMinutesLeft = mins
+                                            showSleepDialog = false
+                                        }
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (mins == 0) (if (isArabic) "إيقاف المؤقت" else "Turn Off")
+                                        else (if (isArabic) "$mins دقيقة" else "$mins Minutes"),
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = { TextButton(onClick = { showSleepDialog = false }) { Text(if (isArabic) "إغلاق" else "Close") } }
+                )
+            }
+
+            if (showCreatePlaylistDialog) {
+                var plName by remember { mutableStateOf("") }
+                AlertDialog(
+                    onDismissRequest = { showCreatePlaylistDialog = false },
+                    title = { Text(if (isArabic) "قائمة تشغيل جديدة" else "New Playlist", fontWeight = FontWeight.Bold) },
+                    text = {
+                        OutlinedTextField(
+                            value = plName,
+                            onValueChange = { plName = it },
+                            placeholder = { Text(if (isArabic) "اسم القائمة..." else "Playlist name...") },
+                            singleLine = true
+                        )
+                    },
+                    confirmButton = {
+                        Button(onClick = {
+                            if (plName.isNotBlank()) {
+                                val next = customPlaylists + CustomPlaylist(System.currentTimeMillis().toString(), plName.trim(), emptyList())
+                                customPlaylists = next
+                                savePlaylists(prefs, next)
+                                showCreatePlaylistDialog = false
+                            }
+                        }) { Text(if (isArabic) "إنشاء" else "Create") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showCreatePlaylistDialog = false }) { Text(if (isArabic) "إلغاء" else "Cancel") }
+                    }
+                )
+            }
+
+            songForPlaylistDialog?.let { targetSong ->
+                AlertDialog(
+                    onDismissRequest = { songForPlaylistDialog = null },
+                    title = { Text(if (isArabic) "إضافة إلى قائمة" else "Add to Playlist", fontWeight = FontWeight.Bold) },
+                    text = {
+                        if (customPlaylists.isEmpty()) {
+                            Text(if (isArabic) "لا توجد قوائم مخصصة بعد. أنشئ قائمة جديدة من تبويب القوائم." else "No custom playlists yet.")
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                customPlaylists.forEach { pl ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable {
+                                                val updated = customPlaylists.map {
+                                                    if (it.id == pl.id && targetSong.id !in it.songIds) {
+                                                        it.copy(songIds = it.songIds + targetSong.id)
+                                                    } else it
+                                                }
+                                                customPlaylists = updated
+                                                savePlaylists(prefs, updated)
+                                                songForPlaylistDialog = null
+                                                Toast.makeText(context, if (isArabic) "تمت الإضافة إلى ${pl.name}" else "Added to ${pl.name}", Toast.LENGTH_SHORT).show()
+                                            }
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Rounded.QueueMusic, null, tint = accent)
+                                        Spacer(Modifier.width(10.dp))
+                                        Text(pl.name, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            songForPlaylistDialog = null
+                            showCreatePlaylistDialog = true
+                        }) { Text(if (isArabic) "+ قائمة جديدة" else "+ New") }
+                    }
+                )
+            }
+
+            if (showHiddenDialog) {
+                val hiddenSongs = allSongs.filter { it.id in hiddenIds }
+                AlertDialog(
+                    onDismissRequest = { showHiddenDialog = false },
+                    title = { Text(if (isArabic) "الملفات المخفية (${hiddenSongs.size})" else "Hidden Files", fontWeight = FontWeight.Bold) },
+                    text = {
+                        if (hiddenSongs.isEmpty()) {
+                            Text(if (isArabic) "لا توجد ملفات مخفية." else "No hidden files.")
+                        } else {
+                            LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                                items(hiddenSongs) { s ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                        TextButton(onClick = {
+                                            val next = hiddenIds.toMutableSet().apply { remove(s.id) }
+                                            hiddenIds = next
+                                            saveIdSet(prefs, "hidden_ids", next)
+                                        }) { Text(if (isArabic) "إظهار" else "Restore") }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = { TextButton(onClick = { showHiddenDialog = false }) { Text(if (isArabic) "تم" else "Done") } }
+                )
+            }
+
+            if (showPlayerPrefsDialog) {
+                AlertDialog(
+                    onDismissRequest = { showPlayerPrefsDialog = false },
+                    title = { Text(if (isArabic) "إعدادات التشغيل والمشغل" else "Player Settings", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(if (isArabic) "صوت محيطي 8D" else "8D Surround", modifier = Modifier.weight(1f))
+                                Switch(checked = spatial8D, onCheckedChange = {
+                                    spatial8D = it
+                                    prefs.edit().putBoolean("spatial_8d_enabled", it).apply()
+                                })
+                            }
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(if (isArabic) "شكل القرص الدوّار (Vinyl)" else "Spinning Vinyl Disc", modifier = Modifier.weight(1f))
+                                Switch(checked = vinylMode, onCheckedChange = {
+                                    vinylMode = it
+                                    prefs.edit().putBoolean("vinyl_disc_mode", it).apply()
+                                })
+                            }
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(if (isArabic) "موجات الصوت التفاعلية" else "Audio Wave Visualizer", modifier = Modifier.weight(1f))
+                                Switch(checked = showWaves, onCheckedChange = {
+                                    showWaves = it
+                                    prefs.edit().putBoolean("show_waves", it).apply()
+                                })
+                            }
+                        }
+                    },
+                    confirmButton = { TextButton(onClick = { showPlayerPrefsDialog = false }) { Text(if (isArabic) "تم" else "Done") } }
+                )
+            }
+
+            if (showUpdateDialog) {
+                UpdateCenterDialog(
+                    isArabic = isArabic,
+                    currentVersion = appVersion,
+                    accent = accent,
+                    release = latestRelease,
+                    isChecking = isCheckingUpdate,
+                    onRefresh = {
+                        scope.launch {
+                            isCheckingUpdate = true
+                            val rel = fetchLatestRelease()
+                            latestRelease = rel
+                            updateAvailable = rel != null && isNewerVersion(appVersion, rel.tag)
+                            isCheckingUpdate = false
+                        }
+                    },
+                    onDismiss = { showUpdateDialog = false }
+                )
+            }
+
+            if (showAboutDialog) {
+                AlertDialog(
+                    onDismissRequest = { showAboutDialog = false },
+                    title = { Text("VYRO MUSIC $appVersion", fontWeight = FontWeight.ExtraBold) },
+                    text = {
+                        Text(
+                            if (isArabic)
+                                "مشغل موسيقى احترافي متكامل بتطوير محمد طارق.\n\n• محرك صوت نقي + 8D محيطي\n• متجر خلفيات HD مباشر ومعاينة حية\n• 14 شكل ويدجت زجاجي ورياضي\n• نظام تحديثات داخلي تلقائي عبر GitHub"
+                            else
+                                "Professional music player built by Mohamed Tarek.\n\n• Crystal Audio & 8D Surround\n• Live HD Wallpaper Store & Previews\n• 14 Glassify & Sports Widgets\n• Built-in GitHub Auto-Updater"
+                        )
+                    },
+                    confirmButton = { TextButton(onClick = { showAboutDialog = false }) { Text(if (isArabic) "إغلاق" else "Close") } }
+                )
+            }
+        }
+    }
+}
+
+// ==================== MAIN LIBRARY SCREEN ====================
+
+@Composable
+fun MainLibraryScreen(
+    isArabic: Boolean,
+    appVersion: String,
+    accent: Color,
+    cardColor: Color,
+    textPrimary: Color,
+    textSecondary: Color,
+    songs: List<Song>,
+    allSongs: List<Song>,
+    listLayout: String,
+    activeTab: Int,
+    onTabChange: (Int) -> Unit,
+    searchVisible: Boolean,
+    onToggleSearch: () -> Unit,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    onCycleSort: () -> Unit,
+    listenSeconds: Long,
+    favoriteIds: Set<Long>,
+    recentIds: List<Long>,
+    playCounts: Map<Long, Int>,
+    customPlaylists: List<CustomPlaylist>,
+    selectedFolder: String?,
+    onSelectFolder: (String?) -> Unit,
+    selectedArtist: String?,
+    onSelectArtist: (String?) -> Unit,
+    selectedPlaylistTitle: String?,
+    selectedPlaylistSongs: List<Song>,
+    onOpenPlaylist: (String, List<Song>) -> Unit,
+    onClosePlaylist: () -> Unit,
+    onCreatePlaylistClick: () -> Unit,
+    onDeleteCustomPlaylist: (String) -> Unit,
+    currentSong: Song?,
+    isPlaying: Boolean,
+    progressFraction: Float,
+    currentPosition: Long,
+    hasAudioPerm: Boolean,
+    onRequestPerm: () -> Unit,
+    onPlaySong: (List<Song>, Int) -> Unit,
+    onTogglePlay: () -> Unit,
+    onNext: () -> Unit,
+    onPrev: () -> Unit,
+    onOpenNowPlaying: () -> Unit,
+    onToggleFav: (Long) -> Unit,
+    onHideSong: (Long) -> Unit,
+    onAddToPlaylist: (Song) -> Unit,
+    onOpenThemeStudio: () -> Unit,
+    onOpenGlassify: () -> Unit,
+    onOpenSettings: () -> Unit,
+    updateAvailable: Boolean
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Top Header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(accent.copy(alpha = 0.22f))
+                    .border(1.dp, accent.copy(0.5f), RoundedCornerShape(14.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.GraphicEq, null, tint = accent, modifier = Modifier.size(26.dp))
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("VYRO", fontWeight = FontWeight.Black, fontSize = 20.sp, color = textPrimary)
+                    Spacer(Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(accent.copy(alpha = 0.18f))
+                            .padding(horizontal = 7.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "TITAN ${appVersion.substringBefore("-")}",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = accent
+                        )
+                    }
+                }
+                Text(
+                    text = if (isArabic) "${songs.size} مقطع • ${formatHoursMinutes(listenSeconds)}" else "${songs.size} tracks • ${formatHoursMinutes(listenSeconds)}",
+                    fontSize = 12.sp,
+                    color = textSecondary
+                )
+            }
+
+            IconButton(onClick = onToggleSearch) {
+                Icon(if (searchVisible) Icons.Rounded.Close else Icons.Rounded.Search, null, tint = textPrimary)
+            }
+            IconButton(onClick = onCycleSort) {
+                Icon(Icons.Rounded.Sort, null, tint = textPrimary)
+            }
+            IconButton(onClick = onOpenGlassify) {
+                Icon(Icons.Rounded.Dashboard, null, tint = Color(0xFFFFC857))
+            }
+            IconButton(onClick = onOpenThemeStudio) {
+                Icon(Icons.Rounded.Palette, null, tint = accent)
+            }
+            Box {
+                IconButton(onClick = onOpenSettings) {
+                    Icon(Icons.Rounded.Settings, null, tint = textPrimary)
+                }
+                if (updateAvailable) {
+                    Box(
+                        modifier = Modifier
+                            .size(9.dp)
+                            .align(Alignment.TopEnd)
+                            .offset(x = (-8).dp, y = 8.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF00E676))
+                    )
+                }
+            }
+        }
+
+        // Search Field
+        AnimatedVisibility(visible = searchVisible) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                placeholder = { Text(if (isArabic) "ابحث عن أغنية أو فنان أو مجلد..." else "Search songs, artists, folders...") },
+                leadingIcon = { Icon(Icons.Rounded.Search, null, tint = accent) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { onSearchQueryChange("") }) { Icon(Icons.Rounded.Clear, null) }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp)
+            )
+        }
+
+        // Tabs
+        val tabs = if (isArabic) listOf("المكتبة", "القوائم", "المجلدات", "الفنانون") else listOf("Library", "Playlists", "Folders", "Artists")
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            tabs.forEachIndexed { idx, label ->
+                val selected = activeTab == idx
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (selected) accent else cardColor.copy(alpha = 0.85f))
+                        .clickable { onTabChange(idx) }
+                        .padding(horizontal = 18.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        text = label,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = if (selected) Color(0xFF04101A) else textSecondary
+                    )
+                }
+            }
+        }
+
+        // Content Area
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            if (!hasAudioPerm) {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Rounded.MusicNote, null, tint = accent, modifier = Modifier.size(64.dp))
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        text = if (isArabic) "اسمح للتطبيق بالوصول إلى ملفات الصوت لتشغيل مكتبتك" else "Grant audio permission to load your music",
+                        textAlign = TextAlign.Center,
+                        color = textPrimary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = onRequestPerm, colors = ButtonDefaults.buttonColors(containerColor = accent)) {
+                        Text(if (isArabic) "منح الإذن" else "Grant Permission", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                }
+            } else {
+                when (activeTab) {
+                    0 -> SongsListArea(
+                        songs = songs,
+                        listLayout = listLayout,
+                        currentSongId = currentSong?.id,
+                        accent = accent,
+                        cardColor = cardColor,
+                        textPrimary = textPrimary,
+                        textSecondary = textSecondary,
+                        isArabic = isArabic,
+                        favoriteIds = favoriteIds,
+                        onPlay = onPlaySong,
+                        onToggleFav = onToggleFav,
+                        onHide = onHideSong,
+                        onAddToPlaylist = onAddToPlaylist
+                    )
+
+                    1 -> {
+                        if (selectedPlaylistTitle != null) {
+                            Column(Modifier.fillMaxSize()) {
+                                SubHeaderBar(selectedPlaylistTitle, textPrimary, onClosePlaylist)
+                                SongsListArea(
+                                    songs = selectedPlaylistSongs,
+                                    listLayout = listLayout,
+                                    currentSongId = currentSong?.id,
+                                    accent = accent,
+                                    cardColor = cardColor,
+                                    textPrimary = textPrimary,
+                                    textSecondary = textSecondary,
+                                    isArabic = isArabic,
+                                    favoriteIds = favoriteIds,
+                                    onPlay = onPlaySong,
+                                    onToggleFav = onToggleFav,
+                                    onHide = onHideSong,
+                                    onAddToPlaylist = onAddToPlaylist
+                                )
+                            }
+                        } else {
+                            val favList = songs.filter { it.id in favoriteIds }
+                            val recentList = recentIds.mapNotNull { id -> songs.find { it.id == id } }
+                            val topList = songs.filter { (playCounts[it.id] ?: 0) > 0 }.sortedByDescending { playCounts[it.id] ?: 0 }
+
+                            LazyColumn(
+                                contentPadding = PaddingValues(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                item {
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            if (isArabic) "قوائمك الذكية" else "Smart Playlists",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 17.sp,
+                                            color = textPrimary,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            if (isArabic) "+ قائمة جديدة" else "+ New Playlist",
+                                            color = accent,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.clickable { onCreatePlaylistClick() }.padding(6.dp)
                                         )
                                     }
                                 }
-                            ) { padding ->
-                                Column(Modifier.fillMaxSize().padding(padding)) {
-                                    // 1. شريط VYRO العلوي بهوية مميزة مستقلة
+                                item {
+                                    SmartPlaylistCard(
+                                        title = if (isArabic) "الأغاني المفضلة" else "Favorites",
+                                        subtitle = if (isArabic) "${favList.size} أغنية" else "${favList.size} songs",
+                                        icon = Icons.Rounded.Favorite,
+                                        iconTint = Color(0xFFFF4081),
+                                        cardColor = cardColor,
+                                        textPrimary = textPrimary,
+                                        textSecondary = textSecondary,
+                                        onClick = { onOpenPlaylist(if (isArabic) "الأغاني المفضلة" else "Favorites", favList) }
+                                    )
+                                }
+                                item {
+                                    SmartPlaylistCard(
+                                        title = if (isArabic) "تم تشغيلها مؤخراً" else "Recently Played",
+                                        subtitle = if (isArabic) "${recentList.size} أغنية" else "${recentList.size} songs",
+                                        icon = Icons.Rounded.History,
+                                        iconTint = accent,
+                                        cardColor = cardColor,
+                                        textPrimary = textPrimary,
+                                        textSecondary = textSecondary,
+                                        onClick = { onOpenPlaylist(if (isArabic) "تم تشغيلها مؤخراً" else "Recently Played", recentList) }
+                                    )
+                                }
+                                item {
+                                    SmartPlaylistCard(
+                                        title = if (isArabic) "الأكثر استماعاً" else "Most Played",
+                                        subtitle = if (isArabic) "${topList.size} أغنية" else "${topList.size} songs",
+                                        icon = Icons.Rounded.Star,
+                                        iconTint = Color(0xFFFFC857),
+                                        cardColor = cardColor,
+                                        textPrimary = textPrimary,
+                                        textSecondary = textSecondary,
+                                        onClick = { onOpenPlaylist(if (isArabic) "الأكثر استماعاً" else "Most Played", topList) }
+                                    )
+                                }
+                                items(customPlaylists) { pl ->
+                                    val plSongs = pl.songIds.mapNotNull { id -> allSongs.find { it.id == id } }
                                     Row(
-                                        Modifier
+                                        modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                            .clip(RoundedCornerShape(18.dp))
+                                            .background(cardColor)
+                                            .clickable { onOpenPlaylist(pl.name, plSongs) }
+                                            .padding(14.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Box(
-                                            Modifier
-                                                .size(38.dp)
-                                                .clip(RoundedCornerShape(13.dp))
-                                                .background(Brush.linearGradient(listOf(primaryAccent, coverPalette.secondary))),
+                                            Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(accent.copy(0.16f)),
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            Icon(Icons.Default.GraphicEq, null, tint = Color.Black, modifier = Modifier.size(22.dp))
+                                            Icon(Icons.Rounded.QueueMusic, null, tint = accent)
                                         }
-                                        Spacer(Modifier.width(10.dp))
+                                        Spacer(Modifier.width(12.dp))
                                         Column(Modifier.weight(1f)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text("VYRO", color = textPrimary, fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
-                                                Spacer(Modifier.width(5.dp))
-                                                Box(
-                                                    Modifier
-                                                        .clip(RoundedCornerShape(6.dp))
-                                                        .background(primaryAccent.copy(alpha = 0.16f))
-                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                ) {
-                                                    Text("TITAN 5.0", color = primaryAccent, fontSize = 9.sp, fontWeight = FontWeight.Black)
-                                                }
-                                            }
-                                            Text("${visibleSongs.size} مقطع • ${formatListenHours(listenSeconds)}", color = textSecondary, fontSize = 10.5.sp)
+                                            Text(pl.name, fontWeight = FontWeight.Bold, color = textPrimary)
+                                            Text(if (isArabic) "${plSongs.size} أغنية" else "${plSongs.size} songs", fontSize = 12.sp, color = textSecondary)
                                         }
-
-                                        IconButton(onClick = { searchExpanded = !searchExpanded }, modifier = Modifier.size(36.dp)) {
-                                            Icon(Icons.Default.Search, "Search", tint = if (searchExpanded) primaryAccent else textPrimary)
-                                        }
-                                        Box {
-                                            IconButton(onClick = { showSortMenu = true }, modifier = Modifier.size(36.dp)) {
-                                                Icon(Icons.Default.Sort, "Sort", tint = textPrimary)
-                                            }
-                                            DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
-                                                listOf("TITLE" to "الاسم (أ-ي)", "ARTIST" to "الفنان", "NEWEST" to "الأحدث", "DURATION" to "الأطول", "FAV" to "المفضلة").forEach { (k, l) ->
-                                                    DropdownMenuItem(
-                                                        text = { Text(l, color = if (sortBy == k) primaryAccent else textPrimary) },
-                                                        onClick = { sortBy = k; saveState(); showSortMenu = false }
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        IconButton(onClick = { currentScreen = "GLASSIFY_STUDIO" }, modifier = Modifier.size(36.dp)) {
-                                            Icon(Icons.Default.Widgets, "Glassify", tint = Color(0xFFFFC857))
-                                        }
-                                        IconButton(onClick = { currentScreen = "THEME_STUDIO" }, modifier = Modifier.size(36.dp)) {
-                                            Icon(Icons.Default.Palette, "Theme", tint = primaryAccent)
-                                        }
-                                        Box {
-                                            IconButton(onClick = { currentScreen = "SETTINGS" }, modifier = Modifier.size(36.dp)) {
-                                                Icon(Icons.Default.Settings, "Settings", tint = textPrimary)
-                                            }
-                                            if (availableUpdate != null) {
-                                                Box(
-                                                    Modifier
-                                                        .align(Alignment.TopEnd)
-                                                        .padding(6.dp)
-                                                        .size(9.dp)
-                                                        .background(Color(0xFFFF3D57), CircleShape)
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    // 2. صندوق إشعار التحديث الذكي (يظهر تلقائياً لو فيه إصدار أحدث على GitHub)
-                                    AnimatedVisibility(visible = availableUpdate != null && showUpdatePopup) {
-                                        Row(
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 16.dp, vertical = 4.dp)
-                                                .clip(RoundedCornerShape(16.dp))
-                                                .background(primaryAccent.copy(alpha = 0.16f))
-                                                .border(1.dp, primaryAccent.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
-                                                .clickable { currentScreen = "UPDATES" }
-                                                .padding(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(Icons.Default.SystemUpdate, null, tint = primaryAccent)
-                                            Spacer(Modifier.width(10.dp))
-                                            Column(Modifier.weight(1f)) {
-                                                Text("تحديث جديد متاح (${availableUpdate?.tagName})", color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                                Text("متبقي $updateDaysLeft أيام • اضغط لعرض ما الجديد والتنزيل", color = textSecondary, fontSize = 11.sp)
-                                            }
-                                            IconButton(onClick = { showUpdatePopup = false }, modifier = Modifier.size(28.dp)) {
-                                                Icon(Icons.Default.Close, null, tint = textSecondary, modifier = Modifier.size(16.dp))
-                                            }
-                                        }
-                                    }
-
-                                    // 3. شريط البحث
-                                    AnimatedVisibility(visible = searchExpanded || query.isNotEmpty()) {
-                                        Row(
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 16.dp, vertical = 4.dp)
-                                                .clip(RoundedCornerShape(16.dp))
-                                                .background(cardColor)
-                                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            OutlinedTextField(
-                                                value = query,
-                                                onValueChange = { query = it },
-                                                modifier = Modifier.weight(1f),
-                                                placeholder = { Text("ابحث عن أغنية أو فنان...", color = textSecondary, fontSize = 13.sp) },
-                                                singleLine = true,
-                                                shape = RoundedCornerShape(12.dp)
-                                            )
-                                            IconButton(onClick = {
-                                                runCatching {
-                                                    voiceSearchLauncher.launch(
-                                                        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                                                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                                                        }
-                                                    )
-                                                }
-                                            }) { Icon(Icons.Default.Mic, null, tint = primaryAccent) }
-                                            IconButton(onClick = { query = ""; searchExpanded = false }) {
-                                                Icon(Icons.Default.Close, null, tint = textSecondary)
-                                            }
-                                        }
-                                    }
-
-                                    // 4. شريط التنقل الزجاجي المميز لـ VYRO
-                                    Row(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 6.dp)
-                                            .horizontalScroll(rememberScrollState()),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        listOf(
-                                            "Songs" to "المكتبة",
-                                            "Playlists" to "القوائم",
-                                            "Folders" to "المجلدات",
-                                            "Artists" to "الفنانون",
-                                            "Albums" to "الألبومات",
-                                            "EQ" to "الصوت 8D"
-                                        ).forEach { (id, label) ->
-                                            val selected = activeTab == id
-                                            Box(
-                                                Modifier
-                                                    .clip(RoundedCornerShape(14.dp))
-                                                    .background(if (selected) primaryAccent else pillBgColor)
-                                                    .clickable {
-                                                        activeTab = id
-                                                        activeCollectionTitle = null
-                                                        activeCollectionSongs = null
-                                                    }
-                                                    .padding(horizontal = 15.dp, vertical = 8.dp)
-                                            ) {
-                                                Text(
-                                                    label,
-                                                    color = if (selected) Color.Black else textSecondary,
-                                                    fontSize = 12.5.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    // 5. محتوى المكتبة
-                                    Box(Modifier.weight(1f).fillMaxWidth()) {
-                                        if (!permission) {
-                                            EmptyState("يرجى منح إذن الوصول للملفات الصوتية لعرض مكتبتك", primaryAccent, textPrimary)
-                                        } else if (activeCollectionSongs != null && activeCollectionTitle != null) {
-                                            val list = activeCollectionSongs!!
-                                            Column(Modifier.fillMaxSize()) {
-                                                Row(
-                                                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    IconButton(onClick = { activeCollectionSongs = null; activeCollectionTitle = null }) {
-                                                        Icon(Icons.Default.ArrowForward, null, tint = textPrimary)
-                                                    }
-                                                    Column(Modifier.weight(1f)) {
-                                                        Text(activeCollectionTitle!!, color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 17.sp, maxLines = 1)
-                                                        Text("${list.size} أغنية", color = textSecondary, fontSize = 12.sp)
-                                                    }
-                                                    Button(
-                                                        onClick = { if (list.isNotEmpty()) playQueue(list, 0, 0L, true) },
-                                                        colors = ButtonDefaults.buttonColors(containerColor = primaryAccent),
-                                                        shape = RoundedCornerShape(50)
-                                                    ) {
-                                                        Icon(Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(18.dp))
-                                                        Spacer(Modifier.width(4.dp))
-                                                        Text("تشغيل", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                                    }
-                                                }
-                                                SongListOrGrid(
-                                                    songs = list,
-                                                    viewSize = viewSize,
-                                                    currentSongId = currentSongId,
-                                                    isPlaying = playing,
-                                                    likedIds = likedIds,
-                                                    accent = primaryAccent,
-                                                    textPrimary = textPrimary,
-                                                    textSecondary = textSecondary,
-                                                    cardColor = cardColor,
-                                                    onPlayIndex = { idx -> playQueue(list, idx, 0L, true) },
-                                                    onMore = { songForMenu = it }
-                                                )
-                                            }
-                                        } else {
-                                            when (activeTab) {
-                                                "Songs" -> {
-                                                    if (sortedSongs.isEmpty()) {
-                                                        EmptyState("لا توجد أغاني مطابقة", primaryAccent, textPrimary)
-                                                    } else {
-                                                        SongListOrGrid(
-                                                            songs = sortedSongs,
-                                                            viewSize = viewSize,
-                                                            currentSongId = currentSongId,
-                                                            isPlaying = playing,
-                                                            likedIds = likedIds,
-                                                            accent = primaryAccent,
-                                                            textPrimary = textPrimary,
-                                                            textSecondary = textSecondary,
-                                                            cardColor = cardColor,
-                                                            onPlayIndex = { idx -> playQueue(sortedSongs, idx, 0L, true) },
-                                                            onMore = { songForMenu = it }
-                                                        )
-                                                    }
-                                                }
-
-                                                "Playlists" -> {
-                                                    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                        item {
-                                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                                Text("قوائمك الذكية", color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                                                TextButton(onClick = { showCreatePlaylistDialog = true }) {
-                                                                    Text("+ قائمة جديدة", color = primaryAccent, fontWeight = FontWeight.Bold)
-                                                                }
-                                                            }
-                                                        }
-                                                        item {
-                                                            CollectionTile("الأغاني المفضلة", "${likedIds.size} أغنية", Icons.Default.Favorite, Color(0xFFFF5263), cardColor, textPrimary, textSecondary) {
-                                                                activeCollectionTitle = "الأغاني المفضلة"
-                                                                activeCollectionSongs = visibleSongs.filter { likedIds.contains(it.id) }
-                                                            }
-                                                        }
-                                                        item {
-                                                            CollectionTile("تم تشغيلها مؤخراً", "${recentIds.size} أغنية", Icons.Default.History, primaryAccent, cardColor, textPrimary, textSecondary) {
-                                                                activeCollectionTitle = "تم تشغيلها مؤخراً"
-                                                                activeCollectionSongs = recentIds.mapNotNull { id -> visibleSongs.firstOrNull { it.id == id } }
-                                                            }
-                                                        }
-                                                        item {
-                                                            CollectionTile("الأكثر استماعاً", "${playCounts.size} أغنية", Icons.Default.Star, Color(0xFFFFC857), cardColor, textPrimary, textSecondary) {
-                                                                activeCollectionTitle = "الأكثر استماعاً"
-                                                                activeCollectionSongs = visibleSongs.filter { (playCounts[it.id] ?: 0) > 0 }.sortedByDescending { playCounts[it.id] ?: 0 }
-                                                            }
-                                                        }
-                                                        itemsIndexed(playlists.entries.toList()) { _, entry ->
-                                                            Row(
-                                                                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cardColor).clickable {
-                                                                    activeCollectionTitle = entry.key
-                                                                    activeCollectionSongs = entry.value.mapNotNull { id -> visibleSongs.firstOrNull { it.id == id } }
-                                                                }.padding(14.dp),
-                                                                verticalAlignment = Alignment.CenterVertically
-                                                            ) {
-                                                                Icon(Icons.Default.QueueMusic, null, tint = primaryAccent)
-                                                                Spacer(Modifier.width(12.dp))
-                                                                Column(Modifier.weight(1f)) {
-                                                                    Text(entry.key, color = textPrimary, fontWeight = FontWeight.Bold)
-                                                                    Text("${entry.value.size} أغنية", color = textSecondary, fontSize = 12.sp)
-                                                                }
-                                                                IconButton(onClick = { playlists = playlists - entry.key; saveState() }) {
-                                                                    Icon(Icons.Default.Delete, null, tint = textSecondary)
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                "Folders" -> {
-                                                    val folders = remember(visibleSongs) { visibleSongs.groupBy { it.folderName }.entries.sortedBy { it.key.lowercase() } }
-                                                    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                        itemsIndexed(folders) { _, entry ->
-                                                            CollectionTile(entry.key, "${entry.value.size} ملف صوتي", Icons.Default.Folder, primaryAccent, cardColor, textPrimary, textSecondary) {
-                                                                activeCollectionTitle = entry.key
-                                                                activeCollectionSongs = entry.value
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                "Artists" -> {
-                                                    val artists = remember(visibleSongs) { visibleSongs.groupBy { it.artist }.entries.sortedBy { it.key.lowercase() } }
-                                                    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                                        itemsIndexed(artists) { _, entry ->
-                                                            Row(
-                                                                Modifier.fillMaxWidth().clickable {
-                                                                    activeCollectionTitle = entry.key
-                                                                    activeCollectionSongs = entry.value
-                                                                }.padding(vertical = 4.dp),
-                                                                verticalAlignment = Alignment.CenterVertically
-                                                            ) {
-                                                                SongCoverArt(song = entry.value.firstOrNull(), sizeDp = 54, isCircle = true, accent = primaryAccent)
-                                                                Spacer(Modifier.width(14.dp))
-                                                                Column(Modifier.weight(1f)) {
-                                                                    Text(entry.key, color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                    Text("${entry.value.size} أغنية", color = textSecondary, fontSize = 12.sp)
-                                                                }
-                                                                Icon(Icons.Default.ChevronLeft, null, tint = textSecondary)
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                "Albums" -> {
-                                                    val albums = remember(visibleSongs) { visibleSongs.groupBy { it.album }.entries.sortedBy { it.key.lowercase() } }
-                                                    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                                        itemsIndexed(albums) { _, entry ->
-                                                            Row(
-                                                                Modifier.fillMaxWidth().clickable {
-                                                                    activeCollectionTitle = entry.key
-                                                                    activeCollectionSongs = entry.value
-                                                                }.padding(vertical = 4.dp),
-                                                                verticalAlignment = Alignment.CenterVertically
-                                                            ) {
-                                                                SongCoverArt(song = entry.value.firstOrNull(), sizeDp = 56, isCircle = false, accent = primaryAccent)
-                                                                Spacer(Modifier.width(14.dp))
-                                                                Column(Modifier.weight(1f)) {
-                                                                    Text(entry.key, color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                    Text("${entry.value.size} أغنية", color = textSecondary, fontSize = 12.sp)
-                                                                }
-                                                                Icon(Icons.Default.ChevronLeft, null, tint = textSecondary)
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                "EQ" -> {
-                                                    TitanDspStudioTab(
-                                                        eqPreset = eqPreset,
-                                                        bandGains = bandGains,
-                                                        bassStrength = bassStrength,
-                                                        virtualizerStrength = virtualizerStrength,
-                                                        loudnessGain = loudnessGain,
-                                                        playbackSpeed = playbackSpeed,
-                                                        playbackPitch = playbackPitch,
-                                                        spatial8D = spatial8DEnabled,
-                                                        accent = primaryAccent,
-                                                        cardColor = cardColor,
-                                                        textPrimary = textPrimary,
-                                                        textSecondary = textSecondary,
-                                                        onSelectPreset = { preset ->
-                                                            eqPreset = preset
-                                                            when (preset) {
-                                                                "Pure Hi-Fi" -> { bandGains = listOf(0.28f, 0.16f, 0.0f, 0.14f, 0.24f); bassStrength = 35; loudnessGain = 0 }
-                                                                "Clean Phonk" -> { bandGains = listOf(0.60f, 0.35f, -0.08f, 0.32f, 0.50f); bassStrength = 52; loudnessGain = 10 }
-                                                                "Gym Beast" -> { bandGains = listOf(0.70f, 0.45f, 0.05f, 0.38f, 0.55f); bassStrength = 60; loudnessGain = 20 }
-                                                                "Vocal Studio" -> { bandGains = listOf(-0.10f, 0.20f, 0.60f, 0.45f, 0.22f); bassStrength = 20; loudnessGain = 0 }
-                                                                else -> { bandGains = listOf(0f, 0f, 0f, 0f, 0f); bassStrength = 0; loudnessGain = 0 }
-                                                            }
-                                                            saveState()
-                                                        },
-                                                        onBandChange = { idx, v -> eqPreset = "Custom"; bandGains = bandGains.toMutableList().also { it[idx] = v }; saveState() },
-                                                        onBassChange = { bassStrength = it; saveState() },
-                                                        onVirtChange = { virtualizerStrength = it; saveState() },
-                                                        onLoudnessChange = { loudnessGain = it; saveState() },
-                                                        onSpeedChange = { playbackSpeed = it; saveState() },
-                                                        onPitchChange = { playbackPitch = it; saveState() },
-                                                        onToggle8D = { spatial8DEnabled = !spatial8DEnabled; saveState() },
-                                                        onOpenSystemEq = {
-                                                            runCatching {
-                                                                context.startActivity(
-                                                                    Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL).apply {
-                                                                        putExtra(AudioEffect.EXTRA_PACKAGE_NAME, context.packageName)
-                                                                        putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
-                                                                    }
-                                                                )
-                                                            }
-                                                        }
-                                                    )
-                                                }
-                                            }
+                                        IconButton(onClick = { onDeleteCustomPlaylist(pl.id) }) {
+                                            Icon(Icons.Rounded.Delete, null, tint = Color(0xFFFF5252))
                                         }
                                     }
                                 }
@@ -2059,64 +1690,492 @@ fun VyroTitanApp(player: Player, loadSongs: () -> List<Song>, externalUri: Uri?)
                         }
                     }
 
-                    // الجولة التعليمية العائمة التفاعلية (مثل الألعاب عند أول تشغيل)
-                    if (tutorialStep in TUTORIAL_STEPS.indices && currentScreen == "MAIN") {
-                        val (tTitle, tDesc, tIcon) = TUTORIAL_STEPS[tutorialStep]
-                        Box(
-                            Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.78f))
-                                .clickable {
-                                    if (tutorialStep < TUTORIAL_STEPS.lastIndex) tutorialStep++
-                                    else {
-                                        tutorialStep = -1
-                                        prefs.edit().putBoolean("tutorial_v5_done", true).apply()
-                                    }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                Modifier
-                                    .fillMaxWidth(0.88f)
-                                    .clip(RoundedCornerShape(28.dp))
-                                    .background(Color(0xFF121624))
-                                    .border(1.5.dp, primaryAccent, RoundedCornerShape(28.dp))
-                                    .padding(22.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Box(
-                                    Modifier.size(58.dp).clip(CircleShape).background(primaryAccent.copy(alpha = 0.18f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(tIcon, null, tint = primaryAccent, modifier = Modifier.size(30.dp))
+                    2 -> {
+                        val grouped = remember(songs) { songs.groupBy { it.folder }.toList().sortedByDescending { it.second.size } }
+                        if (selectedFolder != null) {
+                            val folderSongs = songs.filter { it.folder == selectedFolder }
+                            Column(Modifier.fillMaxSize()) {
+                                SubHeaderBar(selectedFolder, textPrimary) { onSelectFolder(null) }
+                                SongsListArea(
+                                    songs = folderSongs,
+                                    listLayout = listLayout,
+                                    currentSongId = currentSong?.id,
+                                    accent = accent,
+                                    cardColor = cardColor,
+                                    textPrimary = textPrimary,
+                                    textSecondary = textSecondary,
+                                    isArabic = isArabic,
+                                    favoriteIds = favoriteIds,
+                                    onPlay = onPlaySong,
+                                    onToggleFav = onToggleFav,
+                                    onHide = onHideSong,
+                                    onAddToPlaylist = onAddToPlaylist
+                                )
+                            }
+                        } else {
+                            LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                items(grouped) { (folder, list) ->
+                                    SmartPlaylistCard(
+                                        title = folder,
+                                        subtitle = if (isArabic) "${list.size} ملف صوتي" else "${list.size} audio files",
+                                        icon = Icons.Rounded.Folder,
+                                        iconTint = accent,
+                                        cardColor = cardColor,
+                                        textPrimary = textPrimary,
+                                        textSecondary = textSecondary,
+                                        onClick = { onSelectFolder(folder) }
+                                    )
                                 }
-                                Text("${tutorialStep + 1} / ${TUTORIAL_STEPS.size}", color = primaryAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                Text(tTitle, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
-                                Text(tDesc, color = Color(0xFFB5BCD2), fontSize = 13.5.sp, textAlign = TextAlign.Center, lineHeight = 21.sp)
-                                Spacer(Modifier.height(4.dp))
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                    TextButton(onClick = {
-                                        tutorialStep = -1
-                                        prefs.edit().putBoolean("tutorial_v5_done", true).apply()
-                                    }) {
-                                        Text("تخطي الجولة", color = Color(0xFF8C93A6))
-                                    }
-                                    Button(
-                                        onClick = {
-                                            if (tutorialStep < TUTORIAL_STEPS.lastIndex) tutorialStep++
-                                            else {
-                                                tutorialStep = -1
-                                                prefs.edit().putBoolean("tutorial_v5_done", true).apply()
-                                            }
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = primaryAccent),
-                                        shape = RoundedCornerShape(50)
+                            }
+                        }
+                    }
+
+                    3 -> {
+                        val grouped = remember(songs) { songs.groupBy { it.artist }.toList().sortedBy { it.first.lowercase(Locale.ROOT) } }
+                        if (selectedArtist != null) {
+                            val artistSongs = songs.filter { it.artist == selectedArtist }
+                            Column(Modifier.fillMaxSize()) {
+                                SubHeaderBar(selectedArtist, textPrimary) { onSelectArtist(null) }
+                                SongsListArea(
+                                    songs = artistSongs,
+                                    listLayout = listLayout,
+                                    currentSongId = currentSong?.id,
+                                    accent = accent,
+                                    cardColor = cardColor,
+                                    textPrimary = textPrimary,
+                                    textSecondary = textSecondary,
+                                    isArabic = isArabic,
+                                    favoriteIds = favoriteIds,
+                                    onPlay = onPlaySong,
+                                    onToggleFav = onToggleFav,
+                                    onHide = onHideSong,
+                                    onAddToPlaylist = onAddToPlaylist
+                                )
+                            }
+                        } else {
+                            LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                items(grouped) { (artist, list) ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(16.dp))
+                                            .background(cardColor)
+                                            .clickable { onSelectArtist(artist) }
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        SongCoverImage(list.first(), accent, Modifier.size(48.dp).clip(CircleShape))
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(artist, fontWeight = FontWeight.Bold, color = textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(if (isArabic) "${list.size} أغنية" else "${list.size} songs", fontSize = 12.sp, color = textSecondary)
+                                        }
+                                        Icon(Icons.Rounded.ChevronLeft, null, tint = textSecondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Floating Mini Player
+        currentSong?.let { song ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(cardColor.copy(alpha = 0.96f))
+                    .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(22.dp))
+                    .clickable { onOpenNowPlaying() }
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SongCoverImage(song, accent, Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)))
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(song.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${song.artist} • ${formatMs(currentPosition)}", fontSize = 12.sp, color = textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    IconButton(onClick = onPrev, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Rounded.SkipPrevious, null, tint = textPrimary)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(accent)
+                            .clickable { onTogglePlay() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color(0xFF04101A), modifier = Modifier.size(26.dp))
+                    }
+                    IconButton(onClick = onNext, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Rounded.SkipNext, null, tint = textPrimary)
+                    }
+                }
+                Box(modifier = Modifier.fillMaxWidth().height(3.dp).background(textSecondary.copy(0.2f))) {
+                    Box(modifier = Modifier.fillMaxWidth(progressFraction).fillMaxHeight().background(accent))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SongsListArea(
+    songs: List<Song>,
+    listLayout: String,
+    currentSongId: Long?,
+    accent: Color,
+    cardColor: Color,
+    textPrimary: Color,
+    textSecondary: Color,
+    isArabic: Boolean,
+    favoriteIds: Set<Long>,
+    onPlay: (List<Song>, Int) -> Unit,
+    onToggleFav: (Long) -> Unit,
+    onHide: (Long) -> Unit,
+    onAddToPlaylist: (Song) -> Unit
+) {
+    if (songs.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(if (isArabic) "لا توجد مقاطع صوتية هنا" else "No audio tracks found", color = textSecondary)
+        }
+        return
+    }
+
+    if (listLayout == "grid") {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            contentPadding = PaddingValues(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(songs.indices.toList()) { idx ->
+                val song = songs[idx]
+                val active = song.id == currentSongId
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(if (active) accent.copy(0.18f) else cardColor)
+                        .border(1.dp, if (active) accent else Color.White.copy(0.06f), RoundedCornerShape(18.dp))
+                        .clickable { onPlay(songs, idx) }
+                        .padding(10.dp)
+                ) {
+                    SongCoverImage(song, accent, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(14.dp)))
+                    Spacer(Modifier.height(8.dp))
+                    Text(song.title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (active) accent else textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${song.artist} • ${formatMs(song.duration)}", fontSize = 11.sp, color = textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    } else {
+        val compact = listLayout == "compact"
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 10.dp)
+        ) {
+            itemsIndexed(songs, key = { _, s -> s.id }) { idx, song ->
+                val active = song.id == currentSongId
+                var menuOpen by remember { mutableStateOf(false) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(if (compact) 14.dp else 18.dp))
+                        .background(if (active) accent.copy(0.18f) else cardColor.copy(0.92f))
+                        .border(1.dp, if (active) accent.copy(0.8f) else Color.White.copy(0.06f), RoundedCornerShape(if (compact) 14.dp else 18.dp))
+                        .clickable { onPlay(songs, idx) }
+                        .padding(horizontal = 12.dp, vertical = if (compact) 8.dp else 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SongCoverImage(song, accent, Modifier.size(if (compact) 44.dp else 54.dp).clip(RoundedCornerShape(12.dp)))
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            song.title,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = if (compact) 14.sp else 15.sp,
+                            color = if (active) accent else textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "${song.artist} • ${formatMs(song.duration)}",
+                            fontSize = 12.sp,
+                            color = textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Rounded.MoreVert, null, tint = textSecondary)
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text(if (song.id in favoriteIds) (if (isArabic) "إزالة من المفضلة" else "Unfavorite") else (if (isArabic) "إضافة للمفضلة" else "Favorite")) },
+                                leadingIcon = { Icon(Icons.Rounded.Favorite, null) },
+                                onClick = { menuOpen = false; onToggleFav(song.id) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (isArabic) "إضافة لقائمة تشغيل" else "Add to Playlist") },
+                                leadingIcon = { Icon(Icons.Rounded.QueueMusic, null) },
+                                onClick = { menuOpen = false; onAddToPlaylist(song) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (isArabic) "إخفاء الملف" else "Hide Track") },
+                                leadingIcon = { Icon(Icons.Rounded.VisibilityOff, null) },
+                                onClick = { menuOpen = false; onHide(song.id) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ==================== GLASSIFY WALLPAPER STORE & 14 WIDGETS STUDIO ====================
+
+@Composable
+fun GlassifyWallpaperAndWidgetStudio(
+    isArabic: Boolean,
+    accent: Color,
+    cardColor: Color,
+    textPrimary: Color,
+    textSecondary: Color,
+    selectedWidgetStyle: String,
+    currentSongTitle: String,
+    currentSongArtist: String,
+    onSelectWidgetStyle: (String) -> Unit,
+    onPinWidget: () -> Unit,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var activeSection by remember { mutableIntStateOf(0) } // 0: HD Wallpaper Store, 1: 14 Widgets
+    var selectedCategory by remember { mutableStateOf("top") }
+    var searchInput by remember { mutableStateOf("") }
+    var activeSearch by remember { mutableStateOf("") }
+    var page by remember { mutableIntStateOf(1) }
+    var wallpapers by remember { mutableStateOf<List<OnlineWallpaper>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(false) }
+    var previewWallpaper by remember { mutableStateOf<OnlineWallpaper?>(null) }
+
+    val categories = remember(isArabic) {
+        listOf(
+            "top" to (if (isArabic) "الأفضل 🔥" else "Top"),
+            "camp_nou" to (if (isArabic) "كامب نو 🏟️" else "Camp Nou"),
+            "mountains" to (if (isArabic) "جبال 🏔️" else "Mountains"),
+            "water" to (if (isArabic) "بحار وأنهار 🌊" else "Seas & Rivers"),
+            "amoled" to (if (isArabic) "سوداء AMOLED 🖤" else "AMOLED"),
+            "space" to (if (isArabic) "فضاء 🌌" else "Space"),
+            "cars" to (if (isArabic) "سيارات 🏎️" else "Cars"),
+            "nature" to (if (isArabic) "طبيعة 🌿" else "Nature"),
+            "neon" to (if (isArabic) "نيون ⚡" else "Neon"),
+            "stadiums" to (if (isArabic) "ملاعب ⚽" else "Stadiums")
+        )
+    }
+
+    fun loadPage(targetPage: Int, append: Boolean) {
+        scope.launch {
+            isLoading = true
+            val fetched = WallpaperStoreEngine.fetchWallpapers(selectedCategory, activeSearch, targetPage)
+            wallpapers = if (append) (wallpapers + fetched).distinctBy { it.fullUrl } else fetched
+            page = targetPage
+            isLoading = false
+        }
+    }
+
+    LaunchedEffect(selectedCategory, activeSearch) {
+        loadPage(1, append = false)
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Header
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Rounded.ArrowBack, null, tint = textPrimary)
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (isArabic) "متجر الخلفيات وويدجت Glassify" else "HD Wallpaper & Glassify Studio",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 18.sp,
+                    color = textPrimary
+                )
+                Text(
+                    if (isArabic) "خلفيات حقيقية HD بلا حدود + 14 شكل ويدجت" else "Infinite Real HD Wallpapers + 14 Widgets",
+                    fontSize = 12.sp,
+                    color = textSecondary
+                )
+            }
+        }
+
+        // Top Switcher (Samsung Themes Pill Style)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(cardColor)
+                .padding(4.dp)
+        ) {
+            listOf(
+                if (isArabic) "خلفيات HD حقيقية" else "HD Wallpapers",
+                if (isArabic) "ويدجت VYRO (14)" else "VYRO Widgets (14)"
+            ).forEachIndexed { idx, label ->
+                val sel = activeSection == idx
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(if (sel) accent else Color.Transparent)
+                        .clickable { activeSection = idx }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        label,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = if (sel) Color(0xFF04101A) else textSecondary
+                    )
+                }
+            }
+        }
+
+        if (activeSection == 0) {
+            // Search Bar (Open Search for Millions of Wallpapers)
+            OutlinedTextField(
+                value = searchInput,
+                onValueChange = { searchInput = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                placeholder = { Text(if (isArabic) "ابحث عن أي خلفية (كامب نو، جبال، بحر، سيارات...)" else "Search millions of wallpapers...") },
+                leadingIcon = { Icon(Icons.Rounded.Search, null, tint = accent) },
+                trailingIcon = {
+                    Row {
+                        if (searchInput.isNotEmpty()) {
+                            IconButton(onClick = {
+                                searchInput = ""
+                                activeSearch = ""
+                            }) { Icon(Icons.Rounded.Clear, null) }
+                        }
+                        IconButton(onClick = { activeSearch = searchInput.trim() }) {
+                            Icon(Icons.Rounded.AutoAwesome, null, tint = accent)
+                        }
+                    }
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { activeSearch = searchInput.trim() }),
+                shape = RoundedCornerShape(18.dp)
+            )
+
+            // Category Chips
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(categories) { (key, label) ->
+                    val selected = selectedCategory == key && activeSearch.isBlank()
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (selected) accent else cardColor)
+                            .border(1.dp, if (selected) accent else Color.White.copy(0.08f), RoundedCornerShape(14.dp))
+                            .clickable {
+                                activeSearch = ""
+                                searchInput = ""
+                                selectedCategory = key
+                            }
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            label,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = if (selected) Color(0xFF04101A) else textPrimary
+                        )
+                    }
+                }
+            }
+
+            // Wallpapers Grid (3 Columns Samsung Store Style)
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                if (isLoading && wallpapers.isEmpty()) {
+                    Column(
+                        Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(color = accent)
+                        Spacer(Modifier.height(10.dp))
+                        Text(if (isArabic) "جاري تحميل خلفيات HD حقيقية..." else "Loading real HD wallpapers...", color = textSecondary)
+                    }
+                } else if (wallpapers.isEmpty()) {
+                    Column(
+                        Modifier.fillMaxSize().padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Rounded.Wallpaper, null, tint = textSecondary, modifier = Modifier.size(56.dp))
+                        Spacer(Modifier.height(8.dp))
+                        Text(if (isArabic) "تأكد من الاتصال بالإنترنت أو جرّب كلمة بحث أخرى" else "Check internet connection or try another search", color = textSecondary, textAlign = TextAlign.Center)
+                        Spacer(Modifier.height(12.dp))
+                        Button(onClick = { loadPage(1, false) }, colors = ButtonDefaults.buttonColors(containerColor = accent)) {
+                            Text(if (isArabic) "إعادة المحاولة" else "Retry", color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        contentPadding = PaddingValues(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(wallpapers, key = { it.id }) { wp ->
+                            WallpaperGridCard(
+                                wallpaper = wp,
+                                isArabic = isArabic,
+                                accent = accent,
+                                cardColor = cardColor,
+                                textSecondary = textSecondary,
+                                onClick = { previewWallpaper = wp }
+                            )
+                        }
+                        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(3) }) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isLoading) {
+                                    CircularProgressIndicator(color = accent, modifier = Modifier.size(28.dp))
+                                } else {
+                                    Button(
+                                        onClick = { loadPage(page + 1, append = true) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = accent.copy(0.18f)),
+                                        border = BorderStroke(1.dp, accent),
+                                        shape = RoundedCornerShape(16.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.Refresh, null, tint = accent)
+                                        Spacer(Modifier.width(8.dp))
                                         Text(
-                                            if (tutorialStep == TUTORIAL_STEPS.lastIndex) "ابدأ الآن" else "التالي",
-                                            color = Color.Black,
-                                            fontWeight = FontWeight.Black
+                                            if (isArabic) "تحميل المزيد من الخلفيات (صفحة ${page + 1})" else "Load More Wallpapers",
+                                            color = accent,
+                                            fontWeight = FontWeight.Bold
                                         )
                                     }
                                 }
@@ -2125,1783 +2184,1801 @@ fun VyroTitanApp(player: Player, loadSongs: () -> List<Song>, externalUri: Uri?)
                     }
                 }
             }
-        }
-    }
-}
-
-// ==========================================================
-// 1. مكون عرض الصور المُصلَح بالكامل (يتحدث فوراً مع كل أغنية!)
-// ==========================================================
-@Composable
-private fun SongCoverArt(
-    song: Song?,
-    sizeDp: Int,
-    isCircle: Boolean = false,
-    accent: Color,
-    isActivePlaying: Boolean = false,
-    cornerDp: Int = 12
-) {
-    val context = LocalContext.current
-    val bmp by produceState<ImageBitmap?>(initialValue = null, key1 = song?.id) {
-        if (song == null) {
-            value = null
-            return@produceState
-        }
-        val cached = CoverArtCache.get(song.id)
-        if (cached != null) {
-            value = cached.asImageBitmap()
         } else {
-            value = null
-            val loaded = withContext(Dispatchers.IO) {
-                VyroWidgetProvider.loadRobustAlbumArt(context, song.uri.toString(), song.albumId)?.also {
-                    CoverArtCache.put(song.id, it)
-                }
-            }
-            value = loaded?.asImageBitmap()
-        }
-    }
-
-    val shape = if (isCircle) CircleShape else RoundedCornerShape(cornerDp.dp)
-    Box(
-        Modifier.size(sizeDp.dp).clip(shape).background(Color(0xFF191D29)),
-        contentAlignment = Alignment.Center
-    ) {
-        if (bmp != null) {
-            Image(bitmap = bmp!!, contentDescription = song?.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        } else {
-            Icon(Icons.Default.MusicNote, null, tint = accent.copy(alpha = 0.85f), modifier = Modifier.size((sizeDp * 0.45f).dp))
-        }
-        if (isActivePlaying) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.48f)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.GraphicEq, null, tint = Color.White, modifier = Modifier.size((sizeDp * 0.52f).dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun SongCoverArtFull(
-    song: Song,
-    accent: Color,
-    isActivePlaying: Boolean,
-    cornerDp: Int
-) {
-    val context = LocalContext.current
-    val bmp by produceState<ImageBitmap?>(initialValue = null, key1 = song.id) {
-        val cached = CoverArtCache.get(song.id)
-        if (cached != null) {
-            value = cached.asImageBitmap()
-        } else {
-            value = null
-            val loaded = withContext(Dispatchers.IO) {
-                VyroWidgetProvider.loadRobustAlbumArt(context, song.uri.toString(), song.albumId)?.also {
-                    CoverArtCache.put(song.id, it)
-                }
-            }
-            value = loaded?.asImageBitmap()
-        }
-    }
-    Box(
-        Modifier.fillMaxSize().clip(RoundedCornerShape(cornerDp.dp)).background(Color(0xFF191D29)),
-        contentAlignment = Alignment.Center
-    ) {
-        if (bmp != null) {
-            Image(bitmap = bmp!!, contentDescription = song.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        } else {
-            Icon(Icons.Default.MusicNote, null, tint = accent, modifier = Modifier.size(56.dp))
-        }
-        if (isActivePlaying) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.GraphicEq, null, tint = Color.White, modifier = Modifier.size(40.dp))
-            }
-        }
-    }
-}
-
-// ==========================================================
-// 2. قائمة وشبكة الأغاني (صغير / وسط / كبير 2x2)
-// ==========================================================
-@Composable
-private fun SongListOrGrid(
-    songs: List<Song>,
-    viewSize: String,
-    currentSongId: Long,
-    isPlaying: Boolean,
-    likedIds: Set<Long>,
-    accent: Color,
-    textPrimary: Color,
-    textSecondary: Color,
-    cardColor: Color,
-    onPlayIndex: (Int) -> Unit,
-    onMore: (Song) -> Unit
-) {
-    if (viewSize == "LARGE") {
-        val rows = remember(songs) { songs.chunked(2) }
-        LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            itemsIndexed(rows) { rIdx, pair ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    pair.forEachIndexed { cIdx, song ->
-                        val realIdx = rIdx * 2 + cIdx
-                        val active = song.id == currentSongId
+            // 14 Widget Styles Section
+            Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(WIDGET_PRESETS) { preset ->
+                        val isSelected = selectedWidgetStyle == preset.id
                         Column(
-                            Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(cardColor.copy(alpha = 0.72f))
-                                .border(if (active) 1.5.dp else 0.dp, accent, RoundedCornerShape(18.dp))
-                                .clickable { onPlayIndex(realIdx) }
-                                .padding(8.dp)
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(cardColor)
+                                .border(
+                                    width = if (isSelected) 2.dp else 1.dp,
+                                    color = if (isSelected) accent else Color.White.copy(0.08f),
+                                    shape = RoundedCornerShape(20.dp)
+                                )
+                                .clickable { onSelectWidgetStyle(preset.id) }
+                                .padding(10.dp)
                         ) {
-                            Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
-                                SongCoverArtFull(song = song, accent = accent, isActivePlaying = active && isPlaying, cornerDp = 14)
-                                IconButton(
-                                    onClick = { onMore(song) },
-                                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(28.dp).background(Color.Black.copy(alpha = 0.55f), CircleShape)
-                                ) { Icon(Icons.Default.MoreVert, null, tint = Color.White, modifier = Modifier.size(16.dp)) }
-                            }
-                            Spacer(Modifier.height(6.dp))
-                            Text(song.title, color = if (active) accent else textPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(song.artist, color = textSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                    if (pair.size == 1) Spacer(Modifier.weight(1f))
-                }
-            }
-        }
-    } else {
-        val isSmall = viewSize == "SMALL"
-        LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(if (isSmall) 5.dp else 8.dp)) {
-            itemsIndexed(songs) { idx, song ->
-                val active = song.id == currentSongId
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(if (active) accent.copy(alpha = 0.14f) else cardColor.copy(alpha = 0.52f))
-                        .border(if (active) 1.dp else 0.dp, accent.copy(alpha = 0.65f), RoundedCornerShape(16.dp))
-                        .clickable { onPlayIndex(idx) }
-                        .padding(horizontal = 10.dp, vertical = if (isSmall) 6.dp else 9.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    SongCoverArt(
-                        song = song,
-                        sizeDp = if (isSmall) 42 else 52,
-                        accent = accent,
-                        isActivePlaying = active && isPlaying,
-                        cornerDp = if (isSmall) 10 else 13
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(song.title, color = if (active) accent else textPrimary, fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold, fontSize = if (isSmall) 13.5.sp else 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Spacer(Modifier.height(2.dp))
-                        Text("${song.artist} • ${formatTime(song.duration)}", color = textSecondary, fontSize = if (isSmall) 11.sp else 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    if (likedIds.contains(song.id)) {
-                        Icon(Icons.Default.Favorite, null, tint = accent, modifier = Modifier.size(15.dp))
-                        Spacer(Modifier.width(4.dp))
-                    }
-                    IconButton(onClick = { onMore(song) }, modifier = Modifier.size(34.dp)) {
-                        Icon(Icons.Default.MoreVert, null, tint = textSecondary, modifier = Modifier.size(19.dp))
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ==========================================================
-// 3. منصة المشغل السفلي الزجاجية الخاصة بهوية VYRO
-// ==========================================================
-@Composable
-private fun TitanFloatingMiniDock(
-    song: Song,
-    playing: Boolean,
-    position: Long,
-    duration: Long,
-    accent: Color,
-    isDark: Boolean,
-    onTogglePlay: () -> Unit,
-    onPrev: () -> Unit,
-    onNext: () -> Unit,
-    onOpenFullPlayer: () -> Unit
-) {
-    val progress = if (duration > 0) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
-    val dockBg = if (isDark) Color(0xEE141824) else Color(0xF5FFFFFF)
-    val dockText = if (isDark) Color.White else Color(0xFF10131A)
-    val dockSub = if (isDark) Color(0xFF9EA5B8) else Color(0xFF606878)
-
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(22.dp))
-            .background(dockBg)
-            .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(22.dp))
-            .clickable(onClick = onOpenFullPlayer)
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            SongCoverArt(song = song, sizeDp = 46, accent = accent, cornerDp = 12)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(song.title, color = dockText, fontWeight = FontWeight.Bold, fontSize = 13.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${song.artist} • ${formatTime(position)}", color = dockSub, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onPrev, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.SkipPrevious, null, tint = dockText, modifier = Modifier.size(21.dp))
-                    }
-                    IconButton(onClick = onTogglePlay, modifier = Modifier.size(38.dp).background(accent, CircleShape)) {
-                        Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(22.dp))
-                    }
-                    IconButton(onClick = onNext, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.SkipNext, null, tint = dockText, modifier = Modifier.size(21.dp))
-                    }
-                }
-            }
-        }
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            Box(Modifier.fillMaxWidth().height(3.dp).background(accent.copy(alpha = 0.16f))) {
-                Box(Modifier.fillMaxWidth(progress).fillMaxHeight().background(accent))
-            }
-        }
-    }
-}
-
-// ==========================================================
-// 4. استوديو السمات بالمعاينة الحقيقية (يعرض أغانيك وأغلفتها الفعلية + تفاعل مباشر)
-// ==========================================================
-@Composable
-private fun TitanLiveThemeStudioScreen(
-    sampleSongs: List<Song>,
-    viewSize: String,
-    themeMode: String,
-    accentColorId: String,
-    liveBackdrop: String,
-    accent: Color,
-    isDark: Boolean,
-    bgColor: Color,
-    cardColor: Color,
-    pillBgColor: Color,
-    textPrimary: Color,
-    textSecondary: Color,
-    hasCustomWallpaper: Boolean,
-    onBack: () -> Unit,
-    onSelectSize: (String) -> Unit,
-    onSelectMode: (String) -> Unit,
-    onSelectAccent: (String) -> Unit,
-    onSelectBackdrop: (String) -> Unit,
-    onPickWallpaper: () -> Unit,
-    onClearWallpaper: () -> Unit,
-    onApplyAndClose: () -> Unit
-) {
-    Column(Modifier.fillMaxSize().background(bgColor).padding(vertical = 12.dp)) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.Default.ArrowForward, null, tint = textPrimary) }
-                Text("استوديو السمات الحي", color = textPrimary, fontSize = 19.sp, fontWeight = FontWeight.Black)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("SMALL" to "صغير", "MEDIUM" to "وسط", "LARGE" to "كبير").forEach { (id, label) ->
-                    val active = viewSize == id
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(if (active) accent else pillBgColor)
-                            .clickable { onSelectSize(id) }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text(label, color = if (active) Color.Black else textSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // 3 بطاقات معاينة حقيقية تفاعلية (تضغط على أي واحدة تتطبق حجمها وتوريك أغانيك الحقيقية)
-        Row(
-            Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            listOf("MEDIUM" to "العرض المتوسط", "LARGE" to "شبكة البوسترات 2x2", "SMALL" to "العرض المدمج").forEach { (cardSize, cardLabel) ->
-                val isSelectedCard = viewSize == cardSize
-                val frameBg = if (isDark) Color(0xFF0A0D16) else Color(0xFFF6F8FC)
-                val frameCard = if (isDark) Color(0xFF151926) else Color(0xFFFFFFFF)
-                val frameText = if (isDark) Color.White else Color(0xFF10131A)
-                val frameSub = if (isDark) Color(0xFF8C93A6) else Color(0xFF606878)
-
-                Column(
-                    Modifier
-                        .width(225.dp)
-                        .fillMaxHeight(0.94f)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(frameBg)
-                        .border(if (isSelectedCard) 2.5.dp else 1.dp, if (isSelectedCard) accent else Color.White.copy(alpha = 0.14f), RoundedCornerShape(24.dp))
-                        .clickable { onSelectSize(cardSize) }
-                        .padding(12.dp)
-                ) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(cardLabel, color = accent, fontWeight = FontWeight.Black, fontSize = 12.sp)
-                        if (isSelectedCard) {
-                            Box(Modifier.size(20.dp).background(accent, CircleShape), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.Check, null, tint = Color.Black, modifier = Modifier.size(13.dp))
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-
-                    Box(Modifier.weight(1f).fillMaxWidth()) {
-                        if (cardSize == "LARGE") {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                for (r in 0..1) {
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        for (c in 0..1) {
-                                            val song = sampleSongs.getOrNull(r * 2 + c)
-                                            Column(
-                                                Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(frameCard).padding(5.dp)
-                                            ) {
-                                                SongCoverArt(song = song, sizeDp = 82, accent = accent, cornerDp = 10)
-                                                Spacer(Modifier.height(4.dp))
-                                                Text(song?.title ?: "VYRO Track ${r * 2 + c + 1}", color = frameText, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            }
+                            // Mini Visual Preview of the Widget Style
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(104.dp)
+                                    .clip(RoundedCornerShape(if (preset.id == "Dynamic Pill") 34.dp else 16.dp))
+                                    .background(Brush.linearGradient(preset.gradient))
+                                    .border(1.5.dp, preset.borderColor, RoundedCornerShape(if (preset.id == "Dynamic Pill") 34.dp else 16.dp))
+                                    .padding(10.dp)
+                            ) {
+                                if (preset.isWide) {
+                                    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(38.dp)
+                                                .clip(if (preset.isCircle) CircleShape else RoundedCornerShape(10.dp))
+                                                .background(Color.White.copy(0.22f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Rounded.MusicNote, null, tint = Color.White, modifier = Modifier.size(20.dp))
                                         }
-                                    }
-                                }
-                            }
-                        } else {
-                            val count = if (cardSize == "SMALL") 5 else 4
-                            val thumb = if (cardSize == "SMALL") 30 else 38
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                for (i in 0 until count) {
-                                    val song = sampleSongs.getOrNull(i)
-                                    Row(
-                                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (i == 0) accent.copy(alpha = 0.16f) else frameCard).padding(6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        SongCoverArt(song = song, sizeDp = thumb, accent = accent, cornerDp = 8)
                                         Spacer(Modifier.width(8.dp))
                                         Column(Modifier.weight(1f)) {
-                                            Text(song?.title ?: "VYRO Track ${i + 1}", color = if (i == 0) accent else frameText, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            Text(song?.artist ?: "Mohamed Tarek", color = frameSub, fontSize = 8.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(currentSongTitle, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(currentSongArtist, color = Color.White.copy(0.7f), fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                        Icon(Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                                    }
+                                } else {
+                                    Column(
+                                        Modifier.fillMaxSize(),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(if (preset.isCircle) CircleShape else RoundedCornerShape(10.dp))
+                                                .background(Color.White.copy(0.22f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Rounded.MusicNote, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                                        }
+                                        Text(currentSongTitle, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            Icon(Icons.Rounded.SkipPrevious, null, tint = Color.White.copy(0.8f), modifier = Modifier.size(16.dp))
+                                            Icon(Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                            Icon(Icons.Rounded.SkipNext, null, tint = Color.White.copy(0.8f), modifier = Modifier.size(16.dp))
                                         }
                                     }
+                                }
+                                if (isSelected) {
+                                    Icon(
+                                        Icons.Rounded.CheckCircle,
+                                        null,
+                                        tint = accent,
+                                        modifier = Modifier.align(Alignment.TopEnd).size(18.dp)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                if (isArabic) preset.titleAr else preset.titleEn,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = if (isSelected) accent else textPrimary,
+                                maxLines = 1
+                            )
+                            Text(
+                                preset.descAr,
+                                fontSize = 10.sp,
+                                color = textSecondary,
+                                maxLines = 2,
+                                lineHeight = 13.sp
+                            )
+                        }
+                    }
+                }
+
+                // Pin Widget CTA Button
+                Button(
+                    onClick = onPinWidget,
+                    modifier = Modifier.fillMaxWidth().padding(16.dp).height(54.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFC857)),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Icon(Icons.Rounded.Dashboard, null, tint = Color.Black)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (isArabic) "إضافة الويدجت المختار للشاشة الرئيسية" else "Add Selected Widget to Home Screen",
+                        color = Color.Black,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        }
+    }
+
+    // Live Full-Screen Wallpaper Preview Dialog (Lock Screen / Home Screen / Pure)
+    previewWallpaper?.let { wp ->
+        WallpaperLivePreviewDialog(
+            wallpaper = wp,
+            isArabic = isArabic,
+            accent = accent,
+            currentSongTitle = currentSongTitle,
+            currentSongArtist = currentSongArtist,
+            onDismiss = { previewWallpaper = null },
+            onApply = { target ->
+                scope.launch {
+                    val ok = applyPureWallpaper(context, wp.fullUrl, target)
+                    Toast.makeText(
+                        context,
+                        if (ok) (if (isArabic) "تم تطبيق الخلفية بجودتها الأصلية الصافية ✨" else "HD Wallpaper applied cleanly!")
+                        else (if (isArabic) "فشل تحميل الصورة، جرّب مرة أخرى" else "Failed to apply wallpaper"),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    if (ok) previewWallpaper = null
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun WallpaperGridCard(
+    wallpaper: OnlineWallpaper,
+    isArabic: Boolean,
+    accent: Color,
+    cardColor: Color,
+    textSecondary: Color,
+    onClick: () -> Unit
+) {
+    var thumb by remember(wallpaper.thumbUrl) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(wallpaper.thumbUrl) {
+        thumb = VyroMediaCache.loadNetworkBitmap(wallpaper.thumbUrl, maxSize = 360)?.asImageBitmap()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.56f)
+                .clip(RoundedCornerShape(16.dp))
+                .background(cardColor)
+                .border(1.dp, Color.White.copy(0.08f), RoundedCornerShape(16.dp))
+        ) {
+            if (thumb != null) {
+                Image(
+                    bitmap = thumb!!,
+                    contentDescription = wallpaper.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = accent.copy(0.6f), strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
+                }
+            }
+            // Crisp HD / REAL Tag
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black.copy(0.62f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Text(wallpaper.source, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = if (isArabic) "مجاناً • ${wallpaper.resolution}" else "Free • ${wallpaper.resolution}",
+            fontSize = 10.sp,
+            color = textSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 2.dp)
+        )
+    }
+}
+
+@Composable
+fun WallpaperLivePreviewDialog(
+    wallpaper: OnlineWallpaper,
+    isArabic: Boolean,
+    accent: Color,
+    currentSongTitle: String,
+    currentSongArtist: String,
+    onDismiss: () -> Unit,
+    onApply: (Int) -> Unit // 1: Home, 2: Lock, 3: Both
+) {
+    var fullBmp by remember(wallpaper.fullUrl) { mutableStateOf<ImageBitmap?>(null) }
+    var thumbBmp by remember(wallpaper.thumbUrl) { mutableStateOf<ImageBitmap?>(null) }
+    var previewMode by remember { mutableIntStateOf(0) } // 0: Lock Screen, 1: Home Screen, 2: Pure
+    var isApplying by remember { mutableStateOf(false) }
+
+    val timeText = remember { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()) }
+    val dateText = remember(isArabic) {
+        SimpleDateFormat("EEEE، d MMMM", if (isArabic) Locale("ar") else Locale.ENGLISH).format(Date())
+    }
+
+    LaunchedEffect(wallpaper) {
+        thumbBmp = VyroMediaCache.loadNetworkBitmap(wallpaper.thumbUrl, maxSize = 480)?.asImageBitmap()
+        fullBmp = VyroMediaCache.loadNetworkBitmap(wallpaper.fullUrl, maxSize = 1440)?.asImageBitmap()
+    }
+
+    Dialog(
+        onDismissRequest = { if (!isApplying) onDismiss() },
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+            val activeImg = fullBmp ?: thumbBmp
+            if (activeImg != null) {
+                Image(
+                    bitmap = activeImg,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                CircularProgressIndicator(color = accent, modifier = Modifier.align(Alignment.Center))
+            }
+
+            // LIVE PREVIEW OVERLAY (NOT BAKED INTO WALLPAPER!)
+            if (previewMode == 0) {
+                // Realistic Lock Screen Preview (No ugly box!)
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 92.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(Icons.Rounded.Lock, null, tint = Color.White.copy(0.9f), modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.height(8.dp))
+                    Text(dateText, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Text(timeText, color = Color.White, fontSize = 72.sp, fontWeight = FontWeight.Light)
+                }
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(bottom = 145.dp, start = 28.dp, end = 28.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Box(Modifier.size(46.dp).clip(CircleShape).background(Color.Black.copy(0.45f)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Call, null, tint = Color.White)
+                    }
+                    Box(Modifier.size(46.dp).clip(CircleShape).background(Color.Black.copy(0.45f)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.CameraAlt, null, tint = Color.White)
+                    }
+                }
+            } else if (previewMode == 1) {
+                // Realistic Home Screen Preview with VYRO Widget + Mock Dock Icons
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .padding(top = 98.dp, start = 22.dp, end = 22.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(Color.Black.copy(0.55f))
+                            .border(1.dp, Color.White.copy(0.3f), RoundedCornerShape(22.dp))
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            Modifier.size(46.dp).clip(RoundedCornerShape(12.dp)).background(accent.copy(0.35f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.MusicNote, null, tint = Color.White)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(currentSongTitle, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(currentSongArtist, color = Color.White.copy(0.75f), fontSize = 11.sp, maxLines = 1)
+                        }
+                        Icon(Icons.Rounded.PlayArrow, null, tint = Color.White)
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(bottom = 145.dp, start = 26.dp, end = 26.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    listOf(
+                        Icons.Rounded.Call to Color(0xFF22C55E),
+                        Icons.Rounded.MusicNote to accent,
+                        Icons.Rounded.Wallpaper to Color(0xFFF59E0B),
+                        Icons.Rounded.CameraAlt to Color(0xFFEF4444)
+                    ).forEach { (ic, col) ->
+                        Box(
+                            Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(col.copy(0.9f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(ic, null, tint = Color.White)
+                        }
+                    }
+                }
+            }
+
+            // Top Preview Mode Bar
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = { if (!isApplying) onDismiss() },
+                    modifier = Modifier.clip(CircleShape).background(Color.Black.copy(0.55f))
+                ) {
+                    Icon(Icons.Rounded.Close, null, tint = Color.White)
+                }
+                Spacer(Modifier.width(8.dp))
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(Color.Black.copy(0.62f))
+                        .padding(3.dp)
+                ) {
+                    listOf(
+                        if (isArabic) "القفل" else "Lock",
+                        if (isArabic) "الرئيسية" else "Home",
+                        if (isArabic) "صافية" else "Pure"
+                    ).forEachIndexed { idx, label ->
+                        val sel = previewMode == idx
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(if (sel) accent else Color.Transparent)
+                                .clickable { previewMode = idx }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (sel) Color.Black else Color.White)
+                        }
+                    }
+                }
+            }
+
+            // Bottom Apply Action Bar
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.88f))))
+                    .navigationBarsPadding()
+                    .padding(16.dp)
+            ) {
+                if (isApplying) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(14.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(color = accent, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text(if (isArabic) "جاري تحميل وتطبيق الخلفية بأعلى جودة..." else "Applying pure HD wallpaper...", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Text(
+                        if (isArabic) "معاينة قبل التطبيق • تُطبّق الصورة صافية بدون أي مربعات" else "Live Preview • Pure HD image applied with zero overlays",
+                        color = Color.White.copy(0.8f),
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Button(
+                            onClick = { isApplying = true; onApply(1) },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(0.18f)),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text(if (isArabic) "الرئيسية" else "Home", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = { isApplying = true; onApply(2) },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(0.18f)),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text(if (isArabic) "القفل" else "Lock", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = { isApplying = true; onApply(3) },
+                            modifier = Modifier.weight(1.25f).height(48.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = accent),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text(if (isArabic) "تطبيق للكل" else "Apply Both", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ==================== LIVE THEME STUDIO ====================
+
+@Composable
+fun ThemeStudioScreen(
+    isArabic: Boolean,
+    accent: Color,
+    accentIndex: Int,
+    cardColor: Color,
+    textPrimary: Color,
+    textSecondary: Color,
+    sampleSongs: List<Song>,
+    listLayout: String,
+    bgStyle: String,
+    themeMode: String,
+    onSelectLayout: (String) -> Unit,
+    onSelectBgStyle: (String) -> Unit,
+    onSelectThemeMode: (String) -> Unit,
+    onSelectAccent: (Int) -> Unit,
+    onBack: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, null, tint = textPrimary) }
+            Text(if (isArabic) "استوديو السمات الحي" else "Live Theme Studio", fontWeight = FontWeight.Black, fontSize = 20.sp, color = textPrimary)
+        }
+        Spacer(Modifier.height(14.dp))
+
+        // Live Layout Previews
+        val layouts = listOf(
+            "medium" to (if (isArabic) "العرض المتوسط" else "Medium View"),
+            "compact" to (if (isArabic) "العرض المدمج" else "Compact View"),
+            "grid" to (if (isArabic) "شبكة البوسترات 2x2" else "Poster Grid 2x2")
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(layouts) { (id, label) ->
+                val selected = listLayout == id
+                Column(
+                    modifier = Modifier
+                        .width(210.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(cardColor)
+                        .border(if (selected) 2.dp else 1.dp, if (selected) accent else Color.White.copy(0.08f), RoundedCornerShape(22.dp))
+                        .clickable { onSelectLayout(id) }
+                        .padding(12.dp)
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(label, fontWeight = FontWeight.Bold, color = accent, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        if (selected) Icon(Icons.Rounded.CheckCircle, null, tint = accent, modifier = Modifier.size(20.dp))
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    if (id == "grid") {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            sampleSongs.take(2).forEach { s ->
+                                Column(Modifier.weight(1f)) {
+                                    SongCoverImage(s, accent, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp)))
+                                    Text(s.title, fontSize = 9.sp, color = textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    } else {
+                        sampleSongs.take(3).forEach { s ->
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                SongCoverImage(s, accent, Modifier.size(if (id == "compact") 28.dp else 36.dp).clip(RoundedCornerShape(8.dp)))
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(s.title, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(s.artist, fontSize = 9.sp, color = textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                         }
                     }
-
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(10.dp))
                     Box(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (isSelectedCard) accent else frameCard).padding(vertical = 7.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (selected) accent else Color.White.copy(0.08f))
+                            .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(if (isSelectedCard) "✓ مُحدد الآن" else "تحديد هذا الشكل", color = if (isSelectedCard) Color.Black else frameText, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                        Text(
+                            if (selected) (if (isArabic) "✓ محدد الآن" else "✓ Active") else (if (isArabic) "تحديد هذا الشكل" else "Select"),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = if (selected) Color.Black else textPrimary
+                        )
                     }
                 }
             }
         }
 
-        Spacer(Modifier.height(10.dp))
-
-        // الخلفيات الحية
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp).horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            LIVE_BACKDROPS.forEach { (id, label) ->
-                val active = liveBackdrop == id
+        Spacer(Modifier.height(20.dp))
+        Text(if (isArabic) "خلفية التطبيق" else "App Atmosphere", fontWeight = FontWeight.Bold, color = textPrimary)
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            listOf(
+                "pure" to (if (isArabic) "سادة نقي" else "AMOLED"),
+                "aura" to (if (isArabic) "هالة الغلاف 🎨" else "Cover Aura"),
+                "stadium" to (if (isArabic) "استاد الأبطال 🏟️" else "Stadium")
+            ).forEach { (id, label) ->
+                val sel = bgStyle == id
                 Box(
-                    Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(if (active) accent.copy(alpha = 0.20f) else pillBgColor)
-                        .border(1.dp, if (active) accent else Color.Transparent, RoundedCornerShape(50))
-                        .clickable { onSelectBackdrop(id) }
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text(label, color = if (active) accent else textSecondary, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-
-        // ليلي / نهاري / النظام
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(50)).background(pillBgColor).padding(4.dp)) {
-            listOf("DARK" to Pair("ليلي", Icons.Default.DarkMode), "LIGHT" to Pair("نهاري", Icons.Default.LightMode), "SYSTEM" to Pair("النظام", Icons.Default.Contrast)).forEach { (id, pair) ->
-                val active = themeMode == id
-                Row(
-                    Modifier.weight(1f).clip(RoundedCornerShape(50)).background(if (active) accent else Color.Transparent).clickable { onSelectMode(id) }.padding(vertical = 9.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(pair.second, null, tint = if (active) Color.Black else textSecondary, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text(pair.first, color = if (active) Color.Black else textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
-                }
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // الألوان + خلفية المعرض + زر التطبيق
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp).horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                Modifier.size(46.dp).clip(CircleShape).background(accent).clickable(onClick = onApplyAndClose),
-                contentAlignment = Alignment.Center
-            ) { Icon(Icons.Default.Check, "Apply", tint = Color.Black) }
-
-            Box(
-                Modifier.size(46.dp).clip(CircleShape).background(pillBgColor).border(if (hasCustomWallpaper) 2.dp else 0.dp, accent, CircleShape).clickable {
-                    if (hasCustomWallpaper) onClearWallpaper() else onPickWallpaper()
-                },
-                contentAlignment = Alignment.Center
-            ) { Icon(if (hasCustomWallpaper) Icons.Default.Close else Icons.Default.AddPhotoAlternate, null, tint = accent) }
-
-            ACCENT_SWATCHES.forEach { sw ->
-                val selected = accentColorId == sw.id
-                Box(
-                    Modifier.size(46.dp).clip(CircleShape).background(sw.color).border(if (selected) 3.dp else 0.dp, Color.White, CircleShape).clickable { onSelectAccent(sw.id) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (sel) accent.copy(0.2f) else cardColor)
+                        .border(1.dp, if (sel) accent else Color.White.copy(0.08f), RoundedCornerShape(16.dp))
+                        .clickable { onSelectBgStyle(id) }
+                        .padding(vertical = 12.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (sw.id == "DYNAMIC") Icon(Icons.Default.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(20.dp))
-                    else if (selected) Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(22.dp))
+                    Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (sel) accent else textPrimary)
                 }
             }
         }
-    }
-}
 
-// ==========================================================
-// 5. استوديو Glassify & Stadium (تجميل الشاشة الرئيسية + شاشة القفل + الويدجت الزجاجي)
-// ==========================================================
-@Composable
-private fun TitanGlassifyStudioScreen(
-    currentSong: Song?,
-    widgetStyle: String,
-    accent: Color,
-    bgColor: Color,
-    cardColor: Color,
-    textPrimary: Color,
-    textSecondary: Color,
-    onBack: () -> Unit,
-    onSelectWidgetStyle: (String) -> Unit,
-    onPinWidget: () -> Unit,
-    onApplyWallpaper: (GlassPreset, Int) -> Unit
-) {
-    var selectedPreset by remember { mutableStateOf(GLASS_WALLPAPER_PRESETS.first()) }
-
-    Column(
-        Modifier.fillMaxSize().background(bgColor).verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowForward, null, tint = textPrimary) }
-            Column {
-                Text("استوديو Glassify للموبايل", color = textPrimary, fontSize = 19.sp, fontWeight = FontWeight.Black)
-                Text("تنسيق الشاشة الرئيسية وشاشة القفل والويدجت الزجاجي", color = textSecondary, fontSize = 11.5.sp)
-            }
-        }
-
-        // 1. قسم خلفيات الزجاج وملاعب كرة القدم للشاشة الرئيسية والقفل
-        Text("1. خلفيات زجاجية وملاعب (الرئيسية والقفل)", color = accent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            GLASS_WALLPAPER_PRESETS.forEach { preset ->
-                val active = selectedPreset.id == preset.id
-                Column(
-                    Modifier
-                        .width(155.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(cardColor)
-                        .border(if (active) 2.dp else 1.dp, if (active) accent else Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
-                        .clickable { selectedPreset = preset }
-                        .padding(8.dp)
+        Spacer(Modifier.height(18.dp))
+        Text(if (isArabic) "وضع الإضاءة" else "Appearance", fontWeight = FontWeight.Bold, color = textPrimary)
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cardColor).padding(4.dp)
+        ) {
+            listOf(
+                "dark" to (if (isArabic) "ليلي" else "Dark"),
+                "light" to (if (isArabic) "نهاري" else "Light"),
+                "system" to (if (isArabic) "النظام" else "System")
+            ).forEach { (id, label) ->
+                val sel = themeMode == id
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (sel) accent else Color.Transparent)
+                        .clickable { onSelectThemeMode(id) }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(105.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Brush.linearGradient(listOf(preset.c1.copy(alpha = 0.65f), preset.c2))),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            if (preset.id.contains("PITCH") || preset.id.contains("BLAUGRANA")) Icons.Default.SportsSoccer else Icons.Default.AutoAwesome,
-                            null,
-                            tint = Color.White,
-                            modifier = Modifier.size(34.dp)
-                        )
-                        Box(
-                            Modifier.align(Alignment.TopStart).padding(6.dp).clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = 0.5f)).padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(preset.badge, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(preset.title, color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                    Text(preset.subtitle, color = textSecondary, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(label, fontWeight = FontWeight.Bold, color = if (sel) Color.Black else textSecondary)
                 }
             }
         }
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = { onApplyWallpaper(selectedPreset, WallpaperManager.FLAG_SYSTEM) },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = cardColor),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Icon(Icons.Default.Home, null, tint = accent, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("الرئيسية", color = textPrimary, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-            }
-            Button(
-                onClick = { onApplyWallpaper(selectedPreset, WallpaperManager.FLAG_LOCK) },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = cardColor),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Icon(Icons.Default.Lock, null, tint = accent, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("القفل", color = textPrimary, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-            }
-            Button(
-                onClick = { onApplyWallpaper(selectedPreset, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK) },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = accent),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Text("تطبيق للكل", color = Color.Black, fontSize = 11.5.sp, fontWeight = FontWeight.Black)
-            }
-        }
-
-        Spacer(Modifier.height(4.dp))
-
-        // 2. قسم الويدجت الزجاجي (Glassify Widget)
-        Text("2. ويدجت VYRO الزجاجي للشاشة الرئيسية", color = Color(0xFFFFC857), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-        listOf(
-            Triple("Glassify Frost", "زجاج Glassify الشفاف (مربع)", "انعكاس زجاجي أنيق يتلون بغلاف الأغنية"),
-            Triple("Full Poster", "بوستر سينمائي كامل (مربع)", "صورة الأغنية تملأ الويدجت بالكامل"),
-            Triple("Stadium Glass", "زجاج استاد كرة القدم", "خطوط ملعب وكشافات خضراء شفافة"),
-            Triple("Wide Glass", "شريط زجاجي عريض (4x1)", "مناسب لأعلى أو أسفل الشاشة الرئيسية")
-        ).forEach { (id, title, sub) ->
-            val selected = widgetStyle == id
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(cardColor)
-                    .border(if (selected) 2.dp else 0.dp, accent, RoundedCornerShape(16.dp))
-                    .clickable { onSelectWidgetStyle(id) }
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                SongCoverArt(song = currentSong, sizeDp = 42, accent = accent, cornerDp = 10)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(title, color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
-                    Text(sub, color = textSecondary, fontSize = 11.sp)
+        Spacer(Modifier.height(20.dp))
+        Text(if (isArabic) "لون التمييز" else "Accent Color", fontWeight = FontWeight.Bold, color = textPrimary)
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            ACCENT_PALETTE.forEachIndexed { idx, col ->
+                val sel = accentIndex == idx
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .background(col)
+                        .border(if (sel) 3.dp else 0.dp, Color.White, CircleShape)
+                        .clickable { onSelectAccent(idx) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (sel) Icon(Icons.Rounded.Check, null, tint = Color.Black)
                 }
-                if (selected) Icon(Icons.Default.Check, null, tint = accent)
             }
-        }
-
-        Button(
-            onClick = onPinWidget,
-            modifier = Modifier.fillMaxWidth().height(50.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFC857))
-        ) {
-            Icon(Icons.Default.Widgets, null, tint = Color.Black)
-            Spacer(Modifier.width(8.dp))
-            Text("إضافة الويدجت الزجاجي للشاشة الرئيسية", color = Color.Black, fontWeight = FontWeight.Black)
         }
     }
 }
 
-// ==========================================================
-// 6. مركز التحديثات الداخلي + شاشة التحديث الإجباري (بعد 10 أيام)
-// ==========================================================
-@Composable
-private fun TitanUpdatesCenterScreen(
-    availableUpdate: UpdateInfo?,
-    checking: Boolean,
-    statusMsg: String?,
-    daysLeft: Int,
-    isDownloading: Boolean,
-    progress: Float,
-    downloadedFile: File?,
-    accent: Color,
-    bgColor: Color,
-    cardColor: Color,
-    textPrimary: Color,
-    textSecondary: Color,
-    onBack: () -> Unit,
-    onCheckNow: () -> Unit,
-    onShowChangelog: () -> Unit,
-    onDownload: () -> Unit,
-    onInstall: () -> Unit
-) {
-    if (availableUpdate != null) {
-        TitanUpdateDownloadScreen(
-            info = availableUpdate,
-            isMandatory = false,
-            daysLeft = daysLeft,
-            isDownloading = isDownloading,
-            progress = progress,
-            downloadedFile = downloadedFile,
-            accent = accent,
-            bgColor = bgColor,
-            cardColor = cardColor,
-            textPrimary = textPrimary,
-            textSecondary = textSecondary,
-            onBack = onBack,
-            onShowChangelog = onShowChangelog,
-            onDownload = onDownload,
-            onInstall = onInstall
-        )
-    } else {
-        Column(
-            Modifier.fillMaxSize().background(bgColor).padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.Default.ArrowForward, null, tint = textPrimary) }
-                Text("تحديثات VYRO MUSIC", color = textPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.weight(1f))
-            Box(Modifier.size(88.dp).clip(CircleShape).background(accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.SystemUpdate, null, tint = accent, modifier = Modifier.size(44.dp))
-            }
-            Spacer(Modifier.height(16.dp))
-            Text("الإصدار الحالي: $APP_VERSION_NAME", color = textPrimary, fontWeight = FontWeight.Black, fontSize = 18.sp)
-            Spacer(Modifier.height(6.dp))
-            Text(statusMsg ?: "اضغط للتحقق من وجود إصدار أحدث على الخادم", color = textSecondary, fontSize = 13.sp, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(22.dp))
-            Button(
-                onClick = onCheckNow,
-                enabled = !checking,
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = accent),
-                modifier = Modifier.fillMaxWidth(0.75f).height(48.dp)
-            ) {
-                Text(if (checking) "جاري الفحص..." else "التحقق من التحديثات الآن", color = Color.Black, fontWeight = FontWeight.Black)
-            }
-            Spacer(Modifier.weight(1.2f))
-        }
-    }
-}
+// ==================== NOW PLAYING OVERLAY ====================
 
 @Composable
-private fun TitanUpdateDownloadScreen(
-    info: UpdateInfo,
-    isMandatory: Boolean,
-    daysLeft: Int,
-    isDownloading: Boolean,
-    progress: Float,
-    downloadedFile: File?,
+fun NowPlayingOverlay(
+    song: Song,
+    isArabic: Boolean,
     accent: Color,
-    bgColor: Color,
-    cardColor: Color,
-    textPrimary: Color,
-    textSecondary: Color,
-    onBack: (() -> Unit)?,
-    onShowChangelog: () -> Unit,
-    onDownload: () -> Unit,
-    onInstall: () -> Unit
+    isPlaying: Boolean,
+    position: Long,
+    duration: Long,
+    shuffleOn: Boolean,
+    repeatMode: Int,
+    isFav: Boolean,
+    spatial8D: Boolean,
+    vinylMode: Boolean,
+    showWaves: Boolean,
+    onClose: () -> Unit,
+    onSeek: (Long) -> Unit,
+    onTogglePlay: () -> Unit,
+    onNext: () -> Unit,
+    onPrev: () -> Unit,
+    onToggleShuffle: () -> Unit,
+    onCycleRepeat: () -> Unit,
+    onToggleFav: () -> Unit,
+    onOpenEq: () -> Unit,
+    onToggle8D: () -> Unit,
+    onOpenLyrics: () -> Unit,
+    onOpenCarMode: () -> Unit,
+    onAddToPlaylist: () -> Unit
 ) {
+    val inf = rememberInfiniteTransition(label = "np")
+    val spin by inf.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(11000, easing = LinearEasing)),
+        label = "vinyl"
+    )
+    val wavePhase by inf.animateFloat(
+        initialValue = 0f,
+        targetValue = 6.283f,
+        animationSpec = infiniteRepeatable(tween(1400, easing = LinearEasing), RepeatMode.Restart),
+        label = "wave"
+    )
+
     Column(
-        Modifier.fillMaxSize().background(bgColor).padding(20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
-    ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            if (!isMandatory && onBack != null) {
-                IconButton(onClick = onBack) { Icon(Icons.Default.ArrowForward, null, tint = textPrimary) }
-            }
-            Text(
-                if (isMandatory) "تحديث إجباري مطلوب" else "تحديث جديد متوفر",
-                color = if (isMandatory) Color(0xFFFF5263) else textPrimary,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Black
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(accent.copy(alpha = 0.28f), Color(0xFF0A0D14), Color(0xFF040508))
+                )
             )
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Top Header
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onClose) { Icon(Icons.Rounded.KeyboardArrowDown, null, tint = Color.White, modifier = Modifier.size(30.dp)) }
+            Text(
+                "VYRO STUDIO PLAYER",
+                color = Color.White,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.4.sp,
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onOpenCarMode) { Icon(Icons.Rounded.DirectionsCar, null, tint = Color.White) }
+            IconButton(onClick = onAddToPlaylist) { Icon(Icons.Rounded.QueueMusic, null, tint = Color.White) }
         }
 
-        Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(cardColor).padding(22.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        Spacer(Modifier.height(16.dp))
+
+        // Album Art (Rounded Square or Spinning Vinyl)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.84f)
+                .aspectRatio(1f)
+                .rotate(if (vinylMode && isPlaying) spin else 0f),
+            contentAlignment = Alignment.Center
         ) {
-            Box(Modifier.size(72.dp).clip(CircleShape).background(accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Download, null, tint = accent, modifier = Modifier.size(36.dp))
-            }
-            Text(info.title.ifBlank { "VYRO MUSIC ${info.tagName}" }, color = textPrimary, fontWeight = FontWeight.Black, fontSize = 18.sp, textAlign = TextAlign.Center)
-            Text(
-                if (isMandatory) "انتهت مهلة الـ 10 أيام. يجب تحديث التطبيق الآن للاستمرار في استخدام VYRO MUSIC."
-                else "الإصدار ${info.tagName} جاهز للتحميل الداخلي المباشر (متبقي $daysLeft أيام قبل التحديث الإجباري).",
-                color = textSecondary,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center
+            SongCoverImage(
+                song = song,
+                accent = accent,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(if (vinylMode) CircleShape else RoundedCornerShape(28.dp))
+                    .border(2.dp, Color.White.copy(0.14f), if (vinylMode) CircleShape else RoundedCornerShape(28.dp))
             )
-
-            OutlinedButton(onClick = onShowChangelog, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.NewReleases, null, tint = accent, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("ما الجديد في هذا التحديث؟", color = accent, fontWeight = FontWeight.Bold)
+            if (vinylMode) {
+                Box(Modifier.size(34.dp).clip(CircleShape).background(Color(0xFF0A0D14)).border(2.dp, accent, CircleShape))
             }
+        }
 
-            if (isDownloading) {
-                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50)),
-                            color = accent
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Text("جاري التحميل داخل التطبيق... ${(progress * 100).toInt()}%", color = accent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
+        Spacer(Modifier.height(18.dp))
+
+        // Animated Audio Wave
+        if (showWaves) {
+            Canvas(modifier = Modifier.fillMaxWidth().height(34.dp)) {
+                val bars = 38
+                val step = size.width / bars
+                for (i in 0 until bars) {
+                    val h = if (isPlaying) {
+                        ((sin(wavePhase + i * 0.45f) + 1f) * 0.42f + 0.14f) * size.height
+                    } else size.height * 0.12f
+                    val x = i * step + step / 2f
+                    drawLine(
+                        color = accent.copy(alpha = 0.85f),
+                        start = Offset(x, size.height / 2f - h / 2f),
+                        end = Offset(x, size.height / 2f + h / 2f),
+                        strokeWidth = 4.5f
+                    )
                 }
             }
         }
 
-        Button(
-            onClick = { if (downloadedFile != null) onInstall() else onDownload() },
-            enabled = !isDownloading,
-            modifier = Modifier.fillMaxWidth().height(54.dp),
-            shape = RoundedCornerShape(18.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = accent)
+        Spacer(Modifier.height(10.dp))
+
+        // Title + Artist + Favorite
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(song.title, color = Color.White, fontWeight = FontWeight.Black, fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(3.dp))
+                Text(song.artist, color = Color.White.copy(0.68f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            IconButton(onClick = onToggleFav) {
+                Icon(
+                    if (isFav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    null,
+                    tint = if (isFav) Color(0xFFFF4081) else Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // Seekbar
+        Slider(
+            value = position.toFloat().coerceIn(0f, duration.coerceAtLeast(1L).toFloat()),
+            onValueChange = { onSeek(it.toLong()) },
+            valueRange = 0f..duration.coerceAtLeast(1L).toFloat(),
+            colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = accent, inactiveTrackColor = Color.White.copy(0.22f))
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(formatMs(position), color = Color.White.copy(0.75f), fontSize = 12.sp)
+            Text("VYRO CRYSTAL AUDIO", color = accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Text(formatMs(duration), color = Color.White.copy(0.75f), fontSize = 12.sp)
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Transport Controls
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.Download, null, tint = Color.Black)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                when {
-                    isDownloading -> "جاري التنزيل..."
-                    downloadedFile != null -> "تثبيت التحديث الآن"
-                    else -> "تنزيل التحديث (${info.tagName})"
-                },
-                color = Color.Black,
-                fontWeight = FontWeight.Black,
-                fontSize = 15.sp
+            IconButton(onClick = onToggleShuffle) {
+                Icon(Icons.Rounded.Shuffle, null, tint = if (shuffleOn) accent else Color.White.copy(0.55f))
+            }
+            IconButton(onClick = onPrev) {
+                Icon(Icons.Rounded.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(36.dp))
+            }
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .background(Color.White)
+                    .clickable { onTogglePlay() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(38.dp))
+            }
+            IconButton(onClick = onNext) {
+                Icon(Icons.Rounded.SkipNext, null, tint = Color.White, modifier = Modifier.size(36.dp))
+            }
+            IconButton(onClick = onCycleRepeat) {
+                val ic = if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat
+                Icon(ic, null, tint = if (repeatMode != Player.REPEAT_MODE_OFF) accent else Color.White.copy(0.55f))
+            }
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        // Bottom Feature Pills
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            PlayerBottomPill(
+                label = if (isArabic) "معادل الصوت" else "EQ Studio",
+                icon = Icons.Rounded.Equalizer,
+                active = false,
+                accent = accent,
+                modifier = Modifier.weight(1f),
+                onClick = onOpenEq
+            )
+            PlayerBottomPill(
+                label = if (isArabic) "8D محيطي" else "8D Spatial",
+                icon = Icons.Rounded.Headphones,
+                active = spatial8D,
+                accent = accent,
+                modifier = Modifier.weight(1f),
+                onClick = onToggle8D
+            )
+            PlayerBottomPill(
+                label = if (isArabic) "الكلمات" else "Lyrics",
+                icon = Icons.Rounded.Article,
+                active = false,
+                accent = accent,
+                modifier = Modifier.weight(1f),
+                onClick = onOpenLyrics
             )
         }
     }
 }
 
-// ==========================================================
-// 7. شاشة الإعدادات المرتبة في بطاقات مستقلة
-// ==========================================================
 @Composable
-private fun TitanSettingsScreen(
-    listenSeconds: Long,
-    viewSize: String,
-    liveBackdrop: String,
-    langSetting: String,
-    sleepRemainingSec: Int,
-    hiddenCount: Int,
-    widgetStyle: String,
-    hasUpdate: Boolean,
-    updateTag: String?,
+fun PlayerBottomPill(
+    label: String,
+    icon: ImageVector,
+    active: Boolean,
     accent: Color,
-    bgColor: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (active) accent.copy(0.24f) else Color.White.copy(0.06f))
+            .border(1.dp, if (active) accent else Color.White.copy(0.22f), RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .padding(vertical = 10.dp, horizontal = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, tint = if (active) accent else Color.White, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(5.dp))
+        Text(label, color = if (active) accent else Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+}
+
+// ==================== SETTINGS SCREEN ====================
+
+@Composable
+fun SettingsScreen(
+    isArabic: Boolean,
+    appVersion: String,
+    accent: Color,
     cardColor: Color,
     textPrimary: Color,
     textSecondary: Color,
-    onBack: () -> Unit,
-    onOpenStats: () -> Unit,
+    updateAvailable: Boolean,
+    listenSeconds: Long,
+    tracksPlayed: Int,
+    bgStyle: String,
+    listLayout: String,
+    widgetStyle: String,
+    sleepMinutesLeft: Int,
+    hiddenCount: Int,
     onOpenUpdates: () -> Unit,
-    onBackup: () -> Unit,
-    onRestore: () -> Unit,
+    onExportBackup: () -> Unit,
+    onImportBackup: () -> Unit,
     onOpenThemeStudio: () -> Unit,
     onOpenGlassify: () -> Unit,
-    onOpenLanguage: () -> Unit,
-    onOpenSleep: () -> Unit,
-    onOpenHiddenFiles: () -> Unit,
-    onOpenPlaybackSettings: () -> Unit,
-    onPreventStop: () -> Unit,
-    onOpenNotifications: () -> Unit,
-    onReplayTutorial: () -> Unit,
-    onRequestReset: () -> Unit,
-    onOpenAbout: () -> Unit
+    onToggleLanguage: () -> Unit,
+    onOpenSleepTimer: () -> Unit,
+    onOpenHidden: () -> Unit,
+    onOpenPlayerPrefs: () -> Unit,
+    onBatteryOptimization: () -> Unit,
+    onNotificationSettings: () -> Unit,
+    onRestartTour: () -> Unit,
+    onResetDefaults: () -> Unit,
+    onOpenAbout: () -> Unit,
+    onBack: () -> Unit
 ) {
-    val sizeAr = when (viewSize) { "SMALL" -> "صغير"; "LARGE" -> "كبير"; else -> "وسط" }
-    val themeSummary = "${LIVE_BACKDROPS.firstOrNull { it.first == liveBackdrop }?.second ?: "سادة"} / $sizeAr"
-    val langSummary = when (langSetting) { "EN" -> "English"; "SYSTEM" -> "النظام"; else -> "العربية" }
-    val sleepSummary = if (sleepRemainingSec > 0) "${sleepRemainingSec / 60} دقيقة" else "إيقاف"
-
-    Column(
-        Modifier.fillMaxSize().background(bgColor).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowForward, null, tint = textPrimary) }
-            Text("الإعدادات", color = textPrimary, fontSize = 24.sp, fontWeight = FontWeight.Black)
+            IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, null, tint = textPrimary) }
+            Text(if (isArabic) "الإعدادات" else "Settings", fontWeight = FontWeight.Black, fontSize = 22.sp, color = textPrimary)
         }
+        Spacer(Modifier.height(12.dp))
 
-        // بطاقة 1: التحديثات والإحصائيات والنسخ الاحتياطي
-        SettingsGroupCard(cardColor) {
-            SettingsRowItem(
-                icon = Icons.Default.SystemUpdate,
-                title = "تحديثات التطبيق",
-                subtitle = if (hasUpdate) "يتوفر إصدار جديد جاهز للتنزيل!" else "فحص التحديثات وما الجديد",
-                trailingValue = if (hasUpdate) updateTag else "محدث",
-                iconTint = if (hasUpdate) Color(0xFFFF5263) else accent,
+        // Group 1: Updates, Stats, Backup
+        SettingsCardGroup(cardColor) {
+            SettingsRow(
+                icon = Icons.Rounded.SystemUpdate,
+                tint = if (updateAvailable) Color(0xFF00E676) else accent,
+                title = if (isArabic) "تحديثات التطبيق" else "App Updates",
+                subtitle = if (isArabic) "فحص التحديثات وما الجديد" else "Check updates & changelog",
+                trailing = if (updateAvailable) (if (isArabic) "تحديث جديد!" else "Update!") else (if (isArabic) "محدث" else "Latest"),
                 textPrimary = textPrimary,
                 textSecondary = textSecondary,
                 onClick = onOpenUpdates
             )
-            SettingsDivider()
-            SettingsRowItem(Icons.Default.Schedule, "وقت التشغيل", null, formatListenHours(listenSeconds), null, textPrimary, textSecondary, onOpenStats)
-            SettingsDivider()
-            SettingsRowItem(Icons.Default.CloudUpload, "تصدير نسخة احتياطية (JSON)", null, null, null, textPrimary, textSecondary, onBackup)
-            SettingsDivider()
-            SettingsRowItem(Icons.Default.CloudDownload, "استعادة نسخة احتياطية", null, null, null, textPrimary, textSecondary, onRestore)
+            SettingsRow(
+                icon = Icons.Rounded.AccessTime,
+                tint = textPrimary,
+                title = if (isArabic) "وقت التشغيل" else "Listening Time",
+                subtitle = if (isArabic) "$tracksPlayed مقطع تم تشغيله" else "$tracksPlayed tracks played",
+                trailing = formatHoursMinutes(listenSeconds),
+                textPrimary = textPrimary,
+                textSecondary = textSecondary,
+                onClick = {}
+            )
+            SettingsRow(
+                icon = Icons.Rounded.CloudUpload,
+                tint = textPrimary,
+                title = if (isArabic) "تصدير نسخة احتياطية (JSON)" else "Export Backup (JSON)",
+                subtitle = null,
+                trailing = "",
+                textPrimary = textPrimary,
+                textSecondary = textSecondary,
+                onClick = onExportBackup
+            )
+            SettingsRow(
+                icon = Icons.Rounded.CloudDownload,
+                tint = textPrimary,
+                title = if (isArabic) "استعادة نسخة احتياطية" else "Restore Backup",
+                subtitle = null,
+                trailing = "",
+                textPrimary = textPrimary,
+                textSecondary = textSecondary,
+                onClick = onImportBackup
+            )
         }
 
-        // بطاقة 2: المظهر و Glassify واللغة والنوم
-        SettingsGroupCard(cardColor) {
-            SettingsRowItem(Icons.Default.Palette, "استوديو السمات والواجهة", null, themeSummary, accent, textPrimary, textSecondary, onOpenThemeStudio)
-            SettingsDivider()
-            SettingsRowItem(Icons.Default.Widgets, "تجميل الموبايل وويدجت Glassify", "خلفيات زجاجية وملاعب للرئيسية والقفل", widgetStyle, Color(0xFFFFC857), textPrimary, textSecondary, onOpenGlassify)
-            SettingsDivider()
-            SettingsRowItem(Icons.Default.Language, "اللغة", null, langSummary, null, textPrimary, textSecondary, onOpenLanguage)
-            SettingsDivider()
-            SettingsRowItem(Icons.Default.Bedtime, "مؤقت النوم", null, sleepSummary, null, textPrimary, textSecondary, onOpenSleep)
+        Spacer(Modifier.height(14.dp))
+
+        // Group 2: Theme, Glassify, Language, Sleep
+        SettingsCardGroup(cardColor) {
+            SettingsRow(
+                icon = Icons.Rounded.Palette,
+                tint = accent,
+                title = if (isArabic) "استوديو السمات والواجهة" else "Theme Studio",
+                subtitle = null,
+                trailing = "$bgStyle / $listLayout",
+                textPrimary = textPrimary,
+                textSecondary = textSecondary,
+                onClick = onOpenThemeStudio
+            )
+            SettingsRow(
+                icon = Icons.Rounded.Dashboard,
+                tint = Color(0xFFFFC857),
+                title = if (isArabic) "متجر الخلفيات وويدجت Glassify" else "HD Wallpapers & Glassify",
+                subtitle = if (isArabic) "خلفيات HD حقيقية + 14 شكل ويدجت" else "Real HD Wallpapers + 14 Widgets",
+                trailing = widgetStyle,
+                textPrimary = textPrimary,
+                textSecondary = textSecondary,
+                onClick = onOpenGlassify
+            )
+            SettingsRow(
+                icon = Icons.Rounded.Language,
+                tint = textPrimary,
+                title = if (isArabic) "اللغة" else "Language",
+                subtitle = null,
+                trailing = if (isArabic) "العربية" else "English",
+                textPrimary = textPrimary,
+                textSecondary = textSecondary,
+                onClick = onToggleLanguage
+            )
+            SettingsRow(
+                icon = Icons.Rounded.Bedtime,
+                tint = textPrimary,
+                title = if (isArabic) "مؤقت النوم" else "Sleep Timer",
+                subtitle = null,
+                trailing = if (sleepMinutesLeft > 0) "${sleepMinutesLeft}m" else (if (isArabic) "إيقاف" else "Off"),
+                textPrimary = textPrimary,
+                textSecondary = textSecondary,
+                onClick = onOpenSleepTimer
+            )
         }
 
-        // بطاقة 3: المكتبة والتشغيل
-        SettingsGroupCard(cardColor) {
-            SettingsRowItem(Icons.Default.VisibilityOff, "الملفات المخفية", null, "$hiddenCount ملف", null, textPrimary, textSecondary, onOpenHiddenFiles)
-            SettingsDivider()
-            SettingsRowItem(Icons.Default.Headphones, "إعدادات التشغيل والمشغل", "8D • Crossfade • شكل القرص والموجات", null, null, textPrimary, textSecondary, onOpenPlaybackSettings)
-            SettingsDivider()
-            SettingsRowItem(Icons.Default.BatteryChargingFull, "منع توقف الموسيقى", "استثناء من توفير البطارية", null, null, textPrimary, textSecondary, onPreventStop)
-            SettingsDivider()
-            SettingsRowItem(Icons.Default.Notifications, "إعدادات الإشعارات", null, null, null, textPrimary, textSecondary, onOpenNotifications)
+        Spacer(Modifier.height(14.dp))
+
+        // Group 3: Hidden, Playback, Battery, Notifications
+        SettingsCardGroup(cardColor) {
+            SettingsRow(
+                icon = Icons.Rounded.VisibilityOff,
+                tint = textPrimary,
+                title = if (isArabic) "الملفات المخفية" else "Hidden Files",
+                subtitle = null,
+                trailing = if (isArabic) "$hiddenCount ملف" else "$hiddenCount files",
+                textPrimary = textPrimary,
+                textSecondary = textSecondary,
+                onClick = onOpenHidden
+            )
+            SettingsRow(
+                icon = Icons.Rounded.Headphones,
+                tint = textPrimary,
+                title = if (isArabic) "إعدادات التشغيل والمشغل" else "Playback & Player",
+                subtitle = if (isArabic) "8D • شكل القرص والموجات" else "8D • Disc & Waves",
+                trailing = "",
+                textPrimary = textPrimary,
+                textSecondary = textSecondary,
+                onClick = onOpenPlayerPrefs
+            )
+            SettingsRow(
+                icon = Icons.Rounded.BatteryStd,
+                tint = textPrimary,
+                title = if (isArabic) "منع توقف الموسيقى" else "Keep Playing in Background",
+                subtitle = if (isArabic) "استثناء من توفير البطارية" else "Battery optimization exemption",
+                trailing = "",
+                textPrimary = textPrimary,
+                textSecondary = textSecondary,
+                onClick = onBatteryOptimization
+            )
+            SettingsRow(
+                icon = Icons.Rounded.Notifications,
+                tint = textPrimary,
+                title = if (isArabic) "إعدادات الإشعارات" else "Notification Settings",
+                subtitle = null,
+                trailing = "",
+                textPrimary = textPrimary,
+                textSecondary = textSecondary,
+                onClick = onNotificationSettings
+            )
         }
 
-        // بطاقة 4: الجولة التعليمية وإعادة الضبط وحول
-        SettingsGroupCard(cardColor) {
-            SettingsRowItem(Icons.Default.HelpOutline, "إعادة تشغيل الجولة التعليمية", "شرح جميع أزرار ومميزات التطبيق", null, accent, textPrimary, textSecondary, onReplayTutorial)
-            SettingsDivider()
-            SettingsRowItem(Icons.Default.RestartAlt, "إعادة ضبط الإعدادات الافتراضية", null, null, Color(0xFFFF5263), Color(0xFFFF5263), textSecondary, onRequestReset)
-            SettingsDivider()
-            SettingsRowItem(Icons.Default.Info, "حول التطبيق", null, APP_VERSION_NAME, null, textPrimary, textSecondary, onOpenAbout)
+        Spacer(Modifier.height(14.dp))
+
+        // Group 4: Tour, Reset, About
+        SettingsCardGroup(cardColor) {
+            SettingsRow(
+                icon = Icons.Rounded.HelpOutline,
+                tint = accent,
+                title = if (isArabic) "إعادة تشغيل الجولة التعليمية" else "Restart Guided Tour",
+                subtitle = if (isArabic) "شرح جميع أزرار ومميزات التطبيق" else "Walkthrough of app controls",
+                trailing = "",
+                textPrimary = textPrimary,
+                textSecondary = textSecondary,
+                onClick = onRestartTour
+            )
+            SettingsRow(
+                icon = Icons.Rounded.Refresh,
+                tint = Color(0xFFFF5252),
+                title = if (isArabic) "إعادة ضبط الإعدادات الافتراضية" else "Reset Default Settings",
+                subtitle = null,
+                trailing = "",
+                textPrimary = Color(0xFFFF5252),
+                textSecondary = textSecondary,
+                onClick = onResetDefaults
+            )
+            SettingsRow(
+                icon = Icons.Rounded.Info,
+                tint = textPrimary,
+                title = if (isArabic) "حول التطبيق" else "About App",
+                subtitle = null,
+                trailing = appVersion,
+                textPrimary = textPrimary,
+                textSecondary = textSecondary,
+                onClick = onOpenAbout
+            )
+        }
+    }
+}
+
+// ==================== DIALOGS & AUXILIARY UI ====================
+
+@Composable
+fun AudioStudioDialog(
+    isArabic: Boolean,
+    accent: Color,
+    spatial8D: Boolean,
+    bandGains: List<Float>,
+    bassStrength: Int,
+    virtStrength: Int,
+    loudnessGain: Int,
+    speed: Float,
+    pitch: Float,
+    onToggle8D: (Boolean) -> Unit,
+    onUpdateBand: (Int, Float) -> Unit,
+    onUpdateBass: (Int) -> Unit,
+    onUpdateVirt: (Int) -> Unit,
+    onUpdateLoudness: (Int) -> Unit,
+    onUpdateSpeed: (Float) -> Unit,
+    onUpdatePitch: (Float) -> Unit,
+    onApplyPreset: (List<Float>, Int, Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color(0xFF0E131F))
+                .border(1.dp, accent.copy(0.4f), RoundedCornerShape(24.dp))
+                .verticalScroll(rememberScrollState())
+                .padding(18.dp)
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Equalizer, null, tint = accent)
+                Spacer(Modifier.width(8.dp))
+                Text(if (isArabic) "استوديو الصوت الـ 8D والمعادل" else "8D Audio & EQ Studio", color = Color.White, fontWeight = FontWeight.Black, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, null, tint = Color.White) }
+            }
+
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(accent.copy(0.14f)).padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(if (isArabic) "تفعيل الصوت المحيطي 8D" else "Enable 8D Surround", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Switch(checked = spatial8D, onCheckedChange = onToggle8D)
+            }
+
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                listOf(
+                    "Phonk Bass" to Triple(listOf(0.75f, 0.45f, 0.05f, 0.28f, 0.50f), 78, 50),
+                    "Crystal Clear" to Triple(listOf(0.28f, 0.16f, 0.0f, 0.14f, 0.24f), 35, 30),
+                    "Stadium 8D" to Triple(listOf(0.50f, 0.25f, 0.20f, 0.40f, 0.60f), 55, 92),
+                    "Flat" to Triple(listOf(0f, 0f, 0f, 0f, 0f), 0, 0)
+                ).forEach { (name, cfg) ->
+                    AssistChip(
+                        onClick = { onApplyPreset(cfg.first, cfg.second, cfg.third) },
+                        label = { Text(name, color = Color.White, fontSize = 11.sp) }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            val labels = listOf("60Hz", "230Hz", "910Hz", "3.6kHz", "14kHz")
+            labels.forEachIndexed { idx, hz ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(hz, color = Color.White.copy(0.75f), fontSize = 12.sp, modifier = Modifier.width(50.dp))
+                    Slider(
+                        value = bandGains.getOrElse(idx) { 0f },
+                        onValueChange = { onUpdateBand(idx, it) },
+                        valueRange = -1f..1f,
+                        modifier = Modifier.weight(1f),
+                        colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent)
+                    )
+                }
+            }
+
+            Text("SUB-BASS POWER ($bassStrength%)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Slider(value = bassStrength.toFloat(), onValueChange = { onUpdateBass(it.toInt()) }, valueRange = 0f..100f)
+
+            Text("3D STAGE ($virtStrength%)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Slider(value = virtStrength.toFloat(), onValueChange = { onUpdateVirt(it.toInt()) }, valueRange = 0f..100f)
+
+            Text("EXTRA GAIN ($loudnessGain%)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Slider(value = loudnessGain.toFloat(), onValueChange = { onUpdateLoudness(it.toInt()) }, valueRange = 0f..100f)
+
+            Text(
+                String.format(Locale.US, "SPEED %.2fx • PITCH %.2fx", speed, pitch),
+                color = accent,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Slider(value = speed, onValueChange = onUpdateSpeed, valueRange = 0.5f..2.0f)
+            Slider(value = pitch, onValueChange = onUpdatePitch, valueRange = 0.5f..2.0f)
         }
     }
 }
 
 @Composable
-private fun SettingsGroupCard(cardColor: Color, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(cardColor).padding(vertical = 4.dp), content = content)
+fun LyricsDialog(song: Song, isArabic: Boolean, accent: Color, prefs: SharedPreferences, onDismiss: () -> Unit) {
+    val key = "lyrics_${song.id}"
+    var text by remember { mutableStateOf(prefs.getString(key, "") ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (isArabic) "كلمات الأغنية" else "Lyrics", fontWeight = FontWeight.Bold) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier.fillMaxWidth().height(220.dp),
+                placeholder = { Text(if (isArabic) "الصق كلمات الأغنية هنا ليتم حفظها..." else "Paste song lyrics here to save...") }
+            )
+        },
+        confirmButton = {
+            Button(onClick = {
+                prefs.edit().putString(key, text).apply()
+                onDismiss()
+            }, colors = ButtonDefaults.buttonColors(containerColor = accent)) {
+                Text(if (isArabic) "حفظ" else "Save", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(if (isArabic) "إغلاق" else "Close") } }
+    )
 }
 
 @Composable
-private fun SettingsDivider() {
-    Box(Modifier.fillMaxWidth().padding(horizontal = 18.dp).height(0.6.dp).background(Color.White.copy(alpha = 0.06f)))
+fun CarModeOverlay(
+    song: Song,
+    accent: Color,
+    isPlaying: Boolean,
+    onTogglePlay: () -> Unit,
+    onNext: () -> Unit,
+    onPrev: () -> Unit,
+    onClose: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().background(Color.Black).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, null, tint = Color.White, modifier = Modifier.size(34.dp)) }
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(song.title, color = Color.White, fontWeight = FontWeight.Black, fontSize = 28.sp, textAlign = TextAlign.Center, maxLines = 2)
+            Spacer(Modifier.height(8.dp))
+            Text(song.artist, color = accent, fontSize = 18.sp)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onPrev, modifier = Modifier.size(80.dp)) {
+                Icon(Icons.Rounded.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(58.dp))
+            }
+            Box(
+                Modifier.size(110.dp).clip(CircleShape).background(accent).clickable { onTogglePlay() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(62.dp))
+            }
+            IconButton(onClick = onNext, modifier = Modifier.size(80.dp)) {
+                Icon(Icons.Rounded.SkipNext, null, tint = Color.White, modifier = Modifier.size(58.dp))
+            }
+        }
+        Spacer(Modifier.height(20.dp))
+    }
 }
 
 @Composable
-private fun SettingsRowItem(
-    icon: ImageVector,
+fun OnboardingTourOverlay(
+    isArabic: Boolean,
+    step: Int,
+    accent: Color,
+    onNext: () -> Unit,
+    onSkip: () -> Unit
+) {
+    val steps = if (isArabic) listOf(
+        "أهلاً بك في VYRO MUSIC TITAN 🎧" to "مشغلك الاحترافي السريع بدون أي إعلانات وبصوت نقي تلقائياً.",
+        "متجر الخلفيات HD وويدجت Glassify 🏟️" to "اضغط أيقونة المربعات الذهبية فوق لتصفح ملايين الخلفيات الحقيقية (كامب نو، جبال، بحار) و14 شكل ويدجت!",
+        "استوديو السمات الحي 🎨" to "اضغط أيقونة الألوان لتغيير شكل عرض أغانيك ولون التطبيق ووضع الإضاءة فوراً.",
+        "صوت محيطي 8D وتحديثات تلقائية ⚡" to "من شاشة المشغل فعّل 8D والمعادل، ومن الإعدادات تابع التحديثات التلقائية."
+    ) else listOf(
+        "Welcome to VYRO MUSIC TITAN 🎧" to "Fast, ad-free music player with Crystal Audio.",
+        "HD Wallpaper & Glassify Studio 🏟️" to "Tap the gold grid icon to browse millions of real HD wallpapers & 14 widgets!",
+        "Live Theme Studio 🎨" to "Tap the palette icon to customize layouts, atmosphere, and accent colors.",
+        "8D Surround & Auto-Updates ⚡" to "Toggle 8D & EQ in the player, and get seamless updates in Settings."
+    )
+    val (title, body) = steps[step.coerceIn(0, steps.lastIndex)]
+
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.75f)).clickable(enabled = false) {},
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.86f)
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color(0xFF101624))
+                .border(1.5.dp, accent, RoundedCornerShape(24.dp))
+                .padding(22.dp)
+        ) {
+            Text("${step + 1} / ${steps.size}", color = accent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Spacer(Modifier.height(6.dp))
+            Text(title, color = Color.White, fontWeight = FontWeight.Black, fontSize = 18.sp)
+            Spacer(Modifier.height(10.dp))
+            Text(body, color = Color.White.copy(0.82f), fontSize = 14.sp, lineHeight = 20.sp)
+            Spacer(Modifier.height(18.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = onSkip) { Text(if (isArabic) "تخطي" else "Skip", color = Color.White.copy(0.65f)) }
+                Button(onClick = onNext, colors = ButtonDefaults.buttonColors(containerColor = accent)) {
+                    Text(
+                        if (step < steps.lastIndex) (if (isArabic) "التالي" else "Next") else (if (isArabic) "ابدأ الآن" else "Start"),
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun UpdateCenterDialog(
+    isArabic: Boolean,
+    currentVersion: String,
+    accent: Color,
+    release: ReleaseInfo?,
+    isChecking: Boolean,
+    onRefresh: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var downloadProgress by remember { mutableFloatStateOf(-1f) }
+
+    val hasNew = release != null && isNewerVersion(currentVersion, release.tag)
+
+    AlertDialog(
+        onDismissRequest = { if (downloadProgress < 0f) onDismiss() },
+        title = {
+            Text(
+                if (hasNew) (if (isArabic) "تحديث جديد متوفر 🚀" else "Update Available 🚀")
+                else (if (isArabic) "مركز التحديثات" else "Update Center"),
+                fontWeight = FontWeight.Black
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(if (isArabic) "الإصدار الحالي: $currentVersion" else "Current: $currentVersion", fontSize = 13.sp)
+                if (isChecking) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = accent)
+                        Spacer(Modifier.width(10.dp))
+                        Text(if (isArabic) "جاري فحص التحديثات..." else "Checking...")
+                    }
+                } else if (release != null) {
+                    Text(
+                        if (isArabic) "أحدث إصدار: ${release.name}" else "Latest: ${release.name}",
+                        fontWeight = FontWeight.Bold,
+                        color = accent
+                    )
+                    if (release.notes.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 180.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White.copy(0.06f))
+                                .verticalScroll(rememberScrollState())
+                                .padding(10.dp)
+                        ) {
+                            Text(release.notes, fontSize = 12.sp)
+                        }
+                    }
+                } else {
+                    Text(if (isArabic) "اضغط فحص للتحقق من آخر إصدار على GitHub." else "Tap Check to inspect latest GitHub release.")
+                }
+
+                if (downloadProgress >= 0f) {
+                    LinearProgressIndicator(progress = { downloadProgress }, modifier = Modifier.fillMaxWidth(), color = accent)
+                    Text("${(downloadProgress * 100).toInt()}%", fontSize = 12.sp, color = accent)
+                }
+            }
+        },
+        confirmButton = {
+            if (hasNew && release != null && release.apkUrl.isNotBlank()) {
+                Button(
+                    enabled = downloadProgress < 0f,
+                    onClick = {
+                        scope.launch {
+                            downloadProgress = 0.05f
+                            downloadAndInstallApk(context, release.apkUrl, release.htmlUrl) { p -> downloadProgress = p }
+                            downloadProgress = -1f
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = accent)
+                ) {
+                    Text(if (isArabic) "تنزيل وتثبيت الآن" else "Download & Install", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Button(onClick = onRefresh, colors = ButtonDefaults.buttonColors(containerColor = accent)) {
+                    Text(if (isArabic) "فحص الآن" else "Check Now", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(if (isArabic) "إغلاق" else "Close") }
+        }
+    )
+}
+
+// ==================== REUSABLE UI HELPERS ====================
+
+@Composable
+fun SongCoverImage(song: Song, accent: Color, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    var bmp by remember(song.id) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(song.id) {
+        bmp = VyroMediaCache.loadSongArt(context, song)?.asImageBitmap()
+    }
+    Box(
+        modifier = modifier.background(Brush.linearGradient(listOf(accent.copy(0.35f), Color(0xFF131A29)))),
+        contentAlignment = Alignment.Center
+    ) {
+        if (bmp != null) {
+            Image(bitmap = bmp!!, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        } else {
+            Icon(Icons.Rounded.MusicNote, null, tint = Color.White.copy(0.75f))
+        }
+    }
+}
+
+@Composable
+fun SmartPlaylistCard(
     title: String,
-    subtitle: String? = null,
-    trailingValue: String? = null,
-    iconTint: Color? = null,
+    subtitle: String,
+    icon: ImageVector,
+    iconTint: Color,
+    cardColor: Color,
     textPrimary: Color,
     textSecondary: Color,
     onClick: () -> Unit
 ) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 18.dp, vertical = 15.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(cardColor)
+            .clickable { onClick() }
+            .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, null, tint = iconTint ?: textPrimary.copy(alpha = 0.85f), modifier = Modifier.size(22.dp))
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, color = textPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            if (!subtitle.isNullOrBlank()) Text(subtitle, color = textSecondary, fontSize = 11.5.sp)
-        }
-        if (!trailingValue.isNullOrBlank()) {
-            Text(trailingValue, color = textSecondary, fontSize = 13.sp, maxLines = 1)
-            Spacer(Modifier.width(4.dp))
-        }
-        Icon(Icons.Default.ChevronLeft, null, tint = textSecondary, modifier = Modifier.size(18.dp))
-    }
-}
-
-@Composable
-private fun TitanPlaybackSettingsScreen(
-    spatial8D: Boolean,
-    shakeSkip: Boolean,
-    crossfadeSec: Int,
-    discStyle: String,
-    waveStyle: String,
-    accent: Color,
-    bgColor: Color,
-    cardColor: Color,
-    textPrimary: Color,
-    textSecondary: Color,
-    onBack: () -> Unit,
-    onToggle8D: () -> Unit,
-    onToggleShake: () -> Unit,
-    onChangeCrossfade: (Int) -> Unit,
-    onSelectDisc: (String) -> Unit,
-    onSelectWave: (String) -> Unit
-) {
-    Column(
-        Modifier.fillMaxSize().background(bgColor).verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowForward, null, tint = textPrimary) }
-            Text("إعدادات التشغيل والمشغل", color = textPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        }
-
-        SettingsGroupCard(cardColor) {
-            ToggleSettingsRow("صوت محيطي 8D", "توزيع صوتي يدور حول الرأس 360°", spatial8D, textPrimary, textSecondary, onToggle8D)
-            SettingsDivider()
-            ToggleSettingsRow("هز الهاتف لتغيير الأغنية", "Shake-to-Skip أثناء التشغيل", shakeSkip, textPrimary, textSecondary, onToggleShake)
-        }
-
-        SettingsGroupCard(cardColor) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("الدمج السلس بين الأغاني (Crossfade): ${if (crossfadeSec == 0) "إيقاف" else "$crossfadeSec ثوانٍ"}", color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                    Slider(value = crossfadeSec.toFloat(), onValueChange = { onChangeCrossfade(it.toInt()) }, valueRange = 0f..10f, steps = 9)
-                }
-            }
-        }
-
-        SettingsGroupCard(cardColor) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("شكل قرص الأغنية داخل المشغل", color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("Dynamic Card" to "غلاف أنيق", "Vinyl Spin" to "أسطوانة دوارة", "Stadium Crest" to "درع الاستاد", "Neon Ring" to "حلقة نيون").forEach { (id, label) ->
-                        FilterChip(selected = discStyle == id, onClick = { onSelectDisc(id) }, label = { Text(label, fontSize = 12.sp) })
-                    }
-                }
-                Text("شكل الموجات الصوتية", color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("Smooth Wave" to "موجة ناعمة", "Spectrum Bars" to "أعمدة طيفية", "Mirror Twin" to "موجة مزدوجة", "Hidden" to "إخفاء").forEach { (id, label) ->
-                        FilterChip(selected = waveStyle == id, onClick = { onSelectWave(id) }, label = { Text(label, fontSize = 12.sp) })
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ToggleSettingsRow(title: String, subtitle: String, checked: Boolean, textPrimary: Color, textSecondary: Color, onToggle: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, color = textPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-            Text(subtitle, color = textSecondary, fontSize = 11.5.sp)
-        }
-        Switch(checked = checked, onCheckedChange = { onToggle() })
-    }
-}
-
-@Composable
-private fun TitanHiddenFilesScreen(
-    hiddenSongs: List<Song>,
-    accent: Color,
-    bgColor: Color,
-    cardColor: Color,
-    textPrimary: Color,
-    textSecondary: Color,
-    onBack: () -> Unit,
-    onUnhide: (Long) -> Unit,
-    onUnhideAll: () -> Unit
-) {
-    Column(Modifier.fillMaxSize().background(bgColor).padding(16.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.Default.ArrowForward, null, tint = textPrimary) }
-                Text("الملفات المخفية (${hiddenSongs.size})", color = textPrimary, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-            }
-            if (hiddenSongs.isNotEmpty()) {
-                TextButton(onClick = onUnhideAll) { Text("إظهار الكل", color = accent, fontWeight = FontWeight.Bold) }
-            }
-        }
-        if (hiddenSongs.isEmpty()) {
-            EmptyState("لا توجد ملفات مخفية حالياً", accent, textPrimary)
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                itemsIndexed(hiddenSongs) { _, song ->
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cardColor).padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        SongCoverArt(song = song, sizeDp = 46, accent = accent)
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(song.title, color = textPrimary, fontWeight = FontWeight.Bold, maxLines = 1)
-                            Text(song.artist, color = textSecondary, fontSize = 12.sp, maxLines = 1)
-                        }
-                        TextButton(onClick = { onUnhide(song.id) }) { Text("إظهار", color = accent, fontWeight = FontWeight.Bold) }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ==========================================================
-// 8. شاشة المشغل الكاملة (تحديث فوري للصورة والألوان)
-// ==========================================================
-@Composable
-private fun TitanNowPlayingScreen(
-    song: Song,
-    playing: Boolean,
-    position: Long,
-    duration: Long,
-    isLiked: Boolean,
-    shuffle: Boolean,
-    repeatMode: Int,
-    sleepRemainingSec: Int,
-    discStyle: String,
-    waveStyle: String,
-    spatial8D: Boolean,
-    loopA: Long,
-    loopB: Long,
-    accent: Color,
-    palette: CoverPalette,
-    onBack: () -> Unit,
-    onTogglePlay: () -> Unit,
-    onSeek: (Long) -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-    onToggleLike: () -> Unit,
-    onToggleShuffle: () -> Unit,
-    onCycleRepeat: () -> Unit,
-    onToggle8D: () -> Unit,
-    onToggleABLoop: () -> Unit,
-    onOpenDriveMode: () -> Unit,
-    onOpenSleep: () -> Unit,
-    onOpenLyrics: () -> Unit,
-    onOpenEq: () -> Unit,
-    onOpenMenu: () -> Unit
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "np")
-    val pulsePhase by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 6.283f,
-        animationSpec = infiniteRepeatable(tween(2400, easing = LinearEasing), RepeatMode.Restart),
-        label = "wave"
-    )
-    val spinAngle by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(12000, easing = LinearEasing), RepeatMode.Restart),
-        label = "spin"
-    )
-
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(palette.dominant.copy(alpha = 0.52f), palette.deepTint, Color(0xFF05060B))))
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.KeyboardArrowDown, null, tint = Color.White, modifier = Modifier.size(30.dp)) }
-            Text("VYRO STUDIO PLAYER", color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
-            Row {
-                IconButton(onClick = onOpenDriveMode) { Icon(Icons.Default.DirectionsCar, null, tint = Color.White) }
-                IconButton(onClick = onOpenMenu) { Icon(Icons.Default.MoreVert, null, tint = Color.White) }
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
         Box(
-            Modifier
-                .size(274.dp)
-                .pointerInput(Unit) {
-                    var totalDrag = 0f
-                    detectHorizontalDragGestures(
-                        onHorizontalDrag = { _, dragAmount -> totalDrag += dragAmount },
-                        onDragEnd = {
-                            if (totalDrag > 80f) onPrevious()
-                            else if (totalDrag < -80f) onNext()
-                            totalDrag = 0f
-                        }
-                    )
-                },
+            Modifier.size(46.dp).clip(RoundedCornerShape(14.dp)).background(iconTint.copy(0.16f)),
             contentAlignment = Alignment.Center
         ) {
-            when (discStyle) {
-                "Vinyl Spin" -> {
-                    Box(
-                        Modifier.size(258.dp).rotate(if (playing) spinAngle else 0f).clip(CircleShape).background(Color(0xFF0C0E14)).border(8.dp, Color(0xFF1F2230), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        SongCoverArt(song = song, sizeDp = 186, isCircle = true, accent = accent)
-                        Box(Modifier.size(38.dp).clip(CircleShape).background(Color.Black).border(3.dp, accent, CircleShape))
-                    }
-                }
-                "Stadium Crest" -> {
-                    Box(Modifier.size(258.dp).clip(RoundedCornerShape(36.dp)).border(3.dp, accent, RoundedCornerShape(36.dp)).padding(6.dp)) {
-                        SongCoverArtFull(song = song, accent = accent, isActivePlaying = false, cornerDp = 30)
-                    }
-                }
-                "Neon Ring" -> {
-                    Canvas(Modifier.fillMaxSize()) { drawCircle(color = accent, radius = size.minDimension / 2.05f, style = Stroke(width = 5f)) }
-                    SongCoverArt(song = song, sizeDp = 238, isCircle = true, accent = accent)
-                }
-                else -> {
-                    SongCoverArtFull(song = song, accent = accent, isActivePlaying = false, cornerDp = 26)
-                }
-            }
+            Icon(icon, null, tint = iconTint)
         }
-
-        Spacer(Modifier.height(18.dp))
-
-        if (waveStyle != "Hidden") {
-            Canvas(Modifier.fillMaxWidth().height(28.dp)) {
-                val midY = size.height / 2f
-                when (waveStyle) {
-                    "Spectrum Bars" -> {
-                        val bars = 34
-                        val space = size.width / bars
-                        for (i in 0 until bars) {
-                            val f = if (playing) abs(sin(pulsePhase + i * 0.42f)) else 0.18f
-                            val bh = (size.height * (0.18f + 0.78f * f)).coerceAtLeast(4f)
-                            drawRoundRect(color = accent, topLeft = Offset(i * space + 2f, (size.height - bh) / 2f), size = Size((space - 4f).coerceAtLeast(3f), bh), cornerRadius = CornerRadius(6f, 6f))
-                        }
-                    }
-                    else -> {
-                        val path = Path()
-                        path.moveTo(0f, midY)
-                        val steps = 60
-                        val dx = size.width / steps
-                        for (i in 0..steps) {
-                            val amp = if (playing) (size.height * 0.40f * sin(pulsePhase + i * 0.25f)) else 2f
-                            path.lineTo(i * dx, midY + amp)
-                        }
-                        drawPath(path, color = accent, style = Stroke(width = 4f))
-                        if (waveStyle == "Mirror Twin") {
-                            val path2 = Path()
-                            path2.moveTo(0f, midY)
-                            for (i in 0..steps) {
-                                val amp = if (playing) (size.height * 0.40f * sin(pulsePhase + i * 0.25f)) else 2f
-                                path2.lineTo(i * dx, midY - amp)
-                            }
-                            drawPath(path2, color = Color.White.copy(alpha = 0.55f), style = Stroke(width = 2.5f))
-                        }
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = textPrimary)
+            Text(subtitle, fontSize = 12.sp, color = textSecondary)
         }
-
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(song.title, color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(song.artist, color = Color(0xFFB8C0D6), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            IconButton(onClick = onToggleLike) {
-                Icon(if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null, tint = if (isLiked) Color(0xFFFF5263) else Color.White, modifier = Modifier.size(26.dp))
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            Column(Modifier.fillMaxWidth()) {
-                Slider(
-                    value = if (duration > 0) position.toFloat().coerceIn(0f, duration.toFloat()) else 0f,
-                    onValueChange = { onSeek(it.toLong()) },
-                    valueRange = 0f..(duration.coerceAtLeast(1L).toFloat()),
-                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = accent)
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(formatTime(position), color = Color(0xFFB5BCD0), fontSize = 12.sp)
-                    Text(
-                        when {
-                            loopA >= 0L && loopB >= 0L -> "A-B LOOP"
-                            spatial8D -> "8D SPATIAL"
-                            else -> "VYRO CRYSTAL AUDIO"
-                        },
-                        color = accent, fontSize = 11.sp, fontWeight = FontWeight.Bold
-                    )
-                    Text(formatTime(duration), color = Color(0xFFB5BCD0), fontSize = 12.sp)
-                }
-            }
-        }
-
-        Spacer(Modifier.height(14.dp))
-
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onToggleShuffle) { Icon(Icons.Default.Shuffle, null, tint = if (shuffle) accent else Color.White.copy(alpha = 0.55f)) }
-                IconButton(onClick = onPrevious) { Icon(Icons.Default.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(38.dp)) }
-                IconButton(onClick = onTogglePlay, modifier = Modifier.size(72.dp).background(Color.White, CircleShape)) {
-                    Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(38.dp))
-                }
-                IconButton(onClick = onNext) { Icon(Icons.Default.SkipNext, null, tint = Color.White, modifier = Modifier.size(38.dp)) }
-                IconButton(onClick = onCycleRepeat) {
-                    Icon(if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat, null, tint = if (repeatMode != Player.REPEAT_MODE_OFF) accent else Color.White.copy(alpha = 0.55f))
-                }
-            }
-        }
-
-        Spacer(Modifier.height(18.dp))
-
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AssistChip(onClick = onOpenEq, label = { Text("معادل الصوت", fontSize = 11.sp) }, leadingIcon = { Icon(Icons.Default.GraphicEq, null, tint = accent, modifier = Modifier.size(16.dp)) })
-            AssistChip(onClick = onToggle8D, label = { Text(if (spatial8D) "8D مفعل" else "8D محيطي", fontSize = 11.sp) }, leadingIcon = { Icon(Icons.Default.Headphones, null, tint = accent, modifier = Modifier.size(16.dp)) })
-            AssistChip(onClick = onOpenLyrics, label = { Text("الكلمات", fontSize = 11.sp) }, leadingIcon = { Icon(Icons.Default.Lyrics, null, tint = accent, modifier = Modifier.size(16.dp)) })
-            AssistChip(onClick = onToggleABLoop, label = { Text(if (loopA >= 0L) "A-B مفعل" else "تكرار A-B", fontSize = 11.sp) }, leadingIcon = { Icon(Icons.Default.Repeat, null, tint = accent, modifier = Modifier.size(16.dp)) })
-            AssistChip(onClick = onOpenSleep, label = { Text(if (sleepRemainingSec > 0) "${sleepRemainingSec / 60}m" else "مؤقت النوم", fontSize = 11.sp) }, leadingIcon = { Icon(Icons.Default.Bedtime, null, tint = accent, modifier = Modifier.size(16.dp)) })
-        }
+        Icon(Icons.Rounded.ChevronLeft, null, tint = textSecondary)
     }
 }
 
-// ==========================================================
-// 9. استوديو الصوت 8D والمعادل (بدون خيار مانع الغروشة لأنه مدمج صامتاً)
-// ==========================================================
 @Composable
-private fun TitanDspStudioTab(
-    eqPreset: String,
-    bandGains: List<Float>,
-    bassStrength: Int,
-    virtualizerStrength: Int,
-    loudnessGain: Int,
-    playbackSpeed: Float,
-    playbackPitch: Float,
-    spatial8D: Boolean,
-    accent: Color,
-    cardColor: Color,
+fun SubHeaderBar(title: String, textPrimary: Color, onBack: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, null, tint = textPrimary) }
+        Text(title, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+fun SettingsCardGroup(cardColor: Color, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .background(cardColor)
+            .padding(vertical = 6.dp),
+        content = content
+    )
+}
+
+@Composable
+fun SettingsRow(
+    icon: ImageVector,
+    tint: Color,
+    title: String,
+    subtitle: String?,
+    trailing: String,
     textPrimary: Color,
     textSecondary: Color,
-    onSelectPreset: (String) -> Unit,
-    onBandChange: (Int, Float) -> Unit,
-    onBassChange: (Int) -> Unit,
-    onVirtChange: (Int) -> Unit,
-    onLoudnessChange: (Int) -> Unit,
-    onSpeedChange: (Float) -> Unit,
-    onPitchChange: (Float) -> Unit,
-    onToggle8D: () -> Unit,
-    onOpenSystemEq: () -> Unit
+    onClick: () -> Unit
 ) {
-    val freqLabels = listOf("60Hz", "230Hz", "910Hz", "3.6kHz", "14kHz")
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
-                .background(if (spatial8D) Color(0xFFFFC857).copy(alpha = 0.16f) else cardColor)
-                .border(1.dp, if (spatial8D) Color(0xFFFFC857) else Color.Transparent, RoundedCornerShape(18.dp))
-                .clickable(onClick = onToggle8D)
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Default.Headphones, null, tint = if (spatial8D) Color(0xFFFFC857) else accent, modifier = Modifier.size(28.dp))
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("الصوت المحيطي 8D Surround", color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text(if (spatial8D) "مفعل • دوران صوتي ثلاثي الأبعاد 360°" else "اضغط للتفعيل (أفضل تجربة مع السماعة)", color = textSecondary, fontSize = 11.5.sp)
-            }
-            Switch(checked = spatial8D, onCheckedChange = { onToggle8D() })
-        }
-
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Pure Hi-Fi", "Clean Phonk", "Gym Beast", "Vocal Studio", "Flat").forEach { preset ->
-                FilterChip(selected = eqPreset == preset, onClick = { onSelectPreset(preset) }, label = { Text(preset, fontSize = 12.sp) })
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = textPrimary)
+            if (!subtitle.isNullOrBlank()) {
+                Text(subtitle, fontSize = 12.sp, color = textSecondary)
             }
         }
-
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cardColor).padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                bandGains.forEachIndexed { idx, gain ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(freqLabels.getOrElse(idx) { "B" }, color = textPrimary, fontSize = 11.sp, modifier = Modifier.width(46.dp))
-                        Slider(value = gain, onValueChange = { onBandChange(idx, it) }, valueRange = -1f..1f, modifier = Modifier.weight(1f))
-                        Text("${(gain * 12).toInt()}dB", color = accent, fontSize = 11.sp, modifier = Modifier.width(38.dp), textAlign = TextAlign.End)
-                    }
-                }
-            }
-
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cardColor).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("SUB-BASS POWER ($bassStrength%)", color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                Slider(value = bassStrength.toFloat(), onValueChange = { onBassChange(it.toInt()) }, valueRange = 0f..100f)
-                Text("3D STAGE ($virtualizerStrength%)", color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                Slider(value = virtualizerStrength.toFloat(), onValueChange = { onVirtChange(it.toInt()) }, valueRange = 0f..100f)
-                Text("EXTRA GAIN (+${(loudnessGain * 0.08f).toInt()}dB)", color = textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                Slider(value = loudnessGain.toFloat(), onValueChange = { onLoudnessChange(it.toInt()) }, valueRange = 0f..100f)
-            }
-
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cardColor).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("SPEED ${"%.2f".format(playbackSpeed)}x • PITCH ${"%.2f".format(playbackPitch)}x", color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Text("Reset 1.0x", color = accent, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onSpeedChange(1f); onPitchChange(1f) })
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { onSpeedChange(0.85f); onPitchChange(0.88f) }) { Text("Slowed + Phonk", fontSize = 11.sp) }
-                    OutlinedButton(onClick = { onSpeedChange(1.16f); onPitchChange(1.12f) }) { Text("Nightcore", fontSize = 11.sp) }
-                }
-                Slider(value = playbackSpeed, onValueChange = onSpeedChange, valueRange = 0.6f..1.6f)
-            }
+        if (trailing.isNotBlank()) {
+            Text(trailing, fontSize = 12.sp, color = textSecondary, maxLines = 1)
+            Spacer(Modifier.width(4.dp))
         }
-
-        OutlinedButton(onClick = onOpenSystemEq, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Default.Speaker, null, tint = accent)
-            Spacer(Modifier.width(8.dp))
-            Text("فتح Dolby Atmos للهاتف", color = textPrimary)
-        }
+        Icon(Icons.Rounded.ChevronLeft, null, tint = textSecondary.copy(0.7f), modifier = Modifier.size(18.dp))
     }
 }
 
-// ==========================================================
-// 10. الخلفيات الحية + مولد خلفيات Glassify + دوال التحديثات والشبكة
-// ==========================================================
-@Composable
-private fun AnimatedThemeBackdrop(backdropId: String, accent: Color, secondaryAccent: Color, playing: Boolean) {
-    val infinite = rememberInfiniteTransition(label = "bg")
-    val phase by infinite.animateFloat(0f, 6.28318f, infiniteRepeatable(tween(if (playing) 5500 else 11000, easing = LinearEasing), RepeatMode.Restart), label = "p")
-    val rise by infinite.animateFloat(0f, 1f, infiniteRepeatable(tween(if (playing) 4500 else 9000, easing = LinearEasing), RepeatMode.Restart), label = "r")
+// ==================== SYSTEM & UTILITY FUNCTIONS ====================
 
-    Canvas(Modifier.fillMaxSize()) {
-        val w = size.width
-        val h = size.height
-        when (backdropId) {
-            "DYNAMIC_AURA" -> {
-                drawCircle(Brush.radialGradient(listOf(accent.copy(alpha = 0.24f), Color.Transparent), Offset(w * 0.25f + sin(phase) * 40f, h * 0.22f), w * 0.75f), w * 0.75f, Offset(w * 0.25f + sin(phase) * 40f, h * 0.22f))
-                drawCircle(Brush.radialGradient(listOf(secondaryAccent.copy(alpha = 0.20f), Color.Transparent), Offset(w * 0.75f, h * 0.72f + cos(phase) * 40f), w * 0.75f), w * 0.75f, Offset(w * 0.75f, h * 0.72f + cos(phase) * 40f))
+suspend fun applyPureWallpaper(context: Context, fullUrl: String, target: Int): Boolean = withContext(Dispatchers.IO) {
+    runCatching {
+        val raw = VyroMediaCache.loadNetworkBitmap(fullUrl, maxSize = 2160) ?: return@withContext false
+        val dm = context.resources.displayMetrics
+        val targetW = dm.widthPixels.coerceAtLeast(1080)
+        val targetH = dm.heightPixels.coerceAtLeast(1920)
+
+        // Clean Center-Crop to exact phone screen dimensions (ZERO boxes or overlays!)
+        val scale = maxOf(targetW.toFloat() / raw.width, targetH.toFloat() / raw.height)
+        val scaledW = (raw.width * scale).toInt().coerceAtLeast(targetW)
+        val scaledH = (raw.height * scale).toInt().coerceAtLeast(targetH)
+        val scaled = Bitmap.createScaledBitmap(raw, scaledW, scaledH, true)
+        val x = ((scaledW - targetW) / 2).coerceAtLeast(0)
+        val y = ((scaledH - targetH) / 2).coerceAtLeast(0)
+        val finalBmp = Bitmap.createBitmap(scaled, x, y, targetW, targetH)
+
+        val wm = WallpaperManager.getInstance(context)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            val flag = when (target) {
+                1 -> WallpaperManager.FLAG_SYSTEM
+                2 -> WallpaperManager.FLAG_LOCK
+                else -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
             }
-            "STADIUM", "BLAUGRANA" -> {
-                val stripes = 10
-                val sh = h / stripes
-                for (i in 0 until stripes) {
-                    val c = if (backdropId == "BLAUGRANA") (if (i % 2 == 0) Color(0xFF0A1636) else Color(0xFF280919))
-                    else (if (i % 2 == 0) Color(0xFF072814) else Color(0xFF051D0E))
-                    drawRect(c.copy(alpha = 0.55f), Offset(0f, i * sh), Size(w, sh))
-                }
-                val lc = Color.White.copy(alpha = 0.14f)
-                drawRect(lc, Offset(w * 0.06f, h * 0.08f), Size(w * 0.88f, h * 0.84f), style = Stroke(3f))
-                drawLine(lc, Offset(w * 0.06f, h * 0.5f), Offset(w * 0.94f, h * 0.5f), 3f)
-                drawCircle(lc, w * 0.18f, Offset(w * 0.5f, h * 0.5f), style = Stroke(3f))
-            }
-            "OCEAN" -> {
-                for (layer in 0..2) {
-                    val path = Path().apply {
-                        val baseY = h * (0.4f + layer * 0.2f)
-                        moveTo(0f, h); lineTo(0f, baseY)
-                        for (i in 0..36) lineTo(i * (w / 36f), baseY + sin(phase + i * 0.3f + layer) * 20f)
-                        lineTo(w, h); close()
-                    }
-                    drawPath(path, Color(0xFF0099CC).copy(alpha = 0.10f + layer * 0.04f))
-                }
-                for (b in 0..20) {
-                    val x = (((b * 37) % 100) / 100f) * w + sin(phase + b) * 14f
-                    val y = (1f - ((rise + ((b * 19) % 100) / 100f) % 1f)) * h
-                    drawCircle(Color(0xFF80F4FF).copy(alpha = 0.25f), 6f + (b % 5) * 4f, Offset(x, y), style = Stroke(2f))
-                }
-            }
-            "NEON" -> {
-                for (i in 0..10) {
-                    val y = (((i / 10f) + rise * 0.25f) % 1f) * h
-                    drawLine(accent.copy(alpha = 0.14f), Offset(0f, y), Offset(w, y), 1.5f)
-                }
-            }
-            "MATRIX" -> {
-                val cols = 16
-                val cw = w / cols
-                for (c in 0 until cols) {
-                    val y = ((rise + ((c * 29) % 100) / 100f) % 1f) * h
-                    drawLine(Brush.verticalGradient(listOf(Color.Transparent, Color(0xFF00FF66).copy(alpha = 0.32f))), Offset(c * cw + cw / 2f, (y - 130f).coerceAtLeast(0f)), Offset(c * cw + cw / 2f, y), 4f)
-                }
+            wm.setBitmap(finalBmp, null, true, flag)
+        } else {
+            wm.setBitmap(finalBmp)
+        }
+        true
+    }.getOrDefault(false)
+}
+
+fun pinVyroWidget(context: Context, isArabic: Boolean) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val mgr = AppWidgetManager.getInstance(context)
+        val provider = ComponentName(context, VyroWidgetProvider::class.java)
+        if (mgr.isRequestPinAppWidgetSupported) {
+            mgr.requestPinAppWidget(provider, null, null)
+            return
+        }
+    }
+    Toast.makeText(
+        context,
+        if (isArabic) "اضغط مطولاً على الشاشة الرئيسية ← التطبيقات المصغرة ← VYRO MUSIC" else "Long-press Home Screen → Widgets → VYRO MUSIC",
+        Toast.LENGTH_LONG
+    ).show()
+}
+
+suspend fun scanDeviceSongs(context: Context): List<Song> = withContext(Dispatchers.IO) {
+    val list = mutableListOf<Song>()
+    val cols = arrayOf(
+        MediaStore.Audio.Media._ID,
+        MediaStore.Audio.Media.TITLE,
+        MediaStore.Audio.Media.ARTIST,
+        MediaStore.Audio.Media.ALBUM,
+        MediaStore.Audio.Media.ALBUM_ID,
+        MediaStore.Audio.Media.DURATION,
+        MediaStore.Audio.Media.DATA,
+        MediaStore.Audio.Media.DATE_ADDED
+    )
+    val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= 8000"
+    runCatching {
+        context.contentResolver.query(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            cols,
+            selection,
+            null,
+            "${MediaStore.Audio.Media.DATE_ADDED} DESC"
+        )?.use { cursor ->
+            val idIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+            val titleIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+            val artistIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+            val albumIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+            val albumIdIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+            val durIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+            val dataIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+            val dateIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+
+            while (cursor.moveToNext()) {
+                val id = cursor.getLong(idIdx)
+                val path = cursor.getString(dataIdx) ?: ""
+                val folder = File(path).parentFile?.name ?: "Music"
+                val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                list.add(
+                    Song(
+                        id = id,
+                        title = cursor.getString(titleIdx) ?: "Unknown",
+                        artist = cursor.getString(artistIdx) ?: "<unknown>",
+                        album = cursor.getString(albumIdx) ?: "Unknown",
+                        albumId = cursor.getLong(albumIdIdx),
+                        duration = cursor.getLong(durIdx),
+                        uri = uri,
+                        folder = folder,
+                        dateAdded = cursor.getLong(dateIdx)
+                    )
+                )
             }
         }
     }
+    list
 }
 
-private fun generateHighResGlassWallpaper(presetId: String): Bitmap {
-    val w = 1080
-    val h = 2340
-    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-    val canvas = android.graphics.Canvas(bmp)
-    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-
-    when (presetId) {
-        "CHAMPIONS_PITCH" -> {
-            paint.shader = android.graphics.LinearGradient(0f, 0f, 0f, h.toFloat(), intArrayOf(0xFF04140B.toInt(), 0xFF082E18.toInt(), 0xFF030D07.toInt()), null, android.graphics.Shader.TileMode.CLAMP)
-            canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), paint)
-            val line = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 5f; color = 0x33FFFFFF }
-            canvas.drawRect(70f, 180f, w - 70f, h - 180f, line)
-            canvas.drawLine(70f, h / 2f, w - 70f, h / 2f, line)
-            canvas.drawCircle(w / 2f, h / 2f, 210f, line)
-            val glow = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                shader = android.graphics.RadialGradient(w * 0.2f, 220f, 700f, intArrayOf(0x5500F57A, 0x00000000), null, android.graphics.Shader.TileMode.CLAMP)
-            }
-            canvas.drawCircle(w * 0.2f, 220f, 700f, glow)
-        }
-        "BLAUGRANA_NIGHT" -> {
-            paint.shader = android.graphics.LinearGradient(0f, 0f, w.toFloat(), h.toFloat(), intArrayOf(0xFF00246B.toInt(), 0xFF0C0E24.toInt(), 0xFF7A0C2E.toInt()), null, android.graphics.Shader.TileMode.CLAMP)
-            canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), paint)
-            val orb1 = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                shader = android.graphics.RadialGradient(250f, 550f, 520f, intArrayOf(0x660052CC, 0x00000000), null, android.graphics.Shader.TileMode.CLAMP)
-            }
-            val orb2 = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                shader = android.graphics.RadialGradient(w - 220f, h - 620f, 560f, intArrayOf(0x66ED1B4E, 0x00000000), null, android.graphics.Shader.TileMode.CLAMP)
-            }
-            canvas.drawCircle(250f, 550f, 520f, orb1)
-            canvas.drawCircle(w - 220f, h - 620f, 560f, orb2)
-        }
-        "PHONK_CARBON" -> {
-            paint.shader = android.graphics.LinearGradient(0f, 0f, w.toFloat(), h.toFloat(), intArrayOf(0xFF06050D.toInt(), 0xFF1A071E.toInt(), 0xFF06050D.toInt()), null, android.graphics.Shader.TileMode.CLAMP)
-            canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), paint)
-            val laser = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 3f; color = 0x33FF007A }
-            for (y in 200 until h step 140) canvas.drawLine(0f, y.toFloat(), w.toFloat(), y.toFloat(), laser)
-        }
-        "OCEAN_GLASS" -> {
-            paint.shader = android.graphics.LinearGradient(0f, 0f, 0f, h.toFloat(), intArrayOf(0xFF021024.toInt(), 0xFF052659.toInt(), 0xFF020B18.toInt()), null, android.graphics.Shader.TileMode.CLAMP)
-            canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), paint)
-            val bubble = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 4f; color = 0x4480F4FF }
-            for (i in 1..18) canvas.drawCircle(((i * 197) % (w - 120) + 60).toFloat(), ((i * 311) % (h - 200) + 100).toFloat(), (25 + (i % 5) * 18).toFloat(), bubble)
-        }
-        else -> {
-            // GLASSIFY_FROST
-            paint.shader = android.graphics.LinearGradient(0f, 0f, w.toFloat(), h.toFloat(), intArrayOf(0xFF060914.toInt(), 0xFF101C36.toInt(), 0xFF06070E.toInt()), null, android.graphics.Shader.TileMode.CLAMP)
-            canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), paint)
-            val glow = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                shader = android.graphics.RadialGradient(w * 0.5f, h * 0.35f, 650f, intArrayOf(0x5500C2FF, 0x00000000), null, android.graphics.Shader.TileMode.CLAMP)
-            }
-            canvas.drawCircle(w * 0.5f, h * 0.35f, 650f, glow)
-        }
-    }
-
-    // طبقة بطاقات زجاجية شفافة أنيقة (Glassify Layers)
-    val glassPanel = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = 0x16FFFFFF }
-    val glassRim = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 3f; color = 0x33FFFFFF }
-    val r1 = android.graphics.RectF(90f, 420f, w - 90f, 920f)
-    canvas.drawRoundRect(r1, 64f, 64f, glassPanel)
-    canvas.drawRoundRect(r1, 64f, 64f, glassRim)
-
-    return bmp
-}
-
-private fun fetchLatestGithubRelease(): UpdateInfo? {
-    return runCatching {
-        val conn = (URL(GITHUB_RELEASES_API).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 9000
-            readTimeout = 9000
+suspend fun fetchLatestRelease(): ReleaseInfo? = withContext(Dispatchers.IO) {
+    runCatching {
+        val url = URL("https://api.github.com/repos/mohmedtarek2025-hue/VYRO-MUSIC/releases/latest")
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10000
+            readTimeout = 10000
             setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("User-Agent", "VYRO-MUSIC-Updater")
+            setRequestProperty("User-Agent", "VyroMusicApp/5.0.1")
         }
-        if (conn.responseCode != 200) return null
-        val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
-        val obj = JSONObject(jsonStr)
-        val tag = obj.optString("tag_name", "").trim()
-        if (tag.isBlank()) return null
+        if (conn.responseCode !in 200..299) {
+            conn.disconnect()
+            return@withContext null
+        }
+        val text = conn.inputStream.bufferedReader().use { it.readText() }
+        conn.disconnect()
+        val obj = JSONObject(text)
+        val tag = obj.optString("tag_name", "")
         val name = obj.optString("name", tag)
-        val body = obj.optString("body", "")
+        val notes = obj.optString("body", "")
         val htmlUrl = obj.optString("html_url", "https://github.com/mohmedtarek2025-hue/VYRO-MUSIC/releases")
-        var apkUrl: String? = null
+        var apkUrl = ""
         val assets = obj.optJSONArray("assets")
         if (assets != null) {
             for (i in 0 until assets.length()) {
-                val asset = assets.getJSONObject(i)
-                val dl = asset.optString("browser_download_url", "")
+                val a = assets.getJSONObject(i)
+                val dl = a.optString("browser_download_url", "")
                 if (dl.endsWith(".apk", ignoreCase = true)) {
                     apkUrl = dl
                     break
                 }
             }
         }
-        UpdateInfo(tag, name, body, apkUrl, htmlUrl)
+        ReleaseInfo(tag, name, notes, apkUrl, htmlUrl)
     }.getOrNull()
 }
 
-private fun isNewerVersion(remoteTag: String, currentVersion: String): Boolean {
-    fun parseNums(v: String): List<Int> {
-        val clean = v.removePrefix("v").removePrefix("V").substringBefore("-")
-        return clean.split(".").map { it.toIntOrNull() ?: 0 }
-    }
-    val r = parseNums(remoteTag)
-    val c = parseNums(currentVersion)
-    val len = maxOf(r.size, c.size)
-    for (i in 0 until len) {
-        val rv = r.getOrElse(i) { 0 }
-        val cv = c.getOrElse(i) { 0 }
-        if (rv != cv) return rv > cv
+fun isNewerVersion(current: String, remoteTag: String): Boolean {
+    val cNums = Regex("\\d+").findAll(current).map { it.value.toInt() }.toList()
+    val rNums = Regex("\\d+").findAll(remoteTag).map { it.value.toInt() }.toList()
+    val max = maxOf(cNums.size, rNums.size)
+    for (i in 0 until max) {
+        val cv = cNums.getOrElse(i) { 0 }
+        val rv = rNums.getOrElse(i) { 0 }
+        if (rv > cv) return true
+        if (rv < cv) return false
     }
     return false
 }
 
-@Composable
-private fun DriveGymModeScreen(
-    song: Song, playing: Boolean, position: Long, duration: Long, accent: Color,
-    onTogglePlay: () -> Unit, onNext: () -> Unit, onPrev: () -> Unit, onExit: () -> Unit
-) {
-    Column(Modifier.fillMaxSize().background(Color.Black).padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceBetween) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("DRIVE & GYM MODE", color = accent, fontWeight = FontWeight.Black, fontSize = 16.sp)
-            OutlinedButton(onClick = onExit) { Text("خروج", color = Color.White) }
+suspend fun downloadAndInstallApk(
+    context: Context,
+    apkUrl: String,
+    fallbackUrl: String,
+    onProgress: (Float) -> Unit
+) = withContext(Dispatchers.IO) {
+    val file = File(context.cacheDir, "vyro_update.apk")
+    val downloaded = runCatching {
+        val conn = (URL(apkUrl).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15000
+            readTimeout = 25000
+            instanceFollowRedirects = true
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            SongCoverArt(song = song, sizeDp = 165, accent = accent, cornerDp = 24)
-            Spacer(Modifier.height(18.dp))
-            Text(song.title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, maxLines = 2, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(6.dp))
-            Text(song.artist, color = accent, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            Spacer(Modifier.height(8.dp))
-            Text("${formatTime(position)} / ${formatTime(duration)}", color = Color.White.copy(alpha = 0.7f), fontSize = 15.sp)
-        }
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onPrev, modifier = Modifier.size(76.dp).background(Color(0xFF181B26), CircleShape)) {
-                    Icon(Icons.Default.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(42.dp))
-                }
-                IconButton(onClick = onTogglePlay, modifier = Modifier.size(98.dp).background(accent, CircleShape)) {
-                    Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(52.dp))
-                }
-                IconButton(onClick = onNext, modifier = Modifier.size(76.dp).background(Color(0xFF181B26), CircleShape)) {
-                    Icon(Icons.Default.SkipNext, null, tint = Color.White, modifier = Modifier.size(42.dp))
+        val total = conn.contentLength.coerceAtLeast(1)
+        conn.inputStream.use { input ->
+            FileOutputStream(file).use { out ->
+                val buf = ByteArray(8192)
+                var read: Int
+                var sum = 0L
+                while (input.read(buf).also { read = it } != -1) {
+                    out.write(buf, 0, read)
+                    sum += read
+                    withContext(Dispatchers.Main) { onProgress((sum.toFloat() / total).coerceIn(0f, 1f)) }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun CollectionTile(title: String, subtitle: String, icon: ImageVector, iconColor: Color, cardColor: Color, textPrimary: Color, textSecondary: Color, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cardColor).clickable(onClick = onClick).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(iconColor.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = iconColor, modifier = Modifier.size(22.dp))
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 14.5.sp)
-            Text(subtitle, color = textSecondary, fontSize = 12.sp)
-        }
-        Icon(Icons.Default.ChevronLeft, null, tint = textSecondary)
-    }
-}
-
-@Composable
-private fun MenuActionRow(icon: ImageVector, title: String, tint: Color, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(12.dp))
-        Text(title, color = tint, fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
-    }
-}
-
-@Composable
-private fun InfoItem(label: String, value: String, textPrimary: Color, textSecondary: Color) {
-    Column {
-        Text(label, color = textSecondary, fontSize = 11.sp)
-        Text(value, color = textPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-@Composable
-private fun EmptyState(message: String, accent: Color, textPrimary: Color) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Default.LibraryMusic, null, tint = accent, modifier = Modifier.size(48.dp))
-            Spacer(Modifier.height(10.dp))
-            Text(message, color = textPrimary, textAlign = TextAlign.Center, fontSize = 14.sp)
-        }
-    }
-}
-
-private fun extractCoverPaletteFromBitmap(bmp: Bitmap?): CoverPalette {
-    if (bmp == null) return CoverPalette()
-    var rSum = 0L; var gSum = 0L; var bSum = 0L; var count = 0L
-    val sx = (bmp.width / 8).coerceAtLeast(1)
-    val sy = (bmp.height / 8).coerceAtLeast(1)
-    for (x in 0 until bmp.width step sx) {
-        for (y in 0 until bmp.height step sy) {
-            val px = bmp.getPixel(x, y)
-            rSum += android.graphics.Color.red(px)
-            gSum += android.graphics.Color.green(px)
-            bSum += android.graphics.Color.blue(px)
-            count++
-        }
-    }
-    if (count == 0L) return CoverPalette()
-    val r = (rSum / count).toInt().coerceIn(45, 240)
-    val g = (gSum / count).toInt().coerceIn(45, 240)
-    val b = (bSum / count).toInt().coerceIn(55, 245)
-    return CoverPalette(
-        dominant = Color((r * 1.25f).toInt().coerceIn(80, 255), (g * 1.15f).toInt().coerceIn(70, 250), (b * 1.28f).toInt().coerceIn(90, 255)),
-        secondary = Color((b * 1.1f).toInt().coerceIn(65, 240), (r * 0.9f).toInt().coerceIn(55, 225), (g * 1.2f).toInt().coerceIn(75, 245)),
-        deepTint = Color((r / 7).coerceIn(6, 26), (g / 7).coerceIn(6, 26), (b / 6).coerceIn(8, 32))
-    )
-}
-
-private fun formatListenHours(totalSec: Long): String {
-    val hours = totalSec / 3600L
-    val mins = (totalSec % 3600L) / 60L
-    return "${hours}h ${mins}m"
-}
-
-private fun formatTime(ms: Long): String {
-    val sec = (ms / 1000).coerceAtLeast(0)
-    return "%d:%02d".format(sec / 60, sec % 60)
-}
-
-private fun cutAndSetRingtone(context: Context, song: Song, startMs: Long, endMs: Long): Boolean {
-    return runCatching {
-        val outFile = File(context.cacheDir, "vyro_ringtone_${song.id}.m4a")
-        if (outFile.exists()) outFile.delete()
-        val extractor = MediaExtractor()
-        context.contentResolver.openFileDescriptor(song.uri, "r")?.use { pfd -> extractor.setDataSource(pfd.fileDescriptor) }
-        var audioTrackIndex = -1
-        var format: MediaFormat? = null
-        for (i in 0 until extractor.trackCount) {
-            val f = extractor.getTrackFormat(i)
-            if ((f.getString(MediaFormat.KEY_MIME) ?: "").startsWith("audio/")) {
-                audioTrackIndex = i; format = f; break
-            }
-        }
-        if (audioTrackIndex >= 0 && format != null) {
-            extractor.selectTrack(audioTrackIndex)
-            extractor.seekTo(startMs * 1000L, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
-            val muxer = MediaMuxer(outFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-            val dstTrack = muxer.addTrack(format)
-            muxer.start()
-            val buf = ByteBuffer.allocate(256 * 1024)
-            val info = android.media.MediaCodec.BufferInfo()
-            while (true) {
-                info.offset = 0
-                info.size = extractor.readSampleData(buf, 0)
-                if (info.size < 0) break
-                val sampleTimeUs = extractor.sampleTime
-                if (sampleTimeUs > endMs * 1000L) break
-                info.presentationTimeUs = (sampleTimeUs - startMs * 1000L).coerceAtLeast(0L)
-                info.flags = extractor.sampleFlags
-                muxer.writeSampleData(dstTrack, buf, info)
-                extractor.advance()
-            }
-            muxer.stop(); muxer.release(); extractor.release()
-
-            val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, "VYRO_Ring_${song.title}.m4a")
-                put(MediaStore.MediaColumns.MIME_TYPE, "audio/mp4")
-                put(MediaStore.Audio.Media.IS_RINGTONE, true)
-            }
-            val newUri = context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
-            if (newUri != null) {
-                context.contentResolver.openOutputStream(newUri)?.use { out -> outFile.inputStream().use { inp -> inp.copyTo(out) } }
-                RingtoneManager.setActualDefaultRingtoneUri(context, RingtoneManager.TYPE_RINGTONE, newUri)
-                return true
-            }
-        }
-        RingtoneManager.setActualDefaultRingtoneUri(context, RingtoneManager.TYPE_RINGTONE, song.uri)
+        conn.disconnect()
         true
-    }.getOrElse {
-        runCatching { RingtoneManager.setActualDefaultRingtoneUri(context, RingtoneManager.TYPE_RINGTONE, song.uri) }
-        false
+    }.getOrDefault(false)
+
+    withContext(Dispatchers.Main) {
+        if (downloaded && file.exists()) {
+            val uri = runCatching { FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file) }.getOrNull()
+                ?: runCatching { FileProvider.getUriForFile(context, "${context.packageName}.provider", file) }.getOrNull()
+            if (uri != null) {
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                runCatching { context.startActivity(intent) }
+                return@withContext
+            }
+        }
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(fallbackUrl))) }
     }
 }
 
-private fun readRawSidecarLyrics(filePath: String?): String? {
-    if (filePath.isNullOrBlank()) return null
-    return runCatching {
-        val audioFile = File(filePath)
-        val base = audioFile.nameWithoutExtension
-        val parent = audioFile.parentFile ?: return null
-        val lrc = File(parent, "$base.lrc")
-        val txt = File(parent, "$base.txt")
-        when { lrc.exists() -> lrc.readText(); txt.exists() -> txt.readText(); else -> null }
-    }.getOrNull()
-}
-
-private fun parseLrcLines(raw: String): List<LrcLine> {
-    if (raw.isBlank()) return emptyList()
-    val regex = Regex("\\[(\\d+):(\\d+)(?:\\.(\\d+))?](.*)")
-    val out = mutableListOf<LrcLine>()
-    raw.lines().forEach { line ->
-        val m = regex.find(line.trim())
-        if (m != null) {
-            val min = m.groupValues[1].toLongOrNull() ?: 0L
-            val sec = m.groupValues[2].toLongOrNull() ?: 0L
-            val txt = m.groupValues[4].trim()
-            if (txt.isNotEmpty()) out += LrcLine((min * 60 + sec) * 1000L, txt)
+fun openBatteryExemption(context: Context) {
+    runCatching {
+        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !pm.isIgnoringBatteryOptimizations(context.packageName)) {
+            context.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}")))
+        } else {
+            context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         }
     }
-    return out.sortedBy { it.timeMs }
 }
 
-private fun loadIdSet(json: String?): Set<Long> = runCatching {
-    val arr = JSONArray(json ?: "[]")
-    (0 until arr.length()).map { arr.getLong(it) }.toSet()
-}.getOrDefault(emptySet())
-
-private fun loadIdList(json: String?): List<Long> = runCatching {
-    val arr = JSONArray(json ?: "[]")
-    (0 until arr.length()).map { arr.getLong(it) }
-}.getOrDefault(emptyList())
-
-private fun loadFloatList(json: String?): List<Float>? = runCatching {
-    if (json.isNullOrBlank()) return null
-    val arr = JSONArray(json)
-    (0 until arr.length()).map { arr.getDouble(it).toFloat() }
-}.getOrNull()
-
-private fun loadPlaylists(json: String?): Map<String, List<Long>> = runCatching {
-    val obj = JSONObject(json ?: "{}")
-    val map = mutableMapOf<String, List<Long>>()
-    obj.keys().forEach { key ->
-        val arr = obj.getJSONArray(key)
-        map[key] = (0 until arr.length()).map { arr.getLong(it) }
+fun openNotificationSettings(context: Context) {
+    runCatching {
+        val i = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        }
+        context.startActivity(i)
     }
-    map
-}.getOrDefault(emptyMap())
-
-private fun encodePlaylists(map: Map<String, List<Long>>): String {
-    val obj = JSONObject()
-    map.forEach { (k, v) -> obj.put(k, JSONArray(v)) }
-    return obj.toString()
 }
 
-private fun loadPlayCounts(json: String?): Map<Long, Int> = runCatching {
-    val obj = JSONObject(json ?: "{}")
-    val map = mutableMapOf<Long, Int>()
-    obj.keys().forEach { key -> key.toLongOrNull()?.let { id -> map[id] = obj.getInt(key) } }
-    map
-}.getOrDefault(emptyMap())
-
-private fun encodePlayCounts(map: Map<Long, Int>): String {
-    val obj = JSONObject()
-    map.forEach { (k, v) -> obj.put(k.toString(), v) }
-    return obj.toString()
+fun formatMs(ms: Long): String {
+    val totalSec = (ms / 1000L).coerceAtLeast(0L)
+    val mins = totalSec / 60
+    val secs = totalSec % 60
+    return String.format(Locale.US, "%d:%02d", mins, secs)
 }
 
-private fun loadLyricsMap(json: String?): Map<Long, String> = runCatching {
-    val obj = JSONObject(json ?: "{}")
-    val map = mutableMapOf<Long, String>()
-    obj.keys().forEach { key -> key.toLongOrNull()?.let { id -> map[id] = obj.getString(key) } }
-    map
-}.getOrDefault(emptyMap())
+fun formatHoursMinutes(seconds: Long): String {
+    val h = seconds / 3600
+    val m = (seconds % 3600) / 60
+    return "${h}h ${m}m"
+}
 
-private fun encodeLyricsMap(map: Map<Long, String>): String {
+fun loadBandGains(prefs: SharedPreferences): List<Float> {
+    val s = prefs.getString("band_gains", null) ?: return listOf(0.28f, 0.16f, 0f, 0.14f, 0.24f)
+    return runCatching {
+        val arr = JSONArray(s)
+        List(5) { i -> arr.optDouble(i, 0.0).toFloat() }
+    }.getOrDefault(listOf(0.28f, 0.16f, 0f, 0.14f, 0.24f))
+}
+
+fun loadIdSet(prefs: SharedPreferences, key: String): Set<Long> {
+    val raw = prefs.getString(key, null) ?: return emptySet()
+    return runCatching {
+        val arr = JSONArray(raw)
+        buildSet { for (i in 0 until arr.length()) add(arr.getLong(i)) }
+    }.getOrDefault(emptySet())
+}
+
+fun saveIdSet(prefs: SharedPreferences, key: String, set: Set<Long>) {
+    prefs.edit().putString(key, JSONArray(set.toList()).toString()).apply()
+}
+
+fun loadIdList(prefs: SharedPreferences, key: String): List<Long> {
+    val raw = prefs.getString(key, null) ?: return emptyList()
+    return runCatching {
+        val arr = JSONArray(raw)
+        List(arr.length()) { arr.getLong(it) }
+    }.getOrDefault(emptyList())
+}
+
+fun saveIdList(prefs: SharedPreferences, key: String, list: List<Long>) {
+    prefs.edit().putString(key, JSONArray(list).toString()).apply()
+}
+
+fun loadPlayCounts(prefs: SharedPreferences): Map<Long, Int> {
+    val raw = prefs.getString("play_counts_json", null) ?: return emptyMap()
+    return runCatching {
+        val obj = JSONObject(raw)
+        buildMap {
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                k.toLongOrNull()?.let { put(it, obj.optInt(k, 0)) }
+            }
+        }
+    }.getOrDefault(emptyMap())
+}
+
+fun savePlayCounts(prefs: SharedPreferences, map: Map<Long, Int>) {
     val obj = JSONObject()
     map.forEach { (k, v) -> obj.put(k.toString(), v) }
-    return obj.toString()
+    prefs.edit().putString("play_counts_json", obj.toString()).apply()
+}
+
+fun loadPlaylists(prefs: SharedPreferences): List<CustomPlaylist> {
+    val raw = prefs.getString("custom_playlists_json", null) ?: return emptyList()
+    return runCatching {
+        val arr = JSONArray(raw)
+        List(arr.length()) { i ->
+            val o = arr.getJSONObject(i)
+            val ids = o.optJSONArray("songIds")
+            val idList = if (ids != null) List(ids.length()) { ids.getLong(it) } else emptyList()
+            CustomPlaylist(o.getString("id"), o.getString("name"), idList)
+        }
+    }.getOrDefault(emptyList())
+}
+
+fun serializePlaylists(list: List<CustomPlaylist>): JSONArray {
+    val arr = JSONArray()
+    list.forEach { pl ->
+        arr.put(JSONObject().apply {
+            put("id", pl.id)
+            put("name", pl.name)
+            put("songIds", JSONArray(pl.songIds))
+        })
+    }
+    return arr
+}
+
+fun savePlaylists(prefs: SharedPreferences, list: List<CustomPlaylist>) {
+    prefs.edit().putString("custom_playlists_json", serializePlaylists(list).toString()).apply()
 }
