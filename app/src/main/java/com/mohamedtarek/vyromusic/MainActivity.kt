@@ -403,7 +403,6 @@ fun VyroMusicApp() {
         }
     }
 
-    // إصلاح مزامنة الـ Mini-Player لو التطبيق اتفتح والمزيكا شغالة بالفعل في الخلفية
     LaunchedEffect(allSongs, controller) {
         val playingId = controller?.currentMediaItem?.mediaId?.toLongOrNull()
         if (playingId != null && allSongs.isNotEmpty()) {
@@ -479,7 +478,6 @@ fun VyroMusicApp() {
         }
     }
 
-    // تحديث مستمر دقيق للوقت (سريع أثناء فتح شاشة الكلمات لمزامنة بالملي ثانية)
     LaunchedEffect(controller, isPlaying, showLyricsOverlay) {
         while (true) {
             runCatching {
@@ -992,7 +990,6 @@ fun VyroMusicApp() {
                     }
                 }
 
-                // شاشة الكلمات الديناميكية المتزامنة الكاملة (مع شاشة تحميل وكاريوكي حيّ)
                 AnimatedVisibility(
                     visible = showLyricsOverlay && currentSong != null,
                     enter = slideInVertically(initialOffsetY = { it / 2 }) + fadeIn(),
@@ -1109,7 +1106,6 @@ fun VyroMusicApp() {
                 )
             }
 
-            // أداة قص النغمات والأغاني المستعادة
             songForCutter?.let { target ->
                 RingtoneCutterDialog(
                     song = target,
@@ -1322,7 +1318,7 @@ fun VyroMusicApp() {
     }
 }
 
-// ==================== FLAGSHIP SMART BLUETOOTH HUB (NO FAKE DATA + LOCKED CARDS 🔒) ====================
+// ==================== FLAGSHIP SMART BLUETOOTH HUB (NO FAKE DATA + LOCKED CARDS) ====================
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -1357,10 +1353,9 @@ fun SmartBluetoothHubScreen(
     var airPodsBeacon by remember { mutableStateOf(VyroBluetoothEngine.latestAirPodsBeacon) }
     var selectedDeviceAddress by remember { mutableStateOf(VyroBluetoothEngine.getActiveDeviceAddress(prefs)) }
 
-    // وضع المعاينة 3D اختياري 100% ولا يعمل أبداً تلقائياً
     var showDemoStage by remember { mutableStateOf(false) }
     var demoCategory by remember { mutableStateOf(BtDeviceCategory.AIRPODS) }
-    var hubTab by remember { mutableIntStateOf(0) } // 0: التحكم والأقفال، 1: الصوت، 2: الأجهزة والبحث
+    var hubTab by remember { mutableIntStateOf(0) }
     var customPhotoVersion by remember { mutableIntStateOf(0) }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -1494,7 +1489,6 @@ fun SmartBluetoothHubScreen(
         }
     }
 
-    // الجهاز الحقيقي فقط (ممنوع عرض أي أرقام بطارية وهمية)
     val realActiveDevice: SmartBtDevice? = remember(bondedDevices, selectedDeviceAddress, airPodsBeacon, btEnabled) {
         if (!btEnabled || bondedDevices.isEmpty()) null
         else {
@@ -1544,13 +1538,14 @@ fun SmartBluetoothHubScreen(
         }
     }
 
+    val connectedDev = realActiveDevice?.takeIf { it.isConnected }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(14.dp)
     ) {
-        // الشريط العلوي
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             IconButton(onClick = onBack) {
                 Icon(Icons.Rounded.ArrowBack, null, tint = textPrimary)
@@ -1569,11 +1564,11 @@ fun SmartBluetoothHubScreen(
                         !hasBtPerms -> if (isArabic) "بانتظار أذونات البلوتوث" else "Bluetooth permissions needed"
                         !btEnabled -> if (isArabic) "البلوتوث مغلق حالياً" else "Bluetooth is OFF"
                         isScanning -> if (isArabic) "جاري البحث عن الأجهزة القريبة..." else "Scanning nearby devices..."
-                        realActiveDevice?.isConnected == true -> if (isArabic) "متصل بـ ${realActiveDevice.name}" else "Connected: ${realActiveDevice.name}"
+                        connectedDev != null -> if (isArabic) "متصل بـ ${connectedDev.name}" else "Connected: ${connectedDev.name}"
                         else -> if (isArabic) "${bondedDevices.size} جهاز محفوظ • قراءات حقيقية 100%" else "${bondedDevices.size} saved • Real-time data"
                     },
                     fontSize = 11.sp,
-                    color = if (realActiveDevice?.isConnected == true) Color(0xFF00E676) else textSecondary
+                    color = if (connectedDev != null) Color(0xFF00E676) else textSecondary
                 )
             }
             IconButton(
@@ -1594,7 +1589,6 @@ fun SmartBluetoothHubScreen(
 
         Spacer(Modifier.height(10.dp))
 
-        // حالة الرادار النظيفة (عندما يكون البلوتوث مقفولاً أو لا توجد أجهزة ولم يفتح المستخدم المعاينة)
         if (displayedDevice == null) {
             BluetoothRadarEmptyState(
                 isArabic = isArabic,
@@ -1613,7 +1607,6 @@ fun SmartBluetoothHubScreen(
                 onOpenDemoPreview = { showDemoStage = true }
             )
 
-            // إظهار الأجهزة المكتشفة قريباً فوراً أثناء البحث
             if (nearbyDevices.isNotEmpty()) {
                 Spacer(Modifier.height(14.dp))
                 Text(
@@ -1651,7 +1644,6 @@ fun SmartBluetoothHubScreen(
                 }
             }
         } else {
-            // شريط تبديل سريع بين أجهزتك المقترنة أو الخروج من وضع المعاينة
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1721,7 +1713,6 @@ fun SmartBluetoothHubScreen(
 
             Spacer(Modifier.height(10.dp))
 
-            // مسرح الهولوجرام 3D التفاعلي
             DeviceHologram3DStage(
                 device = displayedDevice,
                 isArabic = isArabic,
@@ -1734,7 +1725,6 @@ fun SmartBluetoothHubScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // 3 تبويبات منظمة بنظام الشركات الاحترافي (Nothing X / Galaxy Wearable)
             val subTabs = if (isArabic) listOf("التحكم والأقفال", "الصوت والمعادل", "الأجهزة والبحث") else listOf("Controls", "Audio Profile", "Devices")
             Row(
                 modifier = Modifier
@@ -1768,10 +1758,8 @@ fun SmartBluetoothHubScreen(
             Spacer(Modifier.height(12.dp))
 
             when (hubTab) {
-                // ==================== التبويب 1: كروت التحكم + كروت المميزات المقفولة 🔒 ====================
                 0 -> {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        // 1. بطاقة البطارية التفصيلية (تفتح للـ AirPods فقط، وتُقفل بـ 🔒 لباقي الأجهزة)
                         if (displayedDevice.capabilities.supportsTriBattery) {
                             val air = displayedDevice.airPodsBattery
                             Column(
@@ -1838,7 +1826,6 @@ fun SmartBluetoothHubScreen(
                             )
                         }
 
-                        // 2. بطاقة تخصيص التاتش الذكي (مدعومة لكل السماعات الحقيقية، ومقفولة في وضع المعاينة)
                         if (showDemoStage) {
                             LockedFeatureCard(
                                 title = if (isArabic) "تخصيص التاتش الذكي (Double & Triple Tap)" else "Smart Touch Remapping",
@@ -1912,7 +1899,6 @@ fun SmartBluetoothHubScreen(
                             }
                         }
 
-                        // 3. بطاقة إجبار موسيقى السيارة (مفتوحة لو عربية، ومقفولة ومطفية 🔒 لو سماعة)
                         if (displayedDevice.category == BtDeviceCategory.CAR_AUDIO && !showDemoStage) {
                             Column(
                                 modifier = Modifier
@@ -1983,7 +1969,6 @@ fun SmartBluetoothHubScreen(
                             )
                         }
 
-                        // 4. بطاقة عزل الضوضاء والشفافية (ANC) — مقفولة 🔒 بوضوح هندسي صريح
                         LockedFeatureCard(
                             title = if (isArabic) "التحكم في عزل الضوضاء والشفافية (ANC)" else "Active Noise Cancellation (ANC)",
                             lockReason = if (displayedDevice.capabilities.supportsAncHint) {
@@ -1999,7 +1984,6 @@ fun SmartBluetoothHubScreen(
                     }
                 }
 
-                // ==================== التبويب 2: بروفايل الصوت التلقائي للجهاز ====================
                 1 -> {
                     if (showDemoStage) {
                         LockedFeatureCard(
@@ -2053,7 +2037,6 @@ fun SmartBluetoothHubScreen(
                     }
                 }
 
-                // ==================== التبويب 3: قائمة الأجهزة والبحث المباشر ====================
                 2 -> {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
