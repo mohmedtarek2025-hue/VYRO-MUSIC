@@ -16,12 +16,20 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Build
 import androidx.core.content.ContextCompat
+import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Locale
 
 // ==================== BLUETOOTH SMART MODELS ====================
@@ -108,10 +116,15 @@ object VyroBluetoothEngine {
     const val EXTRA_IS_CAR = "extra_is_car"
 
     private const val APPLE_MANUFACTURER_ID = 0x004C
+    private const val GITHUB_CATALOG_URL =
+        "https://raw.githubusercontent.com/mohmedtarek2025-hue/VYRO-MUSIC/main/devices_catalog.json"
 
     @Volatile
     var latestAirPodsBeacon: AirPodsBatteryInfo? = null
         private set
+
+    @Volatile
+    private var cachedCatalog: List<Pair<String, String>>? = null
 
     fun requiredPermissions(): Array<String> {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -287,6 +300,18 @@ object VyroBluetoothEngine {
             val method = device.javaClass.getMethod("isConnected")
             (method.invoke(device) as? Boolean) == true
         }.getOrDefault(false)
+    }
+
+    // اكتشاف فوري لأي سماعة متصلة حالياً (حتى لو اتصلت قبل فتح التطبيق)
+    fun findConnectedAudioDevice(context: Context): SmartBtDevice? {
+        if (!hasConnectPermission(context) || !isBluetoothEnabled(context)) return null
+        return getBondedSmartDevices(context).firstOrNull { it.isConnected }
+    }
+
+    fun syncCurrentlyConnectedDevice(context: Context, prefs: SharedPreferences): SmartBtDevice? {
+        val connected = findConnectedAudioDevice(context) ?: return null
+        setActiveDevice(prefs, connected.address, connected.name, connected.category)
+        return connected
     }
 
     fun parseAirPodsBleResult(result: ScanResult): AirPodsBatteryInfo? {
@@ -498,6 +523,67 @@ object VyroBluetoothEngine {
         }
     }
 
+    // ==================== ZERO-API DEVICE PHOTO CACHE & GITHUB CATALOG ====================
+
+    private fun safeFileName(address: String): String =
+        "bt_img_" + address.replace(Regex("[^A-Za-z0-9]"), "_") + ".png"
+
+    fun getCustomPhotoFile(context: Context, address: String): File {
+        val dir = File(context.filesDir, "bt_photos").apply { mkdirs() }
+        return File(dir, safeFileName(address))
+    }
+
+    fun saveCustomPhoto(context: Context, address: String, uri: Uri): Bitmap? {
+        return runCatching {
+            val bmp = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) } ?: return null
+            val maxDim = 640
+            val scaled = if (bmp.width > maxDim || bmp.height > maxDim) {
+                val ratio = minOf(maxDim.toFloat() / bmp.width, maxDim.toFloat() / bmp.height)
+                Bitmap.createScaledBitmap(bmp, (bmp.width * ratio).toInt().coerceAtLeast(1), (bmp.height * ratio).toInt().coerceAtLeast(1), true)
+            } else bmp
+            FileOutputStream(getCustomPhotoFile(context, address)).use { out ->
+                scaled.compress(Bitmap.CompressFormat.PNG, 92, out)
+            }
+            scaled
+        }.getOrNull()
+    }
+
+    fun loadSavedDevicePhoto(context: Context, address: String): Bitmap? {
+        val f = getCustomPhotoFile(context, address)
+        if (!f.exists() || f.length() < 128L) return null
+        return runCatching { BitmapFactory.decodeFile(f.absolutePath) }.getOrNull()
+    }
+
+    fun fetchGithubCatalogImageUrl(deviceName: String): String? {
+        val lowerName = deviceName.lowercase(Locale.ROOT)
+        val entries = cachedCatalog ?: runCatching {
+            val conn = (URL(GITHUB_CATALOG_URL).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 7000
+                readTimeout = 8000
+                setRequestProperty("User-Agent", "VYRO-MUSIC/5.2.0")
+            }
+            if (conn.responseCode !in 200..299) {
+                conn.disconnect()
+                return@runCatching emptyList<Pair<String, String>>()
+            }
+            val raw = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            val arr = JSONArray(raw)
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val kw = o.optString("keyword", "").trim().lowercase(Locale.ROOT)
+                    val url = o.optString("image", "").trim()
+                    if (kw.isNotBlank() && url.isNotBlank()) add(kw to url)
+                }
+            }
+        }.getOrDefault(emptyList()).also { cachedCatalog = it }
+
+        return entries.firstOrNull { (kw, _) -> lowerName.contains(kw) }?.second
+    }
+
+    // ==================== PER-DEVICE PROFILES STORAGE ====================
+
     fun loadProfile(prefs: SharedPreferences, address: String, category: BtDeviceCategory = BtDeviceCategory.UNKNOWN): BtDeviceProfile {
         val raw = VyroSafePrefs.getString(prefs, "bt_profile_$address", "")
         if (raw.isBlank()) {
@@ -587,5 +673,6 @@ object VyroBluetoothEngine {
             editor.putBoolean("spatial_8d_enabled", profile.enable8D)
         }
         editor.apply()
+        VyroDspController.syncFromPrefs(prefs)
     }
 }
