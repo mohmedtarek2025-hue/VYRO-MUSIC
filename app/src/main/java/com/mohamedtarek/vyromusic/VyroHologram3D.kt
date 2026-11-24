@@ -1,5 +1,6 @@
 package com.mohamedtarek.vyromusic
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
@@ -42,6 +43,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -87,24 +90,55 @@ private enum class HoloDragMode {
     ROTATE, LID, LEFT_BUD, RIGHT_BUD
 }
 
-// ==================== EXACT MODEL HOLO-IMAGE FETCHER ====================
+// ==================== ZERO-API MULTI-LAYER HOLO PHOTO FETCHER ====================
 
 object DeviceHoloImageFetcher {
     private val cache = object : LruCache<String, Bitmap>(12) {}
 
-    suspend fun fetchModelPhoto(deviceName: String, category: BtDeviceCategory): Bitmap? =
-        withContext(Dispatchers.IO) {
-            val cleanQuery = buildSearchQuery(deviceName, category)
-            cache.get(cleanQuery)?.let { return@withContext it }
+    fun invalidate(address: String) {
+        cache.evictAll()
+    }
 
-            val imgUrl = searchWikimediaImage(cleanQuery)
-                ?: searchWikimediaImage(fallbackQueryFor(category))
-                ?: return@withContext null
+    suspend fun fetchModelPhoto(
+        context: Context,
+        address: String,
+        deviceName: String,
+        category: BtDeviceCategory
+    ): Bitmap? = withContext(Dispatchers.IO) {
+        VyroBluetoothEngine.loadSavedDevicePhoto(context, address)?.let { return@withContext it }
 
-            val bmp = downloadBitmap(imgUrl)
-            if (bmp != null) cache.put(cleanQuery, bmp)
-            bmp
+        val cacheKey = "${address}_$deviceName"
+        cache.get(cacheKey)?.let { return@withContext it }
+
+        val catalogUrl = VyroBluetoothEngine.fetchGithubCatalogImageUrl(deviceName)
+        if (!catalogUrl.isNullOrBlank()) {
+            downloadBitmap(catalogUrl)?.let { bmp ->
+                cache.put(cacheKey, bmp)
+                persistToDisk(context, address, bmp)
+                return@withContext bmp
+            }
         }
+
+        val cleanQuery = buildSearchQuery(deviceName, category)
+        val imgUrl = searchWikimediaImage(cleanQuery) ?: searchWikimediaImage(fallbackQueryFor(category))
+        if (!imgUrl.isNullOrBlank()) {
+            downloadBitmap(imgUrl)?.let { bmp ->
+                cache.put(cacheKey, bmp)
+                persistToDisk(context, address, bmp)
+                return@withContext bmp
+            }
+        }
+        null
+    }
+
+    private fun persistToDisk(context: Context, address: String, bmp: Bitmap) {
+        if (address.startsWith("DEMO_")) return
+        runCatching {
+            FileOutputStream(VyroBluetoothEngine.getCustomPhotoFile(context, address)).use { out ->
+                bmp.compress(Bitmap.CompressFormat.PNG, 90, out)
+            }
+        }
+    }
 
     private fun buildSearchQuery(name: String, category: BtDeviceCategory): String {
         val cleaned = name
@@ -143,7 +177,7 @@ object DeviceHoloImageFetcher {
             val conn = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 8000
                 readTimeout = 10000
-                setRequestProperty("User-Agent", "VyroMusicApp/5.1.0 (Android)")
+                setRequestProperty("User-Agent", "VyroMusicApp/5.2.0 (Android)")
             }
             if (conn.responseCode !in 200..299) {
                 conn.disconnect()
@@ -172,7 +206,7 @@ object DeviceHoloImageFetcher {
                 connectTimeout = 9000
                 readTimeout = 12000
                 instanceFollowRedirects = true
-                setRequestProperty("User-Agent", "VyroMusicApp/5.1.0 (Android)")
+                setRequestProperty("User-Agent", "VyroMusicApp/5.2.0 (Android)")
             }
             if (conn.responseCode !in 200..299) {
                 conn.disconnect()
@@ -193,8 +227,12 @@ fun DeviceHologram3DStage(
     isArabic: Boolean,
     accent: Color,
     isPlaying: Boolean,
+    isDemoMode: Boolean = false,
+    customPhotoVersion: Int = 0,
+    onPickCustomPhoto: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val isCaseDevice = device.category == BtDeviceCategory.AIRPODS ||
         device.category == BtDeviceCategory.SOUNDCORE ||
         device.category == BtDeviceCategory.GALAXY_BUDS ||
@@ -209,7 +247,7 @@ fun DeviceHologram3DStage(
     var rightPullTarget by remember(device.address) { mutableFloatStateOf(0f) }
 
     var showRealHoloPhoto by remember(device.address) { mutableStateOf(false) }
-    var holoPhoto by remember(device.address) { mutableStateOf<ImageBitmap?>(null) }
+    var holoPhoto by remember(device.address, customPhotoVersion) { mutableStateOf<ImageBitmap?>(null) }
     var loadingPhoto by remember(device.address) { mutableStateOf(false) }
 
     val lidOpen by animateFloatAsState(
@@ -233,10 +271,15 @@ fun DeviceHologram3DStage(
     val rightBudScreenPos = remember { mutableStateOf(Offset.Zero) }
     var activeDragMode by remember { mutableStateOf(HoloDragMode.ROTATE) }
 
-    LaunchedEffect(showRealHoloPhoto, device.name) {
-        if (showRealHoloPhoto && holoPhoto == null) {
+    LaunchedEffect(showRealHoloPhoto, device.address, customPhotoVersion) {
+        if (showRealHoloPhoto) {
             loadingPhoto = true
-            holoPhoto = DeviceHoloImageFetcher.fetchModelPhoto(device.name, device.category)?.asImageBitmap()
+            holoPhoto = DeviceHoloImageFetcher.fetchModelPhoto(
+                context = context,
+                address = device.address,
+                deviceName = device.name,
+                category = device.category
+            )?.asImageBitmap()
             loadingPhoto = false
         }
     }
@@ -284,19 +327,40 @@ fun DeviceHologram3DStage(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .background(holoCyan.copy(0.15f))
-                    .border(1.dp, holoCyan.copy(0.45f), RoundedCornerShape(10.dp))
+                    .background(if (isDemoMode) Color(0xFFFFC857).copy(0.18f) else holoCyan.copy(0.15f))
+                    .border(1.dp, if (isDemoMode) Color(0xFFFFC857) else holoCyan.copy(0.45f), RoundedCornerShape(10.dp))
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 Text(
-                    text = "HOLO 3D • ${device.capabilities.brandTag}",
-                    color = holoCyan,
+                    text = if (isDemoMode) {
+                        if (isArabic) "وضع معاينة 3D فقط" else "3D PREVIEW MODE"
+                    } else {
+                        "HOLO 3D • ${device.capabilities.brandTag}"
+                    },
+                    color = if (isDemoMode) Color(0xFFFFC857) else holoCyan,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Black,
                     maxLines = 1
                 )
             }
             Spacer(Modifier.weight(1f))
+            if (showRealHoloPhoto && onPickCustomPhoto != null && !isDemoMode) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(accent.copy(0.18f))
+                        .clickable { onPickCustomPhoto() }
+                        .padding(horizontal = 8.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        text = if (isArabic) "صورة من جهازي" else "Pick Photo",
+                        color = accent,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
+            }
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
@@ -404,7 +468,8 @@ fun DeviceHologram3DStage(
                     pitch = pitch,
                     scanLine = scanLine,
                     holoColor = holoCyan,
-                    isArabic = isArabic
+                    isArabic = isArabic,
+                    onPickCustomPhoto = if (!isDemoMode) onPickCustomPhoto else null
                 )
             } else {
                 Canvas(modifier = Modifier.fillMaxSize()) {
@@ -523,7 +588,7 @@ fun DeviceHologram3DStage(
                 }
 
                 val air = device.airPodsBattery
-                if (isCaseDevice && (air != null || leftPull > 0.3f || rightPull > 0.3f)) {
+                if (!isDemoMode && isCaseDevice && (air != null || leftPull > 0.3f || rightPull > 0.3f)) {
                     Row(
                         modifier = Modifier
                             .align(Alignment.TopCenter)
@@ -536,7 +601,8 @@ fun DeviceHologram3DStage(
                             value = when {
                                 air != null && air.leftPercent >= 0 -> "${air.leftPercent}%" + if (air.leftCharging) "⚡" else ""
                                 leftPull > 0.3f -> if (isArabic) "خارج العلبة" else "Out"
-                                else -> if (device.batteryPercent >= 0) "${device.batteryPercent}%" else "--"
+                                device.batteryPercent >= 0 -> "${device.batteryPercent}%"
+                                else -> "--"
                             },
                             active = leftPull > 0.3f || (air?.leftPercent ?: -1) >= 0,
                             color = holoCyan
@@ -556,7 +622,8 @@ fun DeviceHologram3DStage(
                             value = when {
                                 air != null && air.rightPercent >= 0 -> "${air.rightPercent}%" + if (air.rightCharging) "⚡" else ""
                                 rightPull > 0.3f -> if (isArabic) "خارج العلبة" else "Out"
-                                else -> if (device.batteryPercent >= 0) "${device.batteryPercent}%" else "--"
+                                device.batteryPercent >= 0 -> "${device.batteryPercent}%"
+                                else -> "--"
                             },
                             active = rightPull > 0.3f || (air?.rightPercent ?: -1) >= 0,
                             color = holoCyan
@@ -657,7 +724,8 @@ private fun RealModelHologramProjection(
     pitch: Float,
     scanLine: Float,
     holoColor: Color,
-    isArabic: Boolean
+    isArabic: Boolean,
+    onPickCustomPhoto: (() -> Unit)?
 ) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         if (loading) {
@@ -665,7 +733,7 @@ private fun RealModelHologramProjection(
                 CircularProgressIndicator(color = holoColor, strokeWidth = 2.5.dp, modifier = Modifier.size(32.dp))
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    text = if (isArabic) "جاري البحث عن صورة $deviceName..." else "Fetching $deviceName model...",
+                    text = if (isArabic) "جاري تحميل صورة $deviceName..." else "Loading $deviceName photo...",
                     color = holoColor,
                     fontSize = 12.sp
                 )
@@ -688,7 +756,7 @@ private fun RealModelHologramProjection(
                     bitmap = photo,
                     contentDescription = deviceName,
                     contentScale = ContentScale.Crop,
-                    colorFilter = ColorFilter.tint(holoColor.copy(alpha = 0.36f), BlendMode.SrcAtop),
+                    colorFilter = ColorFilter.tint(holoColor.copy(alpha = 0.30f), BlendMode.SrcAtop),
                     modifier = Modifier.fillMaxSize()
                 )
                 Canvas(modifier = Modifier.fillMaxSize()) {
@@ -706,11 +774,20 @@ private fun RealModelHologramProjection(
                 Icon(Icons.Rounded.AutoAwesome, null, tint = holoColor, modifier = Modifier.size(40.dp))
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = if (isArabic) "تعذر جلب صورة خارجية — اضغط «مجسم 3D» للتفاعل مع المجسم الكامل" else "Photo unavailable — switch to 3D Model",
-                    color = Color.White.copy(0.75f),
+                    text = if (isArabic) "لم يتم العثور على صورة تلقائية لهذا الموديل" else "No automatic photo found for this model",
+                    color = Color.White.copy(0.85f),
                     fontSize = 12.sp,
                     textAlign = TextAlign.Center
                 )
+                if (onPickCustomPhoto != null) {
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = onPickCustomPhoto,
+                        colors = ButtonDefaults.buttonColors(containerColor = holoColor)
+                    ) {
+                        Text(if (isArabic) "اختر صورة سماعتك من المعرض" else "Pick Photo from Gallery", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
             }
         }
     }
