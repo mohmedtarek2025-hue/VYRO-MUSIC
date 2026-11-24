@@ -24,10 +24,6 @@ import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.media.MediaMetadataRetriever
-import android.media.audiofx.BassBoost
-import android.media.audiofx.Equalizer
-import android.media.audiofx.LoudnessEnhancer
-import android.media.audiofx.Virtualizer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -45,7 +41,10 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionResult
@@ -193,7 +192,7 @@ object VyroSafePrefs {
     fun sanitizeOnUpgrade(prefs: SharedPreferences) {
         runCatching {
             val currentSchema = getInt(prefs, "vyro_prefs_schema", 0)
-            if (currentSchema >= 503) return
+            if (currentSchema >= 520) return
 
             val favs = getLongSet(prefs, "favorite_ids")
             val hidden = getLongSet(prefs, "hidden_ids")
@@ -231,13 +230,13 @@ object VyroSafePrefs {
                 .putBoolean("lang_ar", langAr)
                 .putBoolean("spatial_8d_enabled", spatial8D)
                 .putInt("sort_mode", sortMode)
-                .putInt("vyro_prefs_schema", 503)
+                .putInt("vyro_prefs_schema", 520)
                 .apply()
         }
     }
 }
 
-// ==================== PLAYBACK SERVICE ====================
+// ==================== PLAYBACK SERVICE (WITH TRUE SOFTWARE PCM DSP) ====================
 
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPreferenceChangeListener {
@@ -246,12 +245,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
     private lateinit var player: ExoPlayer
     private lateinit var prefs: SharedPreferences
     private val mainHandler = Handler(Looper.getMainLooper())
-
-    private var boundSessionId: Int = C.AUDIO_SESSION_ID_UNSET
-    private var equalizer: Equalizer? = null
-    private var bassBoost: BassBoost? = null
-    private var virtualizer: Virtualizer? = null
-    private var loudnessEnhancer: LoudnessEnhancer? = null
+    private val vyroDspProcessor = VyroDspAudioProcessor()
     private var playSessionStartMs: Long = 0L
 
     private val btReceiver = object : BroadcastReceiver() {
@@ -259,6 +253,15 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         override fun onReceive(context: Context?, intent: Intent?) {
             val action = intent?.action ?: return
             val device = VyroBluetoothEngine.extractDeviceExtra(intent) ?: return
+
+            if (action == BluetoothDevice.ACTION_ACL_DISCONNECTED) {
+                val activeAddr = VyroBluetoothEngine.getActiveDeviceAddress(prefs)
+                if (activeAddr == device.address) {
+                    prefs.edit().remove("active_bt_address").remove("active_bt_name").apply()
+                }
+                return
+            }
+
             val isConnectedEvent = when (action) {
                 BluetoothDevice.ACTION_ACL_CONNECTED -> true
                 BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED ->
@@ -298,27 +301,48 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         VyroSafePrefs.sanitizeOnUpgrade(prefs)
         prefs.registerOnSharedPreferenceChangeListener(this)
 
+        // مزامنة محرك الصوت البرمجي (EQ + Sub-Bass + 8D الحقيقي) فور بدء الخدمة
+        VyroDspController.syncFromPrefs(prefs)
+
+        // التقاط السماعة المتصلة فعلياً قبل فتح التطبيق لتعمل تخصيصات التاتش وبروفايل الصوت فوراً
+        runCatching {
+            val connectedNow = VyroBluetoothEngine.syncCurrentlyConnectedDevice(this, prefs)
+            if (connectedNow != null) {
+                val prof = VyroBluetoothEngine.loadProfile(prefs, connectedNow.address, connectedNow.category)
+                VyroBluetoothEngine.applyProfileAudioSettings(prefs, prof)
+            }
+        }
+
+        // حقن معالج الصوت البرمجي VyroDspAudioProcessor مباشرة داخل خط صوت ExoPlayer
+        val renderersFactory = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean
+            ): AudioSink {
+                return DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(false)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessors(arrayOf(vyroDspProcessor))
+                    .build()
+            }
+        }
+
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
 
-        player = ExoPlayer.Builder(this)
+        player = ExoPlayer.Builder(this, renderersFactory)
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
             .build()
 
         player.addListener(object : Player.Listener {
-            override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                bindHardwareDsp(audioSessionId)
-            }
-
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying) {
                     playSessionStartMs = System.currentTimeMillis()
-                    if (equalizer == null || bassBoost == null || loudnessEnhancer == null) {
-                        bindHardwareDsp(player.audioSessionId)
-                    }
+                    VyroDspController.syncFromPrefs(prefs)
                 } else {
                     flushListeningTime()
                 }
@@ -351,9 +375,6 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
             }
         })
 
-        if (player.audioSessionId != C.AUDIO_SESSION_ID_UNSET) {
-            bindHardwareDsp(player.audioSessionId)
-        }
         applyPlaybackParams()
 
         val sessionActivityPendingIntent = PendingIntent.getActivity(
@@ -363,6 +384,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        // معترض أوامر التاتش الذكي لسماعات البلوتوث (يتحقق تلقائياً من السماعة المتصلة حتى لو اتصلت قبل فتح التطبيق)
         val smartTouchCallback = object : MediaSession.Callback {
             @Suppress("DEPRECATION")
             override fun onPlayerCommandRequest(
@@ -371,7 +393,9 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
                 playerCommand: Int
             ): Int {
                 if (controller.packageName != packageName) {
-                    val activeAddr = VyroBluetoothEngine.getActiveDeviceAddress(prefs)
+                    val activeAddr = VyroBluetoothEngine.getActiveDeviceAddress(prefs).ifBlank {
+                        VyroBluetoothEngine.syncCurrentlyConnectedDevice(this@PlaybackService, prefs)?.address.orEmpty()
+                    }
                     if (activeAddr.isNotBlank()) {
                         val profile = VyroBluetoothEngine.loadProfile(prefs, activeAddr)
                         when (playerCommand) {
@@ -404,6 +428,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         runCatching {
             val filter = IntentFilter().apply {
                 addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+                addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
                 addAction(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED)
             }
             ContextCompat.registerReceiver(this, btReceiver, filter, ContextCompat.RECEIVER_EXPORTED)
@@ -417,6 +442,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
             SmartTouchAction.TOGGLE_8D -> {
                 val cur = VyroSafePrefs.getBoolean(prefs, "spatial_8d_enabled", false)
                 prefs.edit().putBoolean("spatial_8d_enabled", !cur).apply()
+                VyroDspController.syncFromPrefs(prefs)
             }
             SmartTouchAction.SEEK_FWD_15 -> {
                 val dur = player.duration.coerceAtLeast(0L)
@@ -439,6 +465,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
                 val curBass = VyroSafePrefs.getInt(prefs, "bass_strength", 35)
                 val nextBass = if (curBass >= 70) 35 else 85
                 prefs.edit().putInt("bass_strength", nextBass).apply()
+                VyroDspController.syncFromPrefs(prefs)
             }
         }
     }
@@ -536,92 +563,6 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         return super.onStartCommand(intent, flags, startId)
     }
 
-    private fun bindHardwareDsp(sessionId: Int) {
-        if (sessionId == C.AUDIO_SESSION_ID_UNSET || sessionId <= 0) return
-        if (boundSessionId != sessionId) {
-            releaseDsp()
-            boundSessionId = sessionId
-        }
-        if (equalizer == null) {
-            runCatching { equalizer = Equalizer(0, sessionId).apply { enabled = true } }
-        }
-        if (bassBoost == null) {
-            runCatching { bassBoost = BassBoost(0, sessionId).apply { enabled = true } }
-        }
-        if (virtualizer == null) {
-            runCatching { virtualizer = Virtualizer(0, sessionId).apply { enabled = true } }
-        }
-        if (loudnessEnhancer == null) {
-            runCatching { loudnessEnhancer = LoudnessEnhancer(sessionId).apply { enabled = true } }
-        }
-        applyDspLevels()
-    }
-
-    private fun applyDspLevels() {
-        val spatial8D = VyroSafePrefs.getBoolean(prefs, "spatial_8d_enabled", false)
-        val gains = VyroSafePrefs.getBandGains(prefs)
-        val bassStrength = VyroSafePrefs.getInt(prefs, "bass_strength", 35).coerceIn(0, 100)
-        val virtStrength = VyroSafePrefs.getInt(prefs, "virtualizer_strength", 30).coerceIn(0, 100)
-        val loudnessGain = VyroSafePrefs.getInt(prefs, "loudness_gain", 0).coerceIn(0, 100)
-
-        val maxPeak = gains.maxOrNull()?.coerceAtLeast(0f) ?: 0f
-        val headroomDrop = ((maxPeak - 0.42f).coerceAtLeast(0f) * 0.28f) +
-            ((bassStrength - 50).coerceAtLeast(0) / 380f) +
-            (loudnessGain / 550f)
-
-        runCatching {
-            val eq = equalizer ?: return@runCatching
-            eq.enabled = true
-            val numBands = eq.numberOfBands.toInt()
-            val range = eq.bandLevelRange
-            val minLvl = range[0].toInt()
-            val maxLvl = range[1].toInt()
-            val centerLvl = (minLvl + maxLvl) / 2
-            val halfSpan = (maxLvl - minLvl) / 2f
-
-            val subBass0 = (bassStrength / 100f) * 0.18f
-            val subBass1 = (bassStrength / 100f) * 0.10f
-
-            for (b in 0 until minOf(numBands, gains.size)) {
-                val extra = when (b) {
-                    0 -> subBass0
-                    1 -> subBass1
-                    else -> 0f
-                }
-                val balanced = ((gains[b] + extra - headroomDrop).coerceIn(-0.90f, 0.90f)) * 0.56f
-                val target = (centerLvl + (balanced * halfSpan).toInt()).coerceIn(minLvl, maxLvl).toShort()
-                eq.setBandLevel(b.toShort(), target)
-            }
-        }
-
-        runCatching {
-            bassBoost?.let { bb ->
-                bb.enabled = bassStrength > 0
-                if (bb.strengthSupported) {
-                    bb.setStrength(((bassStrength * 580) / 100).coerceIn(0, 620).toShort())
-                }
-            }
-        }
-
-        runCatching {
-            virtualizer?.let { vt ->
-                val effectiveVirt = if (spatial8D) maxOf(virtStrength, 88) else virtStrength
-                vt.enabled = effectiveVirt > 0
-                if (vt.strengthSupported) {
-                    vt.setStrength((effectiveVirt * 9).coerceIn(0, 1000).toShort())
-                }
-            }
-        }
-
-        runCatching {
-            loudnessEnhancer?.let { le ->
-                val safeGainMb = (loudnessGain * 3).coerceIn(0, 300)
-                le.enabled = safeGainMb > 0
-                le.setTargetGain(safeGainMb)
-            }
-        }
-    }
-
     private fun applyPlaybackParams() {
         val speed = VyroSafePrefs.getFloat(prefs, "playback_speed", 1f).coerceIn(0.5f, 2.0f)
         val pitch = VyroSafePrefs.getFloat(prefs, "playback_pitch", 1f).coerceIn(0.5f, 2.0f)
@@ -632,7 +573,9 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
         when (key) {
-            "band_gains", "bass_strength", "virtualizer_strength", "loudness_gain", "spatial_8d_enabled" -> applyDspLevels()
+            "band_gains", "bass_strength", "virtualizer_strength", "loudness_gain", "spatial_8d_enabled" -> {
+                VyroDspController.syncFromPrefs(prefs)
+            }
             "playback_speed", "playback_pitch" -> applyPlaybackParams()
             "widget_style", "accent_color_id" -> VyroWidgetProvider.updateAllWidgets(this)
         }
@@ -646,22 +589,10 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         }
     }
 
-    private fun releaseDsp() {
-        runCatching { equalizer?.release() }
-        runCatching { bassBoost?.release() }
-        runCatching { virtualizer?.release() }
-        runCatching { loudnessEnhancer?.release() }
-        equalizer = null
-        bassBoost = null
-        virtualizer = null
-        loudnessEnhancer = null
-    }
-
     override fun onDestroy() {
         runCatching { unregisterReceiver(btReceiver) }
         flushListeningTime()
         prefs.unregisterOnSharedPreferenceChangeListener(this)
-        releaseDsp()
         mediaSession?.run {
             player.release()
             release()
@@ -697,12 +628,13 @@ class VyroWidgetProvider : AppWidgetProvider() {
                 val svcIntent = Intent(context, PlaybackService::class.java).apply {
                     action = intent.action
                 }
-                runCatching {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        context.startForegroundService(svcIntent)
-                    } else {
-                        context.startService(svcIntent)
-                    }
+                // تشغيل آمن يمنع كراش ForegroundServiceDidNotStartInTimeException عند الإيقاف من الويدجت
+                val started = runCatching {
+                    context.startService(svcIntent)
+                    true
+                }.getOrDefault(false)
+                if (!started && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    runCatching { context.startForegroundService(svcIntent) }
                 }
             }
         }
