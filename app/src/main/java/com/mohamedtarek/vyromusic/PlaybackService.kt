@@ -1,12 +1,18 @@
 package com.mohamedtarek.vyromusic
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.bluetooth.BluetoothA2dp
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothProfile
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -25,13 +31,18 @@ import android.media.audiofx.Virtualizer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Size
+import android.view.KeyEvent
 import android.view.View
 import android.widget.RemoteViews
 import androidx.annotation.OptIn
+import androidx.core.content.ContextCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -43,7 +54,6 @@ import org.json.JSONObject
 import kotlin.math.abs
 
 // ==================== SAFE UPGRADE PREFS ENGINE ====================
-// يمنع حدوث ClassCastException عند تثبيت نسخة جديدة فوق نسخة قديمة بدون مسح البيانات
 
 object VyroSafePrefs {
     private fun raw(prefs: SharedPreferences, key: String): Any? =
@@ -235,6 +245,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
     private var mediaSession: MediaSession? = null
     private lateinit var player: ExoPlayer
     private lateinit var prefs: SharedPreferences
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private var boundSessionId: Int = C.AUDIO_SESSION_ID_UNSET
     private var equalizer: Equalizer? = null
@@ -242,6 +253,38 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
     private var virtualizer: Virtualizer? = null
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private var playSessionStartMs: Long = 0L
+
+    private val btReceiver = object : BroadcastReceiver() {
+        @SuppressLint("MissingPermission")
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action ?: return
+            val device = VyroBluetoothEngine.extractDeviceExtra(intent) ?: return
+            val isConnectedEvent = when (action) {
+                BluetoothDevice.ACTION_ACL_CONNECTED -> true
+                BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED ->
+                    intent.getIntExtra(BluetoothProfile.EXTRA_STATE, -1) == BluetoothProfile.STATE_CONNECTED
+                else -> false
+            }
+            if (!isConnectedEvent) return
+
+            val devName = runCatching { device.name }.getOrNull().orEmpty().ifBlank { "Bluetooth Audio" }
+            val cat = VyroBluetoothEngine.classifyDevice(device, devName)
+            VyroBluetoothEngine.setActiveDevice(prefs, device.address, devName, cat)
+
+            val profile = VyroBluetoothEngine.loadProfile(prefs, device.address, cat)
+            VyroBluetoothEngine.applyProfileAudioSettings(prefs, profile)
+
+            if (cat == BtDeviceCategory.CAR_AUDIO && profile.forceCarMusic) {
+                mainHandler.postDelayed({
+                    triggerCarForceMusic(profile.carTargetVolumePercent)
+                }, 650L)
+            } else if (profile.autoPlayOnConnect) {
+                mainHandler.postDelayed({
+                    resumeOrRestoreLastTrack()
+                }, 500L)
+            }
+        }
+    }
 
     companion object {
         const val ACTION_WIDGET_TOGGLE = "com.mohamedtarek.vyromusic.WIDGET_TOGGLE"
@@ -261,7 +304,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
             .build()
 
         player = ExoPlayer.Builder(this)
-            .setAudioAttributes(audioAttributes, false)
+            .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
             .build()
 
@@ -320,9 +363,130 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        // معترض أوامر التاتش الذكي لسماعات AirPods وجميع سماعات البلوتوث
+        val smartTouchCallback = object : MediaSession.Callback {
+            @Suppress("DEPRECATION")
+            override fun onMediaButtonEvent(
+                session: MediaSession,
+                controllerInfo: MediaSession.ControllerInfo,
+                mediaButtonEvent: Intent
+            ): Boolean {
+                val keyEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    mediaButtonEvent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                } else {
+                    mediaButtonEvent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                }
+
+                if (keyEvent != null && keyEvent.action == KeyEvent.ACTION_DOWN && keyEvent.repeatCount == 0) {
+                    val activeAddr = VyroBluetoothEngine.getActiveDeviceAddress(prefs)
+                    if (activeAddr.isNotBlank()) {
+                        val profile = VyroBluetoothEngine.loadProfile(prefs, activeAddr)
+                        when (keyEvent.keyCode) {
+                            KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                                if (profile.doubleTapAction != SmartTouchAction.NEXT) {
+                                    executeSmartTouchAction(profile.doubleTapAction)
+                                    return true
+                                }
+                            }
+                            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                                if (profile.tripleTapAction != SmartTouchAction.PREV) {
+                                    executeSmartTouchAction(profile.tripleTapAction)
+                                    return true
+                                }
+                            }
+                        }
+                    }
+                }
+                return super.onMediaButtonEvent(session, controllerInfo, mediaButtonEvent)
+            }
+        }
+
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(sessionActivityPendingIntent)
+            .setCallback(smartTouchCallback)
             .build()
+
+        runCatching {
+            val filter = IntentFilter().apply {
+                addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+                addAction(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED)
+            }
+            ContextCompat.registerReceiver(this, btReceiver, filter, ContextCompat.RECEIVER_EXPORTED)
+        }
+    }
+
+    private fun executeSmartTouchAction(action: SmartTouchAction) {
+        when (action) {
+            SmartTouchAction.NEXT -> player.seekToNext()
+            SmartTouchAction.PREV -> player.seekToPrevious()
+            SmartTouchAction.TOGGLE_8D -> {
+                val cur = VyroSafePrefs.getBoolean(prefs, "spatial_8d_enabled", false)
+                prefs.edit().putBoolean("spatial_8d_enabled", !cur).apply()
+            }
+            SmartTouchAction.SEEK_FWD_15 -> {
+                val dur = player.duration.coerceAtLeast(0L)
+                val target = (player.currentPosition + 15_000L).let { if (dur > 0) it.coerceAtMost(dur) else it }
+                player.seekTo(target)
+            }
+            SmartTouchAction.SEEK_BACK_15 -> {
+                player.seekTo((player.currentPosition - 15_000L).coerceAtLeast(0L))
+            }
+            SmartTouchAction.TOGGLE_FAV -> {
+                val id = player.currentMediaItem?.mediaId?.toLongOrNull()
+                    ?: VyroSafePrefs.getLong(prefs, "last_song_id", -1L)
+                if (id > 0L) {
+                    val favs = VyroSafePrefs.getLongSet(prefs, "favorite_ids").toMutableSet()
+                    if (id in favs) favs.remove(id) else favs.add(id)
+                    prefs.edit().putString("favorite_ids", JSONArray(favs.toList()).toString()).apply()
+                }
+            }
+            SmartTouchAction.BOOST_BASS -> {
+                val curBass = VyroSafePrefs.getInt(prefs, "bass_strength", 35)
+                val nextBass = if (curBass >= 70) 35 else 85
+                prefs.edit().putInt("bass_strength", nextBass).apply()
+            }
+        }
+    }
+
+    private fun triggerCarForceMusic(targetVolumePercent: Int) {
+        VyroBluetoothEngine.forceCarAudioMusicMode(this, targetVolumePercent)
+        resumeOrRestoreLastTrack()
+    }
+
+    private fun resumeOrRestoreLastTrack() {
+        runCatching {
+            player.volume = 1f
+            if (player.mediaItemCount > 0) {
+                player.prepare()
+                player.play()
+                return
+            }
+            val uriStr = VyroSafePrefs.getString(prefs, "last_song_uri", "")
+            val lastId = VyroSafePrefs.getLong(prefs, "last_song_id", -1L)
+            if (uriStr.isNotBlank() && lastId > 0L) {
+                val lastTitle = VyroSafePrefs.getString(prefs, "last_title", "VYRO MUSIC")
+                val lastArtist = VyroSafePrefs.getString(prefs, "last_artist", "Mohamed Tarek")
+                val lastAlbumId = VyroSafePrefs.getLong(prefs, "last_album_id", -1L)
+                val extras = Bundle().apply {
+                    putLong("album_id", lastAlbumId)
+                    putString("song_uri", uriStr)
+                }
+                val item = MediaItem.Builder()
+                    .setMediaId(lastId.toString())
+                    .setUri(Uri.parse(uriStr))
+                    .setRequestMetadata(MediaItem.RequestMetadata.Builder().setExtras(extras).build())
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(lastTitle)
+                            .setArtist(lastArtist)
+                            .build()
+                    )
+                    .build()
+                player.setMediaItem(item)
+                player.prepare()
+                player.play()
+            }
+        }
     }
 
     private fun flushListeningTime() {
@@ -340,7 +504,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         runCatching {
             when (intent?.action) {
                 ACTION_WIDGET_TOGGLE -> {
-                    if (player.isPlaying) player.pause() else player.play()
+                    if (player.isPlaying) player.pause() else resumeOrRestoreLastTrack()
                     VyroWidgetProvider.updateAllWidgets(this)
                 }
                 ACTION_WIDGET_NEXT -> {
@@ -350,6 +514,27 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
                 ACTION_WIDGET_PREV -> {
                     player.seekToPrevious()
                     VyroWidgetProvider.updateAllWidgets(this)
+                }
+                VyroBluetoothEngine.ACTION_FORCE_CAR_PLAY -> {
+                    val addr = intent.getStringExtra(VyroBluetoothEngine.EXTRA_DEVICE_ADDRESS).orEmpty()
+                    val vol = if (addr.isNotBlank()) {
+                        VyroBluetoothEngine.loadProfile(prefs, addr, BtDeviceCategory.CAR_AUDIO).carTargetVolumePercent
+                    } else 85
+                    triggerCarForceMusic(vol)
+                }
+                VyroBluetoothEngine.ACTION_APPLY_DEVICE_PROFILE -> {
+                    val addr = intent.getStringExtra(VyroBluetoothEngine.EXTRA_DEVICE_ADDRESS).orEmpty()
+                    val isCar = intent.getBooleanExtra(VyroBluetoothEngine.EXTRA_IS_CAR, false)
+                    if (addr.isNotBlank()) {
+                        val cat = if (isCar) BtDeviceCategory.CAR_AUDIO else BtDeviceCategory.UNKNOWN
+                        val profile = VyroBluetoothEngine.loadProfile(prefs, addr, cat)
+                        VyroBluetoothEngine.applyProfileAudioSettings(prefs, profile)
+                        if (isCar && profile.forceCarMusic) {
+                            triggerCarForceMusic(profile.carTargetVolumePercent)
+                        } else if (profile.autoPlayOnConnect) {
+                            resumeOrRestoreLastTrack()
+                        }
+                    }
                 }
             }
         }
@@ -478,6 +663,7 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
     }
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(btReceiver) }
         flushListeningTime()
         prefs.unregisterOnSharedPreferenceChangeListener(this)
         releaseDsp()
