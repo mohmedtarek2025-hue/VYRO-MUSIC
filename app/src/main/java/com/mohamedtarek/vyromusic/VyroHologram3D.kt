@@ -90,7 +90,7 @@ private enum class HoloDragMode {
 // ==================== EXACT MODEL HOLO-IMAGE FETCHER ====================
 
 object DeviceHoloImageFetcher {
-    private val cache = LruCache<String, Bitmap>(12)
+    private val cache = object : LruCache<String, Bitmap>(12) {}
 
     suspend fun fetchModelPhoto(deviceName: String, category: BtDeviceCategory): Bitmap? =
         withContext(Dispatchers.IO) {
