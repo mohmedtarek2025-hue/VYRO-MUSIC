@@ -17,7 +17,6 @@ import kotlin.math.sqrt
 import kotlin.math.tanh
 
 // ==================== LOCK-FREE REAL-TIME DSP CONTROLLER ====================
-// يتحكم في المعادل الـ 5 قنوات والبيز والـ 8D الحقيقي لحظياً بدون أي تأخير
 
 object VyroDspController {
     @Volatile var band0: Float = 0.28f
@@ -26,9 +25,9 @@ object VyroDspController {
     @Volatile var band3: Float = 0.14f
     @Volatile var band4: Float = 0.24f
 
-    @Volatile var bassStrength: Int = 35        // 0..100
-    @Volatile var virtualizerStrength: Int = 30 // 0..100
-    @Volatile var loudnessGain: Int = 0         // 0..100
+    @Volatile var bassStrength: Int = 35
+    @Volatile var virtualizerStrength: Int = 30
+    @Volatile var loudnessGain: Int = 0
     @Volatile var spatial8DEnabled: Boolean = false
     @Volatile var version: Int = 1
 
@@ -134,7 +133,30 @@ private class StereoBiquad {
     }
 }
 
-// ==================== VYRO STUDIO PCM AUDIO PROCESSOR ====================
+// ==================== STUDIO HALL COMB REVERB (FOR TRUE 8D DEPTH) ====================
+
+private class CombReverb(size: Int) {
+    private val buf = DoubleArray(size.coerceAtLeast(32))
+    private var idx = 0
+    private var filterStore = 0.0
+
+    fun process(input: Double, feedback: Double, damp: Double): Double {
+        val output = buf[idx]
+        filterStore = output * (1.0 - damp) + filterStore * damp
+        buf[idx] = input + filterStore * feedback
+        idx++
+        if (idx >= buf.size) idx = 0
+        return output
+    }
+
+    fun reset() {
+        buf.fill(0.0)
+        idx = 0
+        filterStore = 0.0
+    }
+}
+
+// ==================== VYRO STUDIO PRO PCM AUDIO PROCESSOR ====================
 
 @OptIn(UnstableApi::class)
 class VyroDspAudioProcessor : BaseAudioProcessor() {
@@ -150,15 +172,26 @@ class VyroDspAudioProcessor : BaseAudioProcessor() {
     private var channelCount = 2
     private var appliedVersion = -1
 
-    // متغيرات الدوران المكاني الـ 8D وتأخير الأذنين الواقعي (ITD)
+    // محرك الـ 8D البينورال (HRTF Head-Shadow + ITD Delay + Concert Hall Reverb)
     private var orbitPhase = 0.0
-    private val delaySize = 32
-    private val delayMask = delaySize - 1
-    private val delayBufL = DoubleArray(delaySize)
-    private val delayBufR = DoubleArray(delaySize)
-    private var delayWriteIdx = 0
+    private val itdSize = 64
+    private val itdMask = itdSize - 1
+    private val itdBufL = DoubleArray(itdSize)
+    private val itdBufR = DoubleArray(itdSize)
+    private var itdWriteIdx = 0
 
-    // كاش للمعاملات النشطة
+    // فلتر ظل الرأس (HRTF Head-Shadow Low-Pass) للأذن البعيدة
+    private var shadowL = 0.0
+    private var shadowR = 0.0
+
+    // قاعة صوتية ستيريو ثلاثية الأبعاد (تعمل على كل المخارج حتى سبيكر الموبايل)
+    private val combL1 = CombReverb(1117)
+    private val combL2 = CombReverb(1357)
+    private val combL3 = CombReverb(1619)
+    private val combR1 = CombReverb(1141)
+    private val combR2 = CombReverb(1381)
+    private val combR3 = CombReverb(1643)
+
     private var stereoWidth = 1.0
     private var preampLinear = 1.0
     private var is8DActive = false
@@ -182,24 +215,19 @@ class VyroDspAudioProcessor : BaseAudioProcessor() {
         if (appliedVersion == v) return
         appliedVersion = v
 
-        // مدى حقيقي وواضح: ±10 dB لكل قناة في المعادل
-        eq60.setPeaking(sampleRate, 60.0, 1.0, VyroDspController.band0 * 10.0)
+        eq60.setPeaking(sampleRate, 60.0, 1.0, VyroDspController.band0 * 10.5)
         eq230.setPeaking(sampleRate, 230.0, 1.1, VyroDspController.band1 * 9.5)
         eq910.setPeaking(sampleRate, 910.0, 1.1, VyroDspController.band2 * 9.0)
         eq3600.setPeaking(sampleRate, 3600.0, 1.1, VyroDspController.band3 * 9.5)
-        eq14000.setPeaking(sampleRate, 14000.0, 0.9, VyroDspController.band4 * 10.0)
+        eq14000.setPeaking(sampleRate, 14000.0, 0.9, VyroDspController.band4 * 10.5)
 
-        // Sub-Bass Shelf حقيقي على 85Hz (حتى +9.5 dB)
-        val bassDb = (VyroDspController.bassStrength / 100.0) * 9.5
+        val bassDb = (VyroDspController.bassStrength / 100.0) * 10.0
         subBassShelf.setLowShelf(sampleRate, 85.0, bassDb)
 
         is8DActive = VyroDspController.spatial8DEnabled
+        val effectiveVirt = if (is8DActive) maxOf(VyroDspController.virtualizerStrength, 82) else VyroDspController.virtualizerStrength
+        stereoWidth = 1.0 + (effectiveVirt / 100.0) * 0.90
 
-        // توسيع المسرح الصوتي (3D Stage / Virtualizer)
-        val effectiveVirt = if (is8DActive) maxOf(VyroDspController.virtualizerStrength, 75) else VyroDspController.virtualizerStrength
-        stereoWidth = 1.0 + (effectiveVirt / 100.0) * 0.85
-
-        // Extra Gain + خفض تلقائي ذكي للـ Headroom لمنع أي غروشة
         val peakBoost = maxOf(
             VyroDspController.band0,
             VyroDspController.band1,
@@ -209,14 +237,14 @@ class VyroDspAudioProcessor : BaseAudioProcessor() {
             0f
         ) * 4.0 + (bassDb * 0.35)
         val extraGainDb = (VyroDspController.loudnessGain / 100.0) * 7.5
-        val netDb = (extraGainDb - (peakBoost * 0.42)).coerceIn(-6.0, 7.5)
+        val netDb = (extraGainDb - (peakBoost * 0.40)).coerceIn(-6.0, 7.5)
         preampLinear = 10.0.pow(netDb / 20.0)
     }
 
     private fun softLimit(x: Double): Double {
         val ax = abs(x)
-        if (ax <= 0.78) return x
-        return sign(x) * (0.78 + 0.22 * tanh((ax - 0.78) * 3.8))
+        if (ax <= 0.80) return x
+        return sign(x) * (0.80 + 0.20 * tanh((ax - 0.80) * 4.0))
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
@@ -228,7 +256,8 @@ class VyroDspAudioProcessor : BaseAudioProcessor() {
         refreshFilters()
 
         val out = replaceOutputBuffer(byteCount)
-        val orbitStep = (2.0 * PI * 0.145) / sampleRate // دورة 360 درجة كاملة كل ~6.9 ثواني
+        val orbitStep = (2.0 * PI * 0.135) / sampleRate // دورة 360 درجة احترافية كل ~7.4 ثواني
+        val maxItdSamples = (sampleRate * 0.00062).coerceIn(8.0, 28.0) // ~0.62ms تأخير حقيقي بين الأذنين
 
         if (channelCount == 2) {
             var i = startPos
@@ -236,11 +265,11 @@ class VyroDspAudioProcessor : BaseAudioProcessor() {
                 var l = inputBuffer.getShort(i).toDouble() / 32768.0
                 var r = inputBuffer.getShort(i + 2).toDouble() / 32768.0
 
-                // 1. معادل 5 قنوات + Sub-Bass حقيقي
+                // 1. معادل 5 قنوات + Sub-Bass
                 l = subBassShelf.processLeft(eq14000.processLeft(eq3600.processLeft(eq910.processLeft(eq230.processLeft(eq60.processLeft(l))))))
                 r = subBassShelf.processRight(eq14000.processRight(eq3600.processRight(eq910.processRight(eq230.processRight(eq60.processRight(r))))))
 
-                // 2. توسيع المسرح الصوتي 3D Stage (Mid-Side)
+                // 2. توسيع المسرح الصوتي (3D Stage)
                 if (stereoWidth > 1.01) {
                     val mid = 0.5 * (l + r)
                     val side = 0.5 * (l - r) * stereoWidth
@@ -248,35 +277,52 @@ class VyroDspAudioProcessor : BaseAudioProcessor() {
                     r = mid - side
                 }
 
-                // 3. محرك الصوت المحيطي 8D الحقيقي (دوران 360° + فرق زمني بين الأذنين ITD)
+                // 3. محرك الـ 8D الاستوديو الاحترافي (مفروض على كل مخارج الصوت)
                 if (is8DActive) {
                     orbitPhase += orbitStep
                     if (orbitPhase >= 2.0 * PI) orbitPhase -= 2.0 * PI
 
-                    val pan = sin(orbitPhase) // -1 (شمال) .. +1 (يمين)
-                    val depth = 0.88 + 0.12 * cos(orbitPhase) // إحساس البعد الأمامي والخلفي
+                    val pan = sin(orbitPhase)              // -1 شمال .. +1 يمين
+                    val frontBack = cos(orbitPhase)        // +1 أمام .. -1 خلف الرأس
+                    val distDepth = 0.86 + 0.14 * frontBack
 
-                    delayBufL[delayWriteIdx] = l
-                    delayBufR[delayWriteIdx] = r
+                    itdBufL[itdWriteIdx] = l
+                    itdBufR[itdWriteIdx] = r
 
-                    val delaySamplesL = (((pan + 1.0) * 0.5) * 14.0).toInt().coerceIn(0, 16)
-                    val delaySamplesR = (((1.0 - pan) * 0.5) * 14.0).toInt().coerceIn(0, 16)
+                    val dL = (((pan + 1.0) * 0.5) * maxItdSamples).toInt().coerceIn(0, 30)
+                    val dR = (((1.0 - pan) * 0.5) * maxItdSamples).toInt().coerceIn(0, 30)
 
-                    val delayedL = delayBufL[(delayWriteIdx - delaySamplesL) and delayMask]
-                    val delayedR = delayBufR[(delayWriteIdx - delaySamplesR) and delayMask]
-                    delayWriteIdx = (delayWriteIdx + 1) and delayMask
+                    val rawL = itdBufL[(itdWriteIdx - dL) and itdMask]
+                    val rawR = itdBufR[(itdWriteIdx - dR) and itdMask]
+                    itdWriteIdx = (itdWriteIdx + 1) and itdMask
+
+                    // فلتر ظل الرأس HRTF: الأذن البعيدة تفقد الترددات العالية تدريجياً فيشعر المخ بالاتجاه ثلاثي الأبعاد
+                    val rearAtten = if (frontBack < 0.0) 0.14 * (-frontBack) else 0.0
+                    val alphaL = (1.0 - ((pan + 1.0) * 0.34) - rearAtten).coerceIn(0.24, 1.0)
+                    val alphaR = (1.0 - ((1.0 - pan) * 0.34) - rearAtten).coerceIn(0.24, 1.0)
+                    shadowL += alphaL * (rawL - shadowL)
+                    shadowR += alphaR * (rawR - shadowR)
 
                     val angle = (pan + 1.0) * (PI / 4.0)
-                    val gainL = (0.18 + 0.96 * cos(angle)) * depth
-                    val gainR = (0.18 + 0.96 * sin(angle)) * depth
+                    val gainL = (0.14 + 0.98 * cos(angle)) * distDepth
+                    val gainR = (0.14 + 0.98 * sin(angle)) * distDepth
 
-                    // مزج خفيف لإحساس الغرفة المحيطية
-                    val monoCore = 0.5 * (delayedL + delayedR)
-                    l = (delayedL * 0.82 + monoCore * 0.18) * gainL
-                    r = (delayedR * 0.82 + monoCore * 0.18) * gainR
+                    val directL = shadowL * gainL
+                    val directR = shadowR * gainR
+
+                    // صدى قاعة الاستوديو (Studio Hall Reverb) يعطي عمقاً حقيقياً على السماعات وحتى سبيكر الموبايل
+                    val reverbFeed = 0.45 * (rawL + rawR)
+                    val wetL = (combL1.process(reverbFeed, 0.56, 0.36) +
+                        combL2.process(reverbFeed, 0.54, 0.38) +
+                        combL3.process(reverbFeed, 0.52, 0.40)) * 0.105
+                    val wetR = (combR1.process(reverbFeed, 0.56, 0.36) +
+                        combR2.process(reverbFeed, 0.54, 0.38) +
+                        combR3.process(reverbFeed, 0.52, 0.40)) * 0.105
+
+                    l = directL * 0.84 + wetL
+                    r = directR * 0.84 + wetR
                 }
 
-                // 4. تقوية الصوت + مانع الغروشة (Soft Limiter)
                 val outL = (softLimit(l * preampLinear) * 32767.0).toInt().coerceIn(-32768, 32767)
                 val outR = (softLimit(r * preampLinear) * 32767.0).toInt().coerceIn(-32768, 32767)
 
@@ -289,6 +335,13 @@ class VyroDspAudioProcessor : BaseAudioProcessor() {
             while (i + 1 < limit) {
                 var m = inputBuffer.getShort(i).toDouble() / 32768.0
                 m = subBassShelf.processLeft(eq14000.processLeft(eq3600.processLeft(eq910.processLeft(eq230.processLeft(eq60.processLeft(m))))))
+                if (is8DActive) {
+                    orbitPhase += orbitStep
+                    if (orbitPhase >= 2.0 * PI) orbitPhase -= 2.0 * PI
+                    val depth = 0.88 + 0.12 * cos(orbitPhase)
+                    val wet = (combL1.process(m, 0.54, 0.38) + combL2.process(m, 0.52, 0.40)) * 0.12
+                    m = m * depth * 0.86 + wet
+                }
                 val outM = (softLimit(m * preampLinear) * 32767.0).toInt().coerceIn(-32768, 32767)
                 out.putShort(outM.toShort())
                 i += 2
@@ -300,14 +353,11 @@ class VyroDspAudioProcessor : BaseAudioProcessor() {
     }
 
     override fun onFlush() {
-        eq60.reset()
-        eq230.reset()
-        eq910.reset()
-        eq3600.reset()
-        eq14000.reset()
-        subBassShelf.reset()
-        delayBufL.fill(0.0)
-        delayBufR.fill(0.0)
+        eq60.reset(); eq230.reset(); eq910.reset(); eq3600.reset(); eq14000.reset(); subBassShelf.reset()
+        itdBufL.fill(0.0); itdBufR.fill(0.0)
+        shadowL = 0.0; shadowR = 0.0
+        combL1.reset(); combL2.reset(); combL3.reset()
+        combR1.reset(); combR2.reset(); combR3.reset()
     }
 
     override fun onReset() {
