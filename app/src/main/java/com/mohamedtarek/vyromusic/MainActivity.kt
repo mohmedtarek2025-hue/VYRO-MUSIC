@@ -68,6 +68,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
@@ -75,6 +76,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -179,6 +181,7 @@ class MainActivity : ComponentActivity() {
         runCatching {
             val prefs = getSharedPreferences("vyro_prefs", Context.MODE_PRIVATE)
             VyroSafePrefs.sanitizeOnUpgrade(prefs)
+            VyroDspController.syncFromPrefs(prefs)
         }
         enableEdgeToEdge()
         setContent {
@@ -226,14 +229,15 @@ fun VyroMusicApp() {
     val prefs = remember {
         context.getSharedPreferences("vyro_prefs", Context.MODE_PRIVATE).also {
             VyroSafePrefs.sanitizeOnUpgrade(it)
+            VyroDspController.syncFromPrefs(it)
         }
     }
     val scope = rememberCoroutineScope()
 
     val appVersion = remember {
         runCatching {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "5.1.0-TITAN"
-        }.getOrDefault("5.1.0-TITAN")
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "5.2.0-TITAN"
+        }.getOrDefault("5.2.0-TITAN")
     }
 
     var isArabic by remember { mutableStateOf(VyroSafePrefs.getBoolean(prefs, "lang_ar", true)) }
@@ -275,7 +279,8 @@ fun VyroMusicApp() {
 
     var showNowPlaying by remember { mutableStateOf(false) }
     var showEqSheet by remember { mutableStateOf(false) }
-    var showLyricsDialog by remember { mutableStateOf(false) }
+    var showLyricsOverlay by remember { mutableStateOf(false) }
+    var songForCutter by remember { mutableStateOf<Song?>(null) }
     var showCarMode by remember { mutableStateOf(false) }
     var showSleepDialog by remember { mutableStateOf(false) }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
@@ -398,18 +403,25 @@ fun VyroMusicApp() {
         }
     }
 
+    // إصلاح مزامنة الـ Mini-Player لو التطبيق اتفتح والمزيكا شغالة بالفعل في الخلفية
+    LaunchedEffect(allSongs, controller) {
+        val playingId = controller?.currentMediaItem?.mediaId?.toLongOrNull()
+        if (playingId != null && allSongs.isNotEmpty()) {
+            allSongs.find { it.id == playingId }?.let { matched ->
+                currentSong = matched
+                totalDuration = matched.duration.coerceAtLeast(1L)
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         checkUpdatesNow()
     }
 
     LaunchedEffect(currentScreen) {
         runCatching {
-            if (VyroBluetoothEngine.hasConnectPermission(context) && VyroBluetoothEngine.isBluetoothEnabled(context)) {
-                val connected = VyroBluetoothEngine.getBondedSmartDevices(context).firstOrNull { it.isConnected }
-                btConnectedDeviceName = connected?.name.orEmpty()
-            } else {
-                btConnectedDeviceName = ""
-            }
+            val connected = VyroBluetoothEngine.syncCurrentlyConnectedDevice(context, prefs)
+            btConnectedDeviceName = connected?.name.orEmpty()
         }
     }
 
@@ -467,7 +479,8 @@ fun VyroMusicApp() {
         }
     }
 
-    LaunchedEffect(controller, isPlaying) {
+    // تحديث مستمر دقيق للوقت (سريع أثناء فتح شاشة الكلمات لمزامنة بالملي ثانية)
+    LaunchedEffect(controller, isPlaying, showLyricsOverlay) {
         while (true) {
             runCatching {
                 controller?.let { ctrl ->
@@ -476,7 +489,7 @@ fun VyroMusicApp() {
                     if (dur > 0) totalDuration = dur
                 }
             }
-            delay(450L)
+            delay(if (showLyricsOverlay) 90L else 350L)
         }
     }
 
@@ -719,6 +732,7 @@ fun VyroMusicApp() {
                             onToggleFav = { toggleFavorite(it) },
                             onHideSong = { hideSong(it) },
                             onAddToPlaylist = { songForPlaylistDialog = it },
+                            onCutSong = { songForCutter = it },
                             onOpenThemeStudio = { currentScreen = AppScreen.THEME_STUDIO },
                             onOpenWidgetStudio = { currentScreen = AppScreen.WIDGET_STUDIO },
                             onOpenBluetoothHub = {
@@ -814,6 +828,7 @@ fun VyroMusicApp() {
                                 bassStrength = VyroSafePrefs.getInt(prefs, "bass_strength", bassStrength)
                                 virtStrength = VyroSafePrefs.getInt(prefs, "virtualizer_strength", virtStrength)
                                 spatial8D = VyroSafePrefs.getBoolean(prefs, "spatial_8d_enabled", spatial8D)
+                                VyroDspController.syncFromPrefs(prefs)
                                 if (isCar && profile.forceCarMusic) {
                                     forceCarMusicPlayNow(profile.address, profile.carTargetVolumePercent, profile.autoOpenCarMode)
                                 }
@@ -908,6 +923,7 @@ fun VyroMusicApp() {
                                     .putFloat("playback_pitch", 1f)
                                     .putString("band_gains", JSONArray(bandGains).toString())
                                     .apply()
+                                VyroDspController.syncFromPrefs(prefs)
                                 VyroWidgetProvider.updateAllWidgets(context)
                                 Toast.makeText(context, if (isArabic) "تمت إعادة الضبط بنجاح" else "Defaults restored", Toast.LENGTH_SHORT).show()
                             },
@@ -960,16 +976,42 @@ fun VyroMusicApp() {
                             onToggle8D = {
                                 spatial8D = !spatial8D
                                 prefs.edit().putBoolean("spatial_8d_enabled", spatial8D).apply()
+                                VyroDspController.syncFromPrefs(prefs)
                                 Toast.makeText(
                                     context,
-                                    if (spatial8D) (if (isArabic) "تم تفعيل الصوت المحيطي 8D" else "8D Surround ON")
+                                    if (spatial8D) (if (isArabic) "تم تفعيل الصوت المحيطي 8D الحقيقي 🎧" else "True 8D Surround ON 🎧")
                                     else (if (isArabic) "تم إيقاف 8D" else "8D Surround OFF"),
                                     Toast.LENGTH_SHORT
                                 ).show()
                             },
-                            onOpenLyrics = { showLyricsDialog = true },
+                            onOpenLyrics = { showLyricsOverlay = true },
+                            onOpenCutter = { songForCutter = song },
                             onOpenCarMode = { showCarMode = true },
                             onAddToPlaylist = { songForPlaylistDialog = song }
+                        )
+                    }
+                }
+
+                // شاشة الكلمات الديناميكية المتزامنة الكاملة (مع شاشة تحميل وكاريوكي حيّ)
+                AnimatedVisibility(
+                    visible = showLyricsOverlay && currentSong != null,
+                    enter = slideInVertically(initialOffsetY = { it / 2 }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { it / 2 }) + fadeOut()
+                ) {
+                    currentSong?.let { song ->
+                        DynamicSyncedLyricsOverlay(
+                            song = song,
+                            isArabic = isArabic,
+                            accent = accent,
+                            isPlaying = isPlaying,
+                            positionMs = currentPosition,
+                            durationMs = totalDuration,
+                            prefs = prefs,
+                            onSeek = { controller?.seekTo(it) },
+                            onTogglePlay = { controller?.let { if (it.isPlaying) it.pause() else it.play() } },
+                            onNext = { controller?.seekToNext() },
+                            onPrev = { controller?.seekToPrevious() },
+                            onClose = { showLyricsOverlay = false }
                         )
                     }
                 }
@@ -1020,24 +1062,29 @@ fun VyroMusicApp() {
                     onToggle8D = {
                         spatial8D = it
                         prefs.edit().putBoolean("spatial_8d_enabled", it).apply()
+                        VyroDspController.syncFromPrefs(prefs)
                     },
                     onUpdateBand = { idx, value ->
                         val next = bandGains.toMutableList()
                         next[idx] = value
                         bandGains = next
                         prefs.edit().putString("band_gains", JSONArray(next).toString()).apply()
+                        VyroDspController.syncFromPrefs(prefs)
                     },
                     onUpdateBass = {
                         bassStrength = it
                         prefs.edit().putInt("bass_strength", it).apply()
+                        VyroDspController.syncFromPrefs(prefs)
                     },
                     onUpdateVirt = {
                         virtStrength = it
                         prefs.edit().putInt("virtualizer_strength", it).apply()
+                        VyroDspController.syncFromPrefs(prefs)
                     },
                     onUpdateLoudness = {
                         loudnessGain = it
                         prefs.edit().putInt("loudness_gain", it).apply()
+                        VyroDspController.syncFromPrefs(prefs)
                     },
                     onUpdateSpeed = {
                         playbackSpeed = it
@@ -1056,18 +1103,33 @@ fun VyroMusicApp() {
                             .putInt("bass_strength", bass)
                             .putInt("virtualizer_strength", virt)
                             .apply()
+                        VyroDspController.syncFromPrefs(prefs)
                     },
                     onDismiss = { showEqSheet = false }
                 )
             }
 
-            if (showLyricsDialog && currentSong != null) {
-                LyricsDialog(
-                    song = currentSong!!,
+            // أداة قص النغمات والأغاني المستعادة
+            songForCutter?.let { target ->
+                RingtoneCutterDialog(
+                    song = target,
                     isArabic = isArabic,
                     accent = accent,
-                    prefs = prefs,
-                    onDismiss = { showLyricsDialog = false }
+                    onPreviewRange = { startMs ->
+                        val idx = visibleSongs.indexOfFirst { it.id == target.id }
+                        if (currentSong?.id != target.id && idx >= 0) {
+                            playFromQueue(visibleSongs, idx)
+                        }
+                        controller?.seekTo(startMs)
+                        controller?.play()
+                    },
+                    onSaved = {
+                        scope.launch {
+                            delay(500L)
+                            if (hasAudioPerm) allSongs = scanDeviceSongs(context)
+                        }
+                    },
+                    onDismiss = { songForCutter = null }
                 )
             }
 
@@ -1214,10 +1276,11 @@ fun VyroMusicApp() {
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Text(if (isArabic) "صوت محيطي 8D" else "8D Surround", modifier = Modifier.weight(1f))
+                                Text(if (isArabic) "صوت محيطي 8D حقيقي" else "True 8D Surround", modifier = Modifier.weight(1f))
                                 Switch(checked = spatial8D, onCheckedChange = {
                                     spatial8D = it
                                     prefs.edit().putBoolean("spatial_8d_enabled", it).apply()
+                                    VyroDspController.syncFromPrefs(prefs)
                                 })
                             }
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1247,9 +1310,9 @@ fun VyroMusicApp() {
                     text = {
                         Text(
                             if (isArabic)
-                                "مشغل موسيقى احترافي متكامل بتطوير محمد طارق.\n\n• مركز بلوتوث ذكي + مجسم هولوجرام 3D تفاعلي 360°\n• قراءة شحن AirPods (يمين + شمال + علبة) وتخصيص التاتش الذكي\n• محرك إجبار موسيقى شاشات السيارات (Car Force-Music)\n• 14 شكل ويدجت Glassify + محرك 8D ومانع غروشة\n• مركز تحديثات متكامل مع «ما الجديد» وتثبيت آمن"
+                                "مشغل موسيقى احترافي متكامل بتطوير محمد طارق.\n\n• محرك صوت PCM حقيقي (معادل 5 قنوات + Sub-Bass + 8D HRTF)\n• كلمات أغاني ديناميكية متزامنة بالملي ثانية تلقائياً\n• مركز بلوتوث احترافي بدون بيانات مزيفة + هولوجرام 3D\n• أداة قص النغمات + 14 ويدجت Glassify + مركز التحديثات"
                             else
-                                "Professional music player built by Mohamed Tarek.\n\n• Smart Bluetooth Hub + Interactive 360° 3D Hologram\n• AirPods Tri-Battery BLE + Smart Touch Customization\n• Car Audio Force-Music Engine\n• 14 Glassify Widgets & Crystal 8D Audio"
+                                "Professional music player built by Mohamed Tarek.\n\n• True Software PCM Engine (5-Band EQ + Sub-Bass + 8D HRTF)\n• Dynamic Auto-Synced Karaoke Lyrics\n• Flagship Bluetooth Hub & 3D Hologram\n• Ringtone Cutter + 14 Glassify Widgets"
                         )
                     },
                     confirmButton = { TextButton(onClick = { showAboutDialog = false }) { Text(if (isArabic) "إغلاق" else "Close") } }
@@ -1259,7 +1322,7 @@ fun VyroMusicApp() {
     }
 }
 
-// ==================== SMART BLUETOOTH & 3D HOLOGRAM HUB ====================
+// ==================== FLAGSHIP SMART BLUETOOTH HUB (NO FAKE DATA + LOCKED CARDS 🔒) ====================
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -1293,8 +1356,28 @@ fun SmartBluetoothHubScreen(
     var nearbyDevices by remember { mutableStateOf<List<SmartBtDevice>>(emptyList()) }
     var airPodsBeacon by remember { mutableStateOf(VyroBluetoothEngine.latestAirPodsBeacon) }
     var selectedDeviceAddress by remember { mutableStateOf(VyroBluetoothEngine.getActiveDeviceAddress(prefs)) }
-    var demoCategory by remember { mutableStateOf(BtDeviceCategory.AIRPODS) }
+
+    // وضع المعاينة 3D اختياري 100% ولا يعمل أبداً تلقائياً
     var showDemoStage by remember { mutableStateOf(false) }
+    var demoCategory by remember { mutableStateOf(BtDeviceCategory.AIRPODS) }
+    var hubTab by remember { mutableIntStateOf(0) } // 0: التحكم والأقفال، 1: الصوت، 2: الأجهزة والبحث
+    var customPhotoVersion by remember { mutableIntStateOf(0) }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        val targetAddr = selectedDeviceAddress
+        if (uri != null && targetAddr.isNotBlank() && !targetAddr.startsWith("DEMO_")) {
+            scope.launch(Dispatchers.IO) {
+                val saved = VyroBluetoothEngine.saveCustomPhoto(context, targetAddr, uri)
+                withContext(Dispatchers.Main) {
+                    if (saved != null) {
+                        DeviceHoloImageFetcher.invalidate(targetAddr)
+                        customPhotoVersion++
+                        Toast.makeText(context, if (isArabic) "تم حفظ صورة السماعة للهولوجرام ✅" else "Device photo saved ✅", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
 
     fun refreshBondedList() {
         btEnabled = VyroBluetoothEngine.isBluetoothEnabled(context)
@@ -1307,6 +1390,9 @@ fun SmartBluetoothHubScreen(
         bondedDevices = list
         val connected = list.firstOrNull { it.isConnected }
         onConnectionChanged(connected?.name.orEmpty())
+        if (connected != null) {
+            VyroBluetoothEngine.setActiveDevice(prefs, connected.address, connected.name, connected.category)
+        }
         if (selectedDeviceAddress.isBlank() || list.none { it.address == selectedDeviceAddress }) {
             selectedDeviceAddress = connected?.address ?: list.firstOrNull()?.address.orEmpty()
         }
@@ -1319,7 +1405,10 @@ fun SmartBluetoothHubScreen(
 
     val enableBtLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         btEnabled = VyroBluetoothEngine.isBluetoothEnabled(context)
-        if (btEnabled) refreshBondedList()
+        if (btEnabled) {
+            showDemoStage = false
+            refreshBondedList()
+        }
     }
 
     fun startFullScan() {
@@ -1331,6 +1420,7 @@ fun SmartBluetoothHubScreen(
             runCatching { enableBtLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }
             return
         }
+        showDemoStage = false
         refreshBondedList()
         nearbyDevices = emptyList()
         val adapter = VyroBluetoothEngine.getAdapter(context) ?: return
@@ -1365,15 +1455,11 @@ fun SmartBluetoothHubScreen(
                             nearbyDevices = nearbyDevices + item
                         }
                     }
-                    BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> {
-                        isScanning = false
-                    }
+                    BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> isScanning = false
                     BluetoothAdapter.ACTION_STATE_CHANGED,
                     BluetoothDevice.ACTION_BOND_STATE_CHANGED,
                     BluetoothDevice.ACTION_ACL_CONNECTED,
-                    BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
-                        refreshBondedList()
-                    }
+                    BluetoothDevice.ACTION_ACL_DISCONNECTED -> refreshBondedList()
                 }
             }
         }
@@ -1408,18 +1494,24 @@ fun SmartBluetoothHubScreen(
         }
     }
 
-    val activeDevice: SmartBtDevice? = remember(bondedDevices, selectedDeviceAddress, airPodsBeacon, showDemoStage, demoCategory) {
-        val real = bondedDevices.find { it.address == selectedDeviceAddress } ?: bondedDevices.firstOrNull()
-        if (real != null && !showDemoStage) {
-            if (real.category == BtDeviceCategory.AIRPODS && airPodsBeacon != null) {
-                real.copy(airPodsBattery = airPodsBeacon)
-            } else real
-        } else {
+    // الجهاز الحقيقي فقط (ممنوع عرض أي أرقام بطارية وهمية)
+    val realActiveDevice: SmartBtDevice? = remember(bondedDevices, selectedDeviceAddress, airPodsBeacon, btEnabled) {
+        if (!btEnabled || bondedDevices.isEmpty()) null
+        else {
+            val found = bondedDevices.find { it.address == selectedDeviceAddress } ?: bondedDevices.firstOrNull()
+            if (found != null && found.category == BtDeviceCategory.AIRPODS && airPodsBeacon != null) {
+                found.copy(airPodsBattery = airPodsBeacon)
+            } else found
+        }
+    }
+
+    val displayedDevice: SmartBtDevice? = remember(realActiveDevice, showDemoStage, demoCategory) {
+        if (showDemoStage) {
             val demoName = when (demoCategory) {
-                BtDeviceCategory.AIRPODS -> "AirPods Pro 2"
-                BtDeviceCategory.HEADPHONES -> "VYRO Studio Over-Ear"
-                BtDeviceCategory.CAR_AUDIO -> "Car Audio Head Unit"
-                else -> "VYRO Boom Speaker"
+                BtDeviceCategory.AIRPODS -> "AirPods Pro 2 (Preview)"
+                BtDeviceCategory.HEADPHONES -> "Studio Headphones (Preview)"
+                BtDeviceCategory.CAR_AUDIO -> "Car Audio (Preview)"
+                else -> "Bluetooth Speaker (Preview)"
             }
             SmartBtDevice(
                 name = demoName,
@@ -1427,27 +1519,28 @@ fun SmartBluetoothHubScreen(
                 category = demoCategory,
                 isBonded = false,
                 isConnected = false,
-                batteryPercent = 90,
-                airPodsBattery = if (demoCategory == BtDeviceCategory.AIRPODS) {
-                    AirPodsBatteryInfo("AirPods Pro 2", 90, 80, 100, false, false, true, -48, System.currentTimeMillis())
-                } else null,
-                capabilities = VyroBluetoothEngine.capabilitiesFor(demoCategory, demoCategory == BtDeviceCategory.AIRPODS)
+                batteryPercent = -1,
+                airPodsBattery = null,
+                capabilities = VyroBluetoothEngine.capabilitiesFor(demoCategory, false)
             )
+        } else {
+            realActiveDevice
         }
     }
 
-    var activeProfile by remember(activeDevice?.address) {
+    var activeProfile by remember(displayedDevice?.address) {
         mutableStateOf(
-            activeDevice?.let { VyroBluetoothEngine.loadProfile(prefs, it.address, it.category) }
+            displayedDevice?.let { VyroBluetoothEngine.loadProfile(prefs, it.address, it.category) }
                 ?: BtDeviceProfile("default")
         )
     }
 
     fun updateProfile(newProfile: BtDeviceProfile, applyAudio: Boolean = false) {
+        if (showDemoStage) return
         activeProfile = newProfile
         VyroBluetoothEngine.saveProfile(prefs, newProfile)
         if (applyAudio) {
-            onApplyProfileNow(newProfile, activeDevice?.category == BtDeviceCategory.CAR_AUDIO)
+            onApplyProfileNow(newProfile, displayedDevice?.category == BtDeviceCategory.CAR_AUDIO)
         }
     }
 
@@ -1457,6 +1550,7 @@ fun SmartBluetoothHubScreen(
             .verticalScroll(rememberScrollState())
             .padding(14.dp)
     ) {
+        // الشريط العلوي
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             IconButton(onClick = onBack) {
                 Icon(Icons.Rounded.ArrowBack, null, tint = textPrimary)
@@ -1472,20 +1566,19 @@ fun SmartBluetoothHubScreen(
                 )
                 Text(
                     text = when {
-                        !hasBtPerms -> if (isArabic) "اضغط لمنح أذونات البلوتوث" else "Tap to grant Bluetooth permissions"
-                        !btEnabled -> if (isArabic) "البلوتوث مغلق — افتحه من هنا" else "Bluetooth is OFF"
-                        isScanning -> if (isArabic) "جاري البحث عن السماعات والسيارات..." else "Scanning nearby devices..."
-                        else -> if (isArabic) "${bondedDevices.size} جهاز محفوظ • فحص BLE نشط" else "${bondedDevices.size} saved • BLE Active"
+                        !hasBtPerms -> if (isArabic) "بانتظار أذونات البلوتوث" else "Bluetooth permissions needed"
+                        !btEnabled -> if (isArabic) "البلوتوث مغلق حالياً" else "Bluetooth is OFF"
+                        isScanning -> if (isArabic) "جاري البحث عن الأجهزة القريبة..." else "Scanning nearby devices..."
+                        realActiveDevice?.isConnected == true -> if (isArabic) "متصل بـ ${realActiveDevice.name}" else "Connected: ${realActiveDevice.name}"
+                        else -> if (isArabic) "${bondedDevices.size} جهاز محفوظ • قراءات حقيقية 100%" else "${bondedDevices.size} saved • Real-time data"
                     },
                     fontSize = 11.sp,
-                    color = textSecondary
+                    color = if (realActiveDevice?.isConnected == true) Color(0xFF00E676) else textSecondary
                 )
             }
             IconButton(
                 onClick = { startFullScan() },
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(accent.copy(0.18f))
+                modifier = Modifier.clip(CircleShape).background(accent.copy(0.16f))
             ) {
                 if (isScanning) {
                     CircularProgressIndicator(color = accent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
@@ -1501,525 +1594,730 @@ fun SmartBluetoothHubScreen(
 
         Spacer(Modifier.height(10.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (!hasBtPerms) {
-                Button(
-                    onClick = { btPermLauncher.launch(VyroBluetoothEngine.requiredPermissions()) },
-                    modifier = Modifier.weight(1f).height(46.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = accent),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Icon(Icons.Rounded.Bluetooth, null, tint = Color.Black, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (isArabic) "تفعيل أذونات البلوتوث" else "Grant Permissions", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
-            } else {
-                Button(
-                    onClick = {
-                        if (!btEnabled) {
-                            runCatching { enableBtLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }
-                        } else {
-                            startFullScan()
-                        }
-                    },
-                    modifier = Modifier.weight(1.2f).height(46.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = if (btEnabled) accent else Color(0xFF00E676)),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Icon(
-                        if (btEnabled) Icons.Rounded.BluetoothSearching else Icons.Rounded.PowerSettingsNew,
-                        null,
-                        tint = Color.Black,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = when {
-                            !btEnabled -> if (isArabic) "فتح البلوتوث الآن" else "Turn On Bluetooth"
-                            isScanning -> if (isArabic) "جاري البحث..." else "Scanning..."
-                            else -> if (isArabic) "بحث تلقائي عن سماعة" else "Auto Scan Devices"
-                        },
-                        color = Color.Black,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 12.sp
-                    )
-                }
-                OutlinedButton(
-                    onClick = { showDemoStage = !showDemoStage },
-                    modifier = Modifier.weight(0.8f).height(46.dp),
-                    border = BorderStroke(1.dp, Color(0xFF00F0FF).copy(0.6f)),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text(
-                        text = if (showDemoStage) (if (isArabic) "أجهزتي" else "My Devices") else (if (isArabic) "معاينة 3D" else "3D Demo"),
-                        color = Color(0xFF00F0FF),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-        }
+        // حالة الرادار النظيفة (عندما يكون البلوتوث مقفولاً أو لا توجد أجهزة ولم يفتح المستخدم المعاينة)
+        if (displayedDevice == null) {
+            BluetoothRadarEmptyState(
+                isArabic = isArabic,
+                hasBtPerms = hasBtPerms,
+                btEnabled = btEnabled,
+                isScanning = isScanning,
+                accent = accent,
+                cardColor = cardColor,
+                textPrimary = textPrimary,
+                textSecondary = textSecondary,
+                onPrimaryAction = {
+                    if (!hasBtPerms) btPermLauncher.launch(VyroBluetoothEngine.requiredPermissions())
+                    else if (!btEnabled) runCatching { enableBtLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }
+                    else startFullScan()
+                },
+                onOpenDemoPreview = { showDemoStage = true }
+            )
 
-        AnimatedVisibility(visible = showDemoStage || bondedDevices.isEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp)
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                listOf(
-                    BtDeviceCategory.AIRPODS to (if (isArabic) "AirPods علبة" else "AirPods Case"),
-                    BtDeviceCategory.HEADPHONES to (if (isArabic) "سماعة رأس" else "Headphones"),
-                    BtDeviceCategory.CAR_AUDIO to (if (isArabic) "سيارة" else "Car Audio"),
-                    BtDeviceCategory.SPEAKER to (if (isArabic) "سبيكر" else "Speaker")
-                ).forEach { (cat, label) ->
-                    val sel = demoCategory == cat
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (sel) Color(0xFF00F0FF).copy(0.22f) else cardColor)
-                            .border(1.dp, if (sel) Color(0xFF00F0FF) else Color.White.copy(0.08f), RoundedCornerShape(12.dp))
-                            .clickable {
-                                showDemoStage = true
-                                demoCategory = cat
+            // إظهار الأجهزة المكتشفة قريباً فوراً أثناء البحث
+            if (nearbyDevices.isNotEmpty()) {
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = if (isArabic) "أجهزة قريبة مكتشفة (${nearbyDevices.size})" else "Nearby Discovered (${nearbyDevices.size})",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 15.sp,
+                    color = accent
+                )
+                Spacer(Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    nearbyDevices.forEach { dev ->
+                        BluetoothDeviceRowCard(
+                            device = dev,
+                            isSelected = false,
+                            isArabic = isArabic,
+                            accent = accent,
+                            cardColor = cardColor,
+                            textPrimary = textPrimary,
+                            textSecondary = textSecondary,
+                            onSelect = {},
+                            onConnectClick = {
+                                VyroBluetoothEngine.connectAudioDevice(context, dev.address) { ok ->
+                                    scope.launch(Dispatchers.Main) {
+                                        Toast.makeText(
+                                            context,
+                                            if (ok) (if (isArabic) "جاري إقران ${dev.name}..." else "Pairing ${dev.name}...")
+                                            else (if (isArabic) "تعذر بدء الإقران" else "Pairing failed"),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
                             }
-                            .padding(horizontal = 12.dp, vertical = 7.dp)
-                    ) {
-                        Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (sel) Color(0xFF00F0FF) else textSecondary)
+                        )
                     }
                 }
             }
-        }
+        } else {
+            // شريط تبديل سريع بين أجهزتك المقترنة أو الخروج من وضع المعاينة
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (showDemoStage) {
+                    AssistChip(
+                        onClick = { showDemoStage = false },
+                        label = { Text(if (isArabic) "← العودة للرادار" else "← Exit Preview", color = Color(0xFFFFC857), fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                    )
+                    listOf(
+                        BtDeviceCategory.AIRPODS to "AirPods",
+                        BtDeviceCategory.HEADPHONES to (if (isArabic) "سماعة رأس" else "Headphones"),
+                        BtDeviceCategory.CAR_AUDIO to (if (isArabic) "سيارة" else "Car"),
+                        BtDeviceCategory.SPEAKER to (if (isArabic) "سبيكر" else "Speaker")
+                    ).forEach { (cat, label) ->
+                        val sel = demoCategory == cat
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (sel) Color(0xFF00F0FF).copy(0.22f) else cardColor)
+                                .border(1.dp, if (sel) Color(0xFF00F0FF) else Color.White.copy(0.08f), RoundedCornerShape(12.dp))
+                                .clickable { demoCategory = cat }
+                                .padding(horizontal = 11.dp, vertical = 6.dp)
+                        ) {
+                            Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (sel) Color(0xFF00F0FF) else textSecondary)
+                        }
+                    }
+                } else {
+                    bondedDevices.forEach { dev ->
+                        val sel = displayedDevice.address == dev.address
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(if (sel) accent.copy(0.22f) else cardColor)
+                                .border(
+                                    1.dp,
+                                    when {
+                                        dev.isConnected -> Color(0xFF00E676)
+                                        sel -> accent
+                                        else -> Color.White.copy(0.08f)
+                                    },
+                                    RoundedCornerShape(14.dp)
+                                )
+                                .clickable {
+                                    selectedDeviceAddress = dev.address
+                                    VyroBluetoothEngine.setActiveDevice(prefs, dev.address, dev.name, dev.category)
+                                }
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (dev.isConnected) {
+                                Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFF00E676)))
+                                Spacer(Modifier.width(6.dp))
+                            }
+                            Text(
+                                text = dev.name,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (sel) textPrimary else textSecondary,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
 
-        Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
 
-        activeDevice?.let { dev ->
+            // مسرح الهولوجرام 3D التفاعلي
             DeviceHologram3DStage(
-                device = dev,
+                device = displayedDevice,
                 isArabic = isArabic,
                 accent = accent,
-                isPlaying = isPlaying
+                isPlaying = isPlaying,
+                isDemoMode = showDemoStage,
+                customPhotoVersion = customPhotoVersion,
+                onPickCustomPhoto = { photoPickerLauncher.launch("image/*") }
             )
 
             Spacer(Modifier.height(12.dp))
 
-            if (dev.capabilities.supportsTriBattery) {
-                val air = dev.airPodsBattery
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(cardColor)
-                        .border(1.dp, accent.copy(0.28f), RoundedCornerShape(20.dp))
-                        .padding(14.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.BatteryChargingFull, null, tint = Color(0xFF00E676), modifier = Modifier.size(19.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = if (isArabic) "شحن السماعات والعلبة (${air?.modelName ?: dev.name})" else "Battery Status (${air?.modelName ?: dev.name})",
-                            color = textPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        BatteryPodCard(
-                            title = if (isArabic) "الشمال (L)" else "Left (L)",
-                            percent = air?.leftPercent ?: dev.batteryPercent,
-                            charging = air?.leftCharging == true,
-                            accent = Color(0xFF00F0FF),
-                            modifier = Modifier.weight(1f)
-                        )
-                        BatteryPodCard(
-                            title = if (isArabic) "العلبة" else "Case",
-                            percent = air?.casePercent ?: -1,
-                            charging = air?.caseCharging == true,
-                            accent = Color(0xFFFFC857),
-                            modifier = Modifier.weight(1f)
-                        )
-                        BatteryPodCard(
-                            title = if (isArabic) "اليمين (R)" else "Right (R)",
-                            percent = air?.rightPercent ?: dev.batteryPercent,
-                            charging = air?.rightCharging == true,
-                            accent = Color(0xFF00F0FF),
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    if (air == null) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = if (isArabic) "افتح غطاء العلبة بالقرب من الموبايل ليتم التقاط شحن L / R / العلبة عبر BLE تلقائياً." else "Open the case lid near your phone to detect L / R / Case battery via BLE.",
-                            color = textSecondary,
-                            fontSize = 11.sp
-                        )
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-            } else if (dev.capabilities.supportsStandardBattery && dev.batteryPercent >= 0) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(cardColor)
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Rounded.BatteryStd, null, tint = Color(0xFF00E676), modifier = Modifier.size(22.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Text(if (isArabic) "نسبة شحن السماعة" else "Device Battery", color = textPrimary, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Text("${dev.batteryPercent}%", color = Color(0xFF00E676), fontWeight = FontWeight.Black, fontSize = 16.sp)
-                }
-                Spacer(Modifier.height(12.dp))
-            }
-
-            if (dev.category == BtDeviceCategory.CAR_AUDIO) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(22.dp))
-                        .background(Color(0xFF0A2419))
-                        .border(1.5.dp, Color(0xFF00E676).copy(0.75f), RoundedCornerShape(22.dp))
-                        .padding(16.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.DirectionsCar, null, tint = Color(0xFF00E676), modifier = Modifier.size(24.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                text = if (isArabic) "محرك إجبار موسيقى السيارة (Car Force-Music)" else "Car Audio Force-Music Engine",
-                                color = Color.White,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 14.sp
-                            )
-                            Text(
-                                text = if (isArabic) "يفك تعليق المكالمات/الملاحة ويجبر شاشة العربية على وضع Bluetooth Audio فوراً" else "Overrides stuck HFP/Nav channel & forces Bluetooth Music immediately",
-                                color = Color.White.copy(0.75f),
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    Button(
-                        onClick = {
-                            onForceCarMusic(dev.address, activeProfile.carTargetVolumePercent, activeProfile.autoOpenCarMode)
-                        },
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Icon(Icons.Rounded.Bolt, null, tint = Color.Black)
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = if (isArabic) "إجبار تشغيل الموسيقى على شاشة السيارة الآن" else "Force Car Music Playback Now",
-                            color = Color.Black,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 13.sp
-                        )
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (isArabic) "إجبار تلقائي فور الاتصال بالسيارة" else "Auto-force on Car Connect", color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                        Switch(
-                            checked = activeProfile.forceCarMusic,
-                            onCheckedChange = { updateProfile(activeProfile.copy(forceCarMusic = it)) }
-                        )
-                    }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (isArabic) "فتح واجهة القيادة (Car Mode) تلقائياً" else "Auto-open Car Mode UI", color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                        Switch(
-                            checked = activeProfile.autoOpenCarMode,
-                            onCheckedChange = { updateProfile(activeProfile.copy(autoOpenCarMode = it)) }
-                        )
-                    }
-                    Text(
-                        text = if (isArabic) "مستوى صوت البلوتوث للسيارة: ${activeProfile.carTargetVolumePercent}%" else "Car Media Volume: ${activeProfile.carTargetVolumePercent}%",
-                        color = Color(0xFF00E676),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Slider(
-                        value = activeProfile.carTargetVolumePercent.toFloat(),
-                        onValueChange = { updateProfile(activeProfile.copy(carTargetVolumePercent = it.toInt())) },
-                        valueRange = 40f..100f,
-                        colors = SliderDefaults.colors(thumbColor = Color(0xFF00E676), activeTrackColor = Color(0xFF00E676))
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
-            }
-
-            Column(
+            // 3 تبويبات منظمة بنظام الشركات الاحترافي (Nothing X / Galaxy Wearable)
+            val subTabs = if (isArabic) listOf("التحكم والأقفال", "الصوت والمعادل", "الأجهزة والبحث") else listOf("Controls", "Audio Profile", "Devices")
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(16.dp))
                     .background(cardColor)
-                    .padding(14.dp)
+                    .padding(4.dp)
             ) {
-                Text(
-                    text = if (isArabic) "المميزات المكتشفة لجهاز: ${dev.name}" else "Detected Capabilities: ${dev.name}",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = textPrimary
-                )
-                Spacer(Modifier.height(8.dp))
-                CapabilityStatusRow(if (isArabic) "شحن تفصيلي (يمين + شمال + علبة BLE)" else "Tri-Battery BLE (L/R/Case)", dev.capabilities.supportsTriBattery, textPrimary, textSecondary)
-                CapabilityStatusRow(if (isArabic) "تخصيص التاتش الذكي (ضغطتين / 3 ضغطات)" else "Smart Touch Remapping", dev.capabilities.supportsSmartTouch, textPrimary, textSecondary)
-                CapabilityStatusRow(if (isArabic) "معادل صوت تلقائي + 8D خاص بالسماعة" else "Per-Device Auto-EQ & 8D", dev.capabilities.supportsAutoEq, textPrimary, textSecondary)
-                CapabilityStatusRow(if (isArabic) "إجبار موسيقى شاشة السيارة (Car Force)" else "Car Head-Unit Force Music", dev.capabilities.supportsCarForceMusic, textPrimary, textSecondary)
-                CapabilityStatusRow(if (isArabic) "عزل ضوضاء / شفافية (عبر حساس السماعة)" else "ANC / Transparency Hardware", dev.capabilities.supportsAncHint, textPrimary, textSecondary)
+                subTabs.forEachIndexed { idx, label ->
+                    val sel = hubTab == idx
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (sel) accent else Color.Transparent)
+                            .clickable { hubTab = idx }
+                            .padding(vertical = 9.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = label,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Black,
+                            color = if (sel) Color.Black else textSecondary,
+                            maxLines = 1
+                        )
+                    }
+                }
             }
 
             Spacer(Modifier.height(12.dp))
 
-            Column(
+            when (hubTab) {
+                // ==================== التبويب 1: كروت التحكم + كروت المميزات المقفولة 🔒 ====================
+                0 -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        // 1. بطاقة البطارية التفصيلية (تفتح للـ AirPods فقط، وتُقفل بـ 🔒 لباقي الأجهزة)
+                        if (displayedDevice.capabilities.supportsTriBattery) {
+                            val air = displayedDevice.airPodsBattery
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(cardColor)
+                                    .border(1.dp, accent.copy(0.32f), RoundedCornerShape(20.dp))
+                                    .padding(14.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.BatteryChargingFull, null, tint = Color(0xFF00E676), modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = if (isArabic) "شحن السماعات والعلبة (قراءة BLE حقيقية)" else "Tri-Battery Status (Real BLE)",
+                                        color = textPrimary,
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                                Spacer(Modifier.height(10.dp))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    BatteryPodCard(if (isArabic) "الشمال (L)" else "Left (L)", air?.leftPercent ?: displayedDevice.batteryPercent, air?.leftCharging == true, Color(0xFF00F0FF), Modifier.weight(1f))
+                                    BatteryPodCard(if (isArabic) "العلبة" else "Case", air?.casePercent ?: -1, air?.caseCharging == true, Color(0xFFFFC857), Modifier.weight(1f))
+                                    BatteryPodCard(if (isArabic) "اليمين (R)" else "Right (R)", air?.rightPercent ?: displayedDevice.batteryPercent, air?.rightCharging == true, Color(0xFF00F0FF), Modifier.weight(1f))
+                                }
+                                if (air == null) {
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        text = if (showDemoStage) {
+                                            if (isArabic) "وضع معاينة — لا توجد سماعة متصلة لقراءة الشحن." else "Preview mode — no real device connected."
+                                        } else {
+                                            if (isArabic) "افتح غطاء العلبة بالقرب من الهاتف لالتقاط شحن L / R / العلبة الحقيقي (لا يتم عرض أرقام وهمية)." else "Open case lid nearby to read real L/R/Case levels."
+                                        },
+                                        color = textSecondary,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        } else {
+                            if (displayedDevice.batteryPercent >= 0) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(18.dp))
+                                        .background(cardColor)
+                                        .border(1.dp, Color(0xFF00E676).copy(0.4f), RoundedCornerShape(18.dp))
+                                        .padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Rounded.BatteryStd, null, tint = Color(0xFF00E676), modifier = Modifier.size(22.dp))
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(if (isArabic) "شحن السماعة الحقيقي" else "Real Battery Level", color = textPrimary, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                    Text("${displayedDevice.batteryPercent}%", color = Color(0xFF00E676), fontWeight = FontWeight.Black, fontSize = 16.sp)
+                                }
+                            }
+                            LockedFeatureCard(
+                                title = if (isArabic) "شحن العلبة + اليمين والشمال المنفصل" else "Tri-Battery (L / Case / R)",
+                                lockReason = if (isArabic) "مقفول — هذا الجهاز لا يبث إشارة شحن العلبة المفتوحة عبر BLE" else "Locked — Device does not broadcast open BLE case battery",
+                                icon = Icons.Rounded.BatteryChargingFull,
+                                cardColor = cardColor,
+                                textPrimary = textPrimary,
+                                textSecondary = textSecondary
+                            )
+                        }
+
+                        // 2. بطاقة تخصيص التاتش الذكي (مدعومة لكل السماعات الحقيقية، ومقفولة في وضع المعاينة)
+                        if (showDemoStage) {
+                            LockedFeatureCard(
+                                title = if (isArabic) "تخصيص التاتش الذكي (Double & Triple Tap)" else "Smart Touch Remapping",
+                                lockReason = if (isArabic) "مقفول في وضع المعاينة — وصّل سماعتك الحقيقية لتخصيصها" else "Locked in Preview — Connect a real device to customize",
+                                icon = Icons.Rounded.TouchApp,
+                                cardColor = cardColor,
+                                textPrimary = textPrimary,
+                                textSecondary = textSecondary
+                            )
+                        } else {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(cardColor)
+                                    .border(1.dp, accent.copy(0.28f), RoundedCornerShape(20.dp))
+                                    .padding(14.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.TouchApp, null, tint = accent, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = if (isArabic) "تخصيص التاتش الذكي (${displayedDevice.name})" else "Smart Touch (${displayedDevice.name})",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 14.sp,
+                                        color = textPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Spacer(Modifier.height(10.dp))
+                                Text(if (isArabic) "الضغطتين (Double Tap / التالي):" else "Double-Tap Action:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = accent)
+                                Spacer(Modifier.height(6.dp))
+                                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    SmartTouchAction.values().forEach { action ->
+                                        val sel = activeProfile.doubleTapAction == action
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(if (sel) accent else Color.White.copy(0.06f))
+                                                .clickable {
+                                                    VyroBluetoothEngine.setActiveDevice(prefs, displayedDevice.address, displayedDevice.name, displayedDevice.category)
+                                                    updateProfile(activeProfile.copy(doubleTapAction = action))
+                                                }
+                                                .padding(horizontal = 11.dp, vertical = 7.dp)
+                                        ) {
+                                            Text(if (isArabic) action.labelAr else action.labelEn, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (sel) Color.Black else textPrimary)
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.height(10.dp))
+                                Text(if (isArabic) "الـ 3 ضغطات (Triple Tap / السابق):" else "Triple-Tap Action:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFC857))
+                                Spacer(Modifier.height(6.dp))
+                                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    SmartTouchAction.values().forEach { action ->
+                                        val sel = activeProfile.tripleTapAction == action
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(if (sel) Color(0xFFFFC857) else Color.White.copy(0.06f))
+                                                .clickable {
+                                                    VyroBluetoothEngine.setActiveDevice(prefs, displayedDevice.address, displayedDevice.name, displayedDevice.category)
+                                                    updateProfile(activeProfile.copy(tripleTapAction = action))
+                                                }
+                                                .padding(horizontal = 11.dp, vertical = 7.dp)
+                                        ) {
+                                            Text(if (isArabic) action.labelAr else action.labelEn, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (sel) Color.Black else textPrimary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3. بطاقة إجبار موسيقى السيارة (مفتوحة لو عربية، ومقفولة ومطفية 🔒 لو سماعة)
+                        if (displayedDevice.category == BtDeviceCategory.CAR_AUDIO && !showDemoStage) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(22.dp))
+                                    .background(Color(0xFF0A2419))
+                                    .border(1.5.dp, Color(0xFF00E676).copy(0.75f), RoundedCornerShape(22.dp))
+                                    .padding(16.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.DirectionsCar, null, tint = Color(0xFF00E676), modifier = Modifier.size(24.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (isArabic) "محرك إجبار موسيقى السيارة (Car Force-Music)" else "Car Audio Force-Music Engine",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 14.sp
+                                        )
+                                        Text(
+                                            text = if (isArabic) "يفك تعليق المكالمات/الملاحة ويجبر شاشة العربية على وضع Bluetooth Audio فوراً" else "Forces Car Head-Unit to Bluetooth Audio immediately",
+                                            color = Color.White.copy(0.75f),
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(12.dp))
+                                Button(
+                                    onClick = { onForceCarMusic(displayedDevice.address, activeProfile.carTargetVolumePercent, activeProfile.autoOpenCarMode) },
+                                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                                    shape = RoundedCornerShape(16.dp)
+                                ) {
+                                    Icon(Icons.Rounded.Bolt, null, tint = Color.Black)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(if (isArabic) "إجبار تشغيل الموسيقى على شاشة السيارة الآن" else "Force Car Music Now", color = Color.Black, fontWeight = FontWeight.Black, fontSize = 13.sp)
+                                }
+                                Spacer(Modifier.height(10.dp))
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(if (isArabic) "إجبار تلقائي فور الاتصال بالسيارة" else "Auto-force on Connect", color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                    Switch(checked = activeProfile.forceCarMusic, onCheckedChange = { updateProfile(activeProfile.copy(forceCarMusic = it)) })
+                                }
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(if (isArabic) "فتح واجهة القيادة (Car Mode) تلقائياً" else "Auto-open Car Mode", color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                    Switch(checked = activeProfile.autoOpenCarMode, onCheckedChange = { updateProfile(activeProfile.copy(autoOpenCarMode = it)) })
+                                }
+                                Text(
+                                    text = if (isArabic) "مستوى صوت البلوتوث للسيارة: ${activeProfile.carTargetVolumePercent}%" else "Car Volume: ${activeProfile.carTargetVolumePercent}%",
+                                    color = Color(0xFF00E676),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Slider(
+                                    value = activeProfile.carTargetVolumePercent.toFloat(),
+                                    onValueChange = { updateProfile(activeProfile.copy(carTargetVolumePercent = it.toInt())) },
+                                    valueRange = 40f..100f,
+                                    colors = SliderDefaults.colors(thumbColor = Color(0xFF00E676), activeTrackColor = Color(0xFF00E676))
+                                )
+                            }
+                        } else {
+                            LockedFeatureCard(
+                                title = if (isArabic) "محرك إجبار موسيقى السيارة (Car Force-Music)" else "Car Audio Force-Music Engine",
+                                lockReason = if (isArabic) "مقفول — خاص بأنظمة وشاشات السيارات البلوتوث فقط" else "Locked — Exclusive to Car Bluetooth Head-Units",
+                                icon = Icons.Rounded.DirectionsCar,
+                                cardColor = cardColor,
+                                textPrimary = textPrimary,
+                                textSecondary = textSecondary
+                            )
+                        }
+
+                        // 4. بطاقة عزل الضوضاء والشفافية (ANC) — مقفولة 🔒 بوضوح هندسي صريح
+                        LockedFeatureCard(
+                            title = if (isArabic) "التحكم في عزل الضوضاء والشفافية (ANC)" else "Active Noise Cancellation (ANC)",
+                            lockReason = if (displayedDevice.capabilities.supportsAncHint) {
+                                if (isArabic) "مقفول ببروتوكول الشركة المصنّعة — تحكّم به من حساس السماعة مباشرة" else "Locked by manufacturer protocol — control via earbud sensor"
+                            } else {
+                                if (isArabic) "غير مدعوم على هذا النوع من الأجهزة" else "Not supported on this device category"
+                            },
+                            icon = Icons.Rounded.Hearing,
+                            cardColor = cardColor,
+                            textPrimary = textPrimary,
+                            textSecondary = textSecondary
+                        )
+                    }
+                }
+
+                // ==================== التبويب 2: بروفايل الصوت التلقائي للجهاز ====================
+                1 -> {
+                    if (showDemoStage) {
+                        LockedFeatureCard(
+                            title = if (isArabic) "بروفايل الصوت التلقائي لكل سماعة" else "Per-Device Audio Profile",
+                            lockReason = if (isArabic) "مقفول في وضع المعاينة — اختر سماعة حقيقية لتخصيص صوتها" else "Locked in Preview — select a real device",
+                            icon = Icons.Rounded.Tune,
+                            cardColor = cardColor,
+                            textPrimary = textPrimary,
+                            textSecondary = textSecondary
+                        )
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(cardColor)
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text(
+                                text = if (isArabic) "بروفايل الصوت المخصص لـ: ${displayedDevice.name}" else "Dedicated Audio Profile: ${displayedDevice.name}",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 14.sp,
+                                color = textPrimary
+                            )
+                            Text(if (isArabic) "معادل الصوت التلقائي عند الاتصال:" else "Auto-EQ Preset:", fontSize = 12.sp, color = accent, fontWeight = FontWeight.Bold)
+                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf("Keep Current", "Phonk Bass", "Crystal Clear", "Stadium 8D", "Car Punch", "Flat").forEach { preset ->
+                                    val sel = activeProfile.eqPreset == preset
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(if (sel) accent.copy(0.24f) else Color.White.copy(0.06f))
+                                            .border(1.dp, if (sel) accent else Color.Transparent, RoundedCornerShape(12.dp))
+                                            .clickable { updateProfile(activeProfile.copy(eqPreset = preset), applyAudio = true) }
+                                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    ) {
+                                        Text(preset, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (sel) accent else textPrimary)
+                                    }
+                                }
+                            }
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(if (isArabic) "تشغيل الموسيقى تلقائياً عند الاتصال" else "Auto-Play on Connect", color = textPrimary, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                Switch(checked = activeProfile.autoPlayOnConnect, onCheckedChange = { updateProfile(activeProfile.copy(autoPlayOnConnect = it)) })
+                            }
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(if (isArabic) "تفعيل 8D الحقيقي تلقائياً لهذه السماعة" else "Auto-Enable True 8D", color = textPrimary, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                Switch(checked = activeProfile.enable8D, onCheckedChange = { updateProfile(activeProfile.copy(enable8D = it), applyAudio = true) })
+                            }
+                        }
+                    }
+                }
+
+                // ==================== التبويب 3: قائمة الأجهزة والبحث المباشر ====================
+                2 -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = { startFullScan() },
+                            modifier = Modifier.fillMaxWidth().height(46.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = accent),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Icon(Icons.Rounded.BluetoothSearching, null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = if (isScanning) (if (isArabic) "جاري البحث عن الأجهزة..." else "Scanning...") else (if (isArabic) "بحث تلقائي عن سماعة أو سيارة" else "Scan Nearby Devices"),
+                                color = Color.Black,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 13.sp
+                            )
+                        }
+
+                        bondedDevices.forEach { dev ->
+                            val isSelected = !showDemoStage && displayedDevice.address == dev.address
+                            BluetoothDeviceRowCard(
+                                device = dev,
+                                isSelected = isSelected,
+                                isArabic = isArabic,
+                                accent = accent,
+                                cardColor = cardColor,
+                                textPrimary = textPrimary,
+                                textSecondary = textSecondary,
+                                onSelect = {
+                                    showDemoStage = false
+                                    selectedDeviceAddress = dev.address
+                                    VyroBluetoothEngine.setActiveDevice(prefs, dev.address, dev.name, dev.category)
+                                    hubTab = 0
+                                },
+                                onConnectClick = {
+                                    showDemoStage = false
+                                    selectedDeviceAddress = dev.address
+                                    VyroBluetoothEngine.setActiveDevice(prefs, dev.address, dev.name, dev.category)
+                                    VyroBluetoothEngine.connectAudioDevice(context, dev.address) { ok ->
+                                        scope.launch(Dispatchers.Main) {
+                                            if (ok) {
+                                                Toast.makeText(context, if (isArabic) "جاري الاتصال بـ ${dev.name}..." else "Connecting...", Toast.LENGTH_SHORT).show()
+                                                if (dev.category == BtDeviceCategory.CAR_AUDIO) {
+                                                    delay(900L)
+                                                    val prof = VyroBluetoothEngine.loadProfile(prefs, dev.address, dev.category)
+                                                    if (prof.forceCarMusic) onForceCarMusic(dev.address, prof.carTargetVolumePercent, prof.autoOpenCarMode)
+                                                }
+                                                delay(1200L)
+                                                refreshBondedList()
+                                            } else {
+                                                runCatching { context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+                                            }
+                                        }
+                                    }
+                                }
+                            )
+                        }
+
+                        if (nearbyDevices.isNotEmpty()) {
+                            Text(if (isArabic) "أجهزة قريبة مكتشفة (${nearbyDevices.size})" else "Nearby Discovered", fontWeight = FontWeight.Bold, color = accent, fontSize = 14.sp)
+                            nearbyDevices.forEach { dev ->
+                                BluetoothDeviceRowCard(
+                                    device = dev,
+                                    isSelected = false,
+                                    isArabic = isArabic,
+                                    accent = accent,
+                                    cardColor = cardColor,
+                                    textPrimary = textPrimary,
+                                    textSecondary = textSecondary,
+                                    onSelect = {},
+                                    onConnectClick = {
+                                        VyroBluetoothEngine.connectAudioDevice(context, dev.address) { ok ->
+                                            scope.launch(Dispatchers.Main) {
+                                                Toast.makeText(
+                                                    context,
+                                                    if (ok) (if (isArabic) "جاري إقران ${dev.name}..." else "Pairing...") else (if (isArabic) "تعذر بدء الإقران" else "Pairing failed"),
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+    }
+}
+
+@Composable
+fun BluetoothRadarEmptyState(
+    isArabic: Boolean,
+    hasBtPerms: Boolean,
+    btEnabled: Boolean,
+    isScanning: Boolean,
+    accent: Color,
+    cardColor: Color,
+    textPrimary: Color,
+    textSecondary: Color,
+    onPrimaryAction: () -> Unit,
+    onOpenDemoPreview: () -> Unit
+) {
+    val inf = rememberInfiniteTransition(label = "radar")
+    val wave by inf.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2200, easing = LinearEasing), RepeatMode.Restart),
+        label = "radarWave"
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(26.dp))
+            .background(cardColor)
+            .border(1.2.dp, accent.copy(0.32f), RoundedCornerShape(26.dp))
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(modifier = Modifier.size(138.dp), contentAlignment = Alignment.Center) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val rMax = size.minDimension / 2f
+                val c = Offset(size.width / 2f, size.height / 2f)
+                drawCircle(accent.copy(0.12f), radius = rMax * 0.92f, center = c, style = Stroke(2f))
+                drawCircle(accent.copy(0.18f), radius = rMax * 0.62f, center = c, style = Stroke(2f))
+                if (btEnabled) {
+                    val animR = rMax * (0.28f + wave * 0.7f)
+                    drawCircle(accent.copy((1f - wave) * 0.6f), radius = animR, center = c, style = Stroke(3.5f))
+                }
+            }
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(cardColor)
-                    .padding(14.dp)
+                    .size(62.dp)
+                    .clip(CircleShape)
+                    .background(if (btEnabled) accent.copy(0.2f) else Color.White.copy(0.08f)),
+                contentAlignment = Alignment.Center
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.TouchApp, null, tint = accent, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = if (isArabic) "تخصيص تاتش السماعة وإعدادات الصوت" else "Smart Touch & Audio Profile",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 15.sp,
-                        color = textPrimary
-                    )
-                }
-
-                Spacer(Modifier.height(12.dp))
-
-                Text(if (isArabic) "وظيفة الضغطتين (Double Tap / التالي):" else "Double-Tap Action:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = accent)
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    SmartTouchAction.values().forEach { action ->
-                        val sel = activeProfile.doubleTapAction == action
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (sel) accent else Color.White.copy(0.06f))
-                                .clickable {
-                                    VyroBluetoothEngine.setActiveDevice(prefs, dev.address, dev.name, dev.category)
-                                    updateProfile(activeProfile.copy(doubleTapAction = action))
-                                }
-                                .padding(horizontal = 11.dp, vertical = 7.dp)
-                        ) {
-                            Text(
-                                text = if (isArabic) action.labelAr else action.labelEn,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (sel) Color.Black else textPrimary
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(12.dp))
-
-                Text(if (isArabic) "وظيفة الـ 3 ضغطات (Triple Tap / السابق):" else "Triple-Tap Action:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFC857))
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    SmartTouchAction.values().forEach { action ->
-                        val sel = activeProfile.tripleTapAction == action
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (sel) Color(0xFFFFC857) else Color.White.copy(0.06f))
-                                .clickable {
-                                    VyroBluetoothEngine.setActiveDevice(prefs, dev.address, dev.name, dev.category)
-                                    updateProfile(activeProfile.copy(tripleTapAction = action))
-                                }
-                                .padding(horizontal = 11.dp, vertical = 7.dp)
-                        ) {
-                            Text(
-                                text = if (isArabic) action.labelAr else action.labelEn,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (sel) Color.Black else textPrimary
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(14.dp))
-
-                Text(if (isArabic) "معادل الصوت التلقائي عند اتصال هذه السماعة:" else "Auto-EQ Preset on Connect:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textPrimary)
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    listOf("Keep Current", "Phonk Bass", "Crystal Clear", "Stadium 8D", "Car Punch", "Flat").forEach { preset ->
-                        val sel = activeProfile.eqPreset == preset
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (sel) accent.copy(0.24f) else Color.White.copy(0.06f))
-                                .border(1.dp, if (sel) accent else Color.Transparent, RoundedCornerShape(12.dp))
-                                .clickable {
-                                    updateProfile(activeProfile.copy(eqPreset = preset), applyAudio = true)
-                                }
-                                .padding(horizontal = 11.dp, vertical = 7.dp)
-                        ) {
-                            Text(preset, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (sel) accent else textPrimary)
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(10.dp))
-
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (isArabic) "تشغيل الموسيقى تلقائياً عند الاتصال" else "Auto-Play on Connect", color = textPrimary, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                    Switch(
-                        checked = activeProfile.autoPlayOnConnect,
-                        onCheckedChange = { updateProfile(activeProfile.copy(autoPlayOnConnect = it)) }
-                    )
-                }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (isArabic) "تفعيل 8D محيطي تلقائياً لهذه السماعة" else "Auto-Enable 8D Spatial", color = textPrimary, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                    Switch(
-                        checked = activeProfile.enable8D,
-                        onCheckedChange = { updateProfile(activeProfile.copy(enable8D = it), applyAudio = true) }
-                    )
-                }
+                Icon(
+                    imageVector = when {
+                        !btEnabled -> Icons.Rounded.BluetoothDisabled
+                        isScanning -> Icons.Rounded.BluetoothSearching
+                        else -> Icons.Rounded.Bluetooth
+                    },
+                    contentDescription = null,
+                    tint = if (btEnabled) accent else textSecondary,
+                    modifier = Modifier.size(32.dp)
+                )
             }
         }
 
         Spacer(Modifier.height(14.dp))
 
         Text(
-            text = if (isArabic) "أجهزتك المقترنة (${bondedDevices.size})" else "Paired Devices (${bondedDevices.size})",
+            text = when {
+                !hasBtPerms -> if (isArabic) "تفعيل مركز البلوتوث الذكي" else "Enable Smart Bluetooth Hub"
+                !btEnabled -> if (isArabic) "البلوتوث مغلق حالياً" else "Bluetooth is Turned Off"
+                isScanning -> if (isArabic) "جاري مسح الأجهزة القريبة..." else "Scanning Nearby Audio Devices..."
+                else -> if (isArabic) "لا توجد سماعة مقترنة أو متصلة" else "No Connected Audio Device"
+            },
             fontWeight = FontWeight.Black,
-            fontSize = 15.sp,
+            fontSize = 18.sp,
             color = textPrimary,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+            textAlign = TextAlign.Center
         )
 
-        if (bondedDevices.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(cardColor)
-                    .padding(18.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = if (isArabic) "لا توجد سماعات مقترنة حالياً — افتح البلوتوث واضغط «بحث تلقائي عن سماعة» بالأعلى" else "No paired audio devices yet — tap Auto Scan above",
-                    color = textSecondary,
-                    fontSize = 12.sp,
-                    textAlign = TextAlign.Center
-                )
-            }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                bondedDevices.forEach { dev ->
-                    val isSelected = !showDemoStage && activeDevice?.address == dev.address
-                    BluetoothDeviceRowCard(
-                        device = dev,
-                        isSelected = isSelected,
-                        isArabic = isArabic,
-                        accent = accent,
-                        cardColor = cardColor,
-                        textPrimary = textPrimary,
-                        textSecondary = textSecondary,
-                        onSelect = {
-                            showDemoStage = false
-                            selectedDeviceAddress = dev.address
-                            VyroBluetoothEngine.setActiveDevice(prefs, dev.address, dev.name, dev.category)
-                        },
-                        onConnectClick = {
-                            showDemoStage = false
-                            selectedDeviceAddress = dev.address
-                            VyroBluetoothEngine.setActiveDevice(prefs, dev.address, dev.name, dev.category)
-                            VyroBluetoothEngine.connectAudioDevice(context, dev.address) { ok ->
-                                scope.launch(Dispatchers.Main) {
-                                    if (ok) {
-                                        Toast.makeText(
-                                            context,
-                                            if (isArabic) "جاري الاتصال بـ ${dev.name}..." else "Connecting to ${dev.name}...",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                        if (dev.category == BtDeviceCategory.CAR_AUDIO) {
-                                            delay(900L)
-                                            val prof = VyroBluetoothEngine.loadProfile(prefs, dev.address, dev.category)
-                                            if (prof.forceCarMusic) {
-                                                onForceCarMusic(dev.address, prof.carTargetVolumePercent, prof.autoOpenCarMode)
-                                            }
-                                        }
-                                        delay(1200L)
-                                        refreshBondedList()
-                                    } else {
-                                        runCatching { context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
-                                    }
-                                }
-                            }
-                        }
-                    )
-                }
-            }
-        }
+        Spacer(Modifier.height(6.dp))
 
-        if (nearbyDevices.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
-            Text(
-                text = if (isArabic) "أجهزة قريبة مكتشفة (${nearbyDevices.size})" else "Nearby Discovered (${nearbyDevices.size})",
-                fontWeight = FontWeight.Black,
-                fontSize = 15.sp,
-                color = accent,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+        Text(
+            text = if (isArabic) "افتح البلوتوث ووصّل سماعتك أو سيارتك للتعرف عليها تلقائياً وعرض بياناتها الحقيقية ومجسمها الـ 3D."
+            else "Turn on Bluetooth and connect your earbuds or car to detect real battery, Smart Touch, and 3D Hologram.",
+            fontSize = 12.sp,
+            color = textSecondary,
+            textAlign = TextAlign.Center,
+            lineHeight = 18.sp
+        )
+
+        Spacer(Modifier.height(18.dp))
+
+        Button(
+            onClick = onPrimaryAction,
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = if (btEnabled) accent else Color(0xFF00E676)),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Icon(
+                if (!btEnabled) Icons.Rounded.PowerSettingsNew else Icons.Rounded.BluetoothSearching,
+                null,
+                tint = Color.Black
             )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                nearbyDevices.forEach { dev ->
-                    BluetoothDeviceRowCard(
-                        device = dev,
-                        isSelected = false,
-                        isArabic = isArabic,
-                        accent = accent,
-                        cardColor = cardColor,
-                        textPrimary = textPrimary,
-                        textSecondary = textSecondary,
-                        onSelect = {},
-                        onConnectClick = {
-                            VyroBluetoothEngine.connectAudioDevice(context, dev.address) { ok ->
-                                scope.launch(Dispatchers.Main) {
-                                    Toast.makeText(
-                                        context,
-                                        if (ok) (if (isArabic) "جاري إقران ${dev.name}..." else "Pairing ${dev.name}...")
-                                        else (if (isArabic) "تعذر بدء الإقران" else "Pairing failed"),
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            }
-                        }
-                    )
-                }
-            }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = when {
+                    !hasBtPerms -> if (isArabic) "منح أذونات البلوتوث" else "Grant Bluetooth Permissions"
+                    !btEnabled -> if (isArabic) "فتح البلوتوث الآن" else "Turn On Bluetooth"
+                    else -> if (isArabic) "بحث تلقائي عن سماعة / سيارة" else "Auto Scan Nearby Devices"
+                },
+                color = Color.Black,
+                fontWeight = FontWeight.Black,
+                fontSize = 14.sp
+            )
         }
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(10.dp))
+
+        TextButton(onClick = onOpenDemoPreview) {
+            Text(
+                text = if (isArabic) "تجربة مجسم الهولوجرام 3D (وضع معاينة فقط)" else "Try 3D Hologram (Preview Only)",
+                color = textSecondary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+fun LockedFeatureCard(
+    title: String,
+    lockReason: String,
+    icon: ImageVector,
+    cardColor: Color,
+    textPrimary: Color,
+    textSecondary: Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(0.46f)
+            .clip(RoundedCornerShape(18.dp))
+            .background(cardColor)
+            .border(1.dp, Color.White.copy(0.08f), RoundedCornerShape(18.dp))
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.White.copy(0.06f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = textSecondary, modifier = Modifier.size(21.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = textPrimary)
+            Spacer(Modifier.height(2.dp))
+            Text(lockReason, fontSize = 11.sp, color = textSecondary, lineHeight = 15.sp)
+        }
+        Spacer(Modifier.width(8.dp))
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(0.35f))
+                .border(1.dp, Color.White.copy(0.14f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Rounded.Lock, null, tint = Color(0xFFFFC857), modifier = Modifier.size(16.dp))
+        }
     }
 }
 
@@ -2046,28 +2344,6 @@ fun BatteryPodCard(
             color = if (percent in 0..20) Color(0xFFFF5252) else accent,
             fontWeight = FontWeight.Black,
             fontSize = 16.sp
-        )
-    }
-}
-
-@Composable
-fun CapabilityStatusRow(label: String, supported: Boolean, textPrimary: Color, textSecondary: Color) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = if (supported) Icons.Rounded.CheckCircle else Icons.Rounded.Cancel,
-            contentDescription = null,
-            tint = if (supported) Color(0xFF00E676) else textSecondary.copy(0.55f),
-            modifier = Modifier.size(17.dp)
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            color = if (supported) textPrimary else textSecondary,
-            fontWeight = if (supported) FontWeight.SemiBold else FontWeight.Normal
         )
     }
 }
@@ -2174,9 +2450,9 @@ fun UpdateCenterScreen(
         val remoteNotes = release?.notes?.trim().orEmpty()
         if (remoteNotes.isNotBlank()) remoteNotes
         else if (isArabic) {
-            "• مركز بلوتوث ذكي مستقل مع مسرح هولوجرام 3D تفاعلي 360° للسماعة والسيارة.\n• فتح الغطاء وسحب السماعة L و R باليد + عرض صورة الموديل بالهولوجرام.\n• قراءة شحن AirPods (يمين + شمال + علبة) وتخصيص التاتش الذكي.\n• محرك إجبار شاشة السيارة على وضع الموسيقى (Car Force-Music).\n• 14 شكل ويدجت Glassify ومحرك صوت 8D نقي."
+            "• محرك صوت PCM حقيقي (معادل 5 قنوات + Sub-Bass + صوت 8D HRTF حقيقي).\n• كلمات أغاني ديناميكية متزامنة بالملي ثانية تلقائياً مع شاشة تحميل وتأثير مدّ صوتي.\n• مركز بلوتوث احترافي بدون بيانات مزيفة + كروت مميزات مقفولة 🔒.\n• عودة أداة قص النغمات والأغاني + إصلاح مزامنة الشريط المصغر."
         } else {
-            "• Smart Bluetooth Hub with Interactive 360° 3D Hologram stage.\n• Pullable lid & L/R earbuds + real model hologram view.\n• AirPods Tri-Battery BLE + Smart Touch Remapping.\n• Car Audio Force-Music Engine."
+            "• True Software PCM Audio Engine (5-Band EQ + Sub-Bass + 8D HRTF).\n• Auto-Synced Dynamic Karaoke Lyrics.\n• Flagship Bluetooth Hub with real readings & Locked Feature Cards.\n• Restored Ringtone Cutter."
         }
     }
 
@@ -2474,6 +2750,7 @@ fun MainLibraryScreen(
     onToggleFav: (Long) -> Unit,
     onHideSong: (Long) -> Unit,
     onAddToPlaylist: (Song) -> Unit,
+    onCutSong: (Song) -> Unit,
     onOpenThemeStudio: () -> Unit,
     onOpenWidgetStudio: () -> Unit,
     onOpenBluetoothHub: () -> Unit,
@@ -2710,7 +2987,8 @@ fun MainLibraryScreen(
                         onPlay = onPlaySong,
                         onToggleFav = onToggleFav,
                         onHide = onHideSong,
-                        onAddToPlaylist = onAddToPlaylist
+                        onAddToPlaylist = onAddToPlaylist,
+                        onCutSong = onCutSong
                     )
 
                     1 -> {
@@ -2730,7 +3008,8 @@ fun MainLibraryScreen(
                                     onPlay = onPlaySong,
                                     onToggleFav = onToggleFav,
                                     onHide = onHideSong,
-                                    onAddToPlaylist = onAddToPlaylist
+                                    onAddToPlaylist = onAddToPlaylist,
+                                    onCutSong = onCutSong
                                 )
                             }
                         } else {
@@ -2845,7 +3124,8 @@ fun MainLibraryScreen(
                                     onPlay = onPlaySong,
                                     onToggleFav = onToggleFav,
                                     onHide = onHideSong,
-                                    onAddToPlaylist = onAddToPlaylist
+                                    onAddToPlaylist = onAddToPlaylist,
+                                    onCutSong = onCutSong
                                 )
                             }
                         } else {
@@ -2885,7 +3165,8 @@ fun MainLibraryScreen(
                                     onPlay = onPlaySong,
                                     onToggleFav = onToggleFav,
                                     onHide = onHideSong,
-                                    onAddToPlaylist = onAddToPlaylist
+                                    onAddToPlaylist = onAddToPlaylist,
+                                    onCutSong = onCutSong
                                 )
                             }
                         } else {
@@ -2994,7 +3275,8 @@ fun SongsListArea(
     onPlay: (List<Song>, Int) -> Unit,
     onToggleFav: (Long) -> Unit,
     onHide: (Long) -> Unit,
-    onAddToPlaylist: (Song) -> Unit
+    onAddToPlaylist: (Song) -> Unit,
+    onCutSong: (Song) -> Unit
 ) {
     if (songs.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -3087,6 +3369,11 @@ fun SongsListArea(
                                 text = { Text(if (song.id in favoriteIds) (if (isArabic) "إزالة من المفضلة" else "Unfavorite") else (if (isArabic) "إضافة للمفضلة" else "Favorite")) },
                                 leadingIcon = { Icon(Icons.Rounded.Favorite, null) },
                                 onClick = { menuOpen = false; onToggleFav(song.id) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (isArabic) "قص نغمة / مقطع صوتي" else "Ringtone Cutter") },
+                                leadingIcon = { Icon(Icons.Rounded.ContentCut, null) },
+                                onClick = { menuOpen = false; onCutSong(song) }
                             )
                             DropdownMenuItem(
                                 text = { Text(if (isArabic) "إضافة لقائمة تشغيل" else "Add to Playlist") },
@@ -3472,6 +3759,7 @@ fun NowPlayingOverlay(
     onOpenEq: () -> Unit,
     onToggle8D: () -> Unit,
     onOpenLyrics: () -> Unit,
+    onOpenCutter: () -> Unit,
     onOpenCarMode: () -> Unit,
     onAddToPlaylist: () -> Unit
 ) {
@@ -3532,13 +3820,16 @@ fun NowPlayingOverlay(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f).padding(horizontal = 6.dp)
+                    modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
                 )
-                IconButton(onClick = onOpenCarMode, modifier = Modifier.size(38.dp)) {
-                    Icon(Icons.Rounded.DirectionsCar, null, tint = Color.White, modifier = Modifier.size(22.dp))
+                IconButton(onClick = onOpenCutter, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Rounded.ContentCut, null, tint = Color.White, modifier = Modifier.size(20.dp))
                 }
-                IconButton(onClick = onAddToPlaylist, modifier = Modifier.size(38.dp)) {
-                    Icon(Icons.Rounded.QueueMusic, null, tint = Color.White, modifier = Modifier.size(22.dp))
+                IconButton(onClick = onOpenCarMode, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Rounded.DirectionsCar, null, tint = Color.White, modifier = Modifier.size(21.dp))
+                }
+                IconButton(onClick = onAddToPlaylist, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Rounded.QueueMusic, null, tint = Color.White, modifier = Modifier.size(21.dp))
                 }
             }
 
@@ -3638,7 +3929,14 @@ fun NowPlayingOverlay(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(formatMs(position), color = Color.White.copy(0.78f), fontSize = 12.sp, maxLines = 1)
-                        Text("VYRO CRYSTAL AUDIO", color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp, maxLines = 1)
+                        Text(
+                            text = if (spatial8D) "VYRO 8D STUDIO ENGINE" else "VYRO PCM CRYSTAL AUDIO",
+                            color = accent,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.8.sp,
+                            maxLines = 1
+                        )
                         Text(formatMs(duration), color = Color.White.copy(0.78f), fontSize = 12.sp, maxLines = 1)
                     }
 
@@ -4004,7 +4302,7 @@ fun AudioStudioDialog(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Equalizer, null, tint = accent)
                 Spacer(Modifier.width(8.dp))
-                Text(if (isArabic) "استوديو الصوت الـ 8D والمعادل" else "8D Audio & EQ Studio", color = Color.White, fontWeight = FontWeight.Black, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                Text(if (isArabic) "استوديو الصوت PCM والـ 8D الحقيقي" else "PCM Audio & True 8D Studio", color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.weight(1f))
                 IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, null, tint = Color.White) }
             }
 
@@ -4012,7 +4310,10 @@ fun AudioStudioDialog(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(accent.copy(0.14f)).padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(if (isArabic) "تفعيل الصوت المحيطي 8D" else "Enable 8D Surround", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Column(Modifier.weight(1f)) {
+                    Text(if (isArabic) "تفعيل الصوت المحيطي 8D الحقيقي" else "Enable True 8D Surround", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text(if (isArabic) "يدور 360° ويعمل على جميع السماعات والمخارج" else "360° HRTF + Hall Reverb on all outputs", color = Color.White.copy(0.65f), fontSize = 10.sp)
+                }
                 Switch(checked = spatial8D, onCheckedChange = onToggle8D)
             }
 
@@ -4066,33 +4367,6 @@ fun AudioStudioDialog(
             Slider(value = pitch, onValueChange = onUpdatePitch, valueRange = 0.5f..2.0f)
         }
     }
-}
-
-@Composable
-fun LyricsDialog(song: Song, isArabic: Boolean, accent: Color, prefs: SharedPreferences, onDismiss: () -> Unit) {
-    val key = "lyrics_${song.id}"
-    var text by remember { mutableStateOf(VyroSafePrefs.getString(prefs, key, "")) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (isArabic) "كلمات الأغنية" else "Lyrics", fontWeight = FontWeight.Bold) },
-        text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.fillMaxWidth().height(220.dp),
-                placeholder = { Text(if (isArabic) "الصق كلمات الأغنية هنا ليتم حفظها..." else "Paste song lyrics here to save...") }
-            )
-        },
-        confirmButton = {
-            Button(onClick = {
-                prefs.edit().putString(key, text).apply()
-                onDismiss()
-            }, colors = ButtonDefaults.buttonColors(containerColor = accent)) {
-                Text(if (isArabic) "حفظ" else "Save", color = Color.Black, fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(if (isArabic) "إغلاق" else "Close") } }
-    )
 }
 
 @Composable
@@ -4156,15 +4430,15 @@ fun OnboardingTourOverlay(
     BackHandler(enabled = true) { onSkip() }
 
     val steps = if (isArabic) listOf(
-        "أهلاً بك في VYRO MUSIC 5.1 TITAN 🎧" to "مشغلك الاحترافي السريع بدون أي إعلانات وبصوت نقي ومانع غروشة تلقائياً.",
-        "مركز البلوتوث والهولوجرام 3D 🛰️" to "اضغط أيقونة البلوتوث فوق للبحث عن سماعتك، فتح علبة الهولوجرام 3D، قراءة شحن AirPods، وإجبار موسيقى السيارة!",
-        "استوديو الويدجت والسمات 🎨" to "اختار من 14 شكل ويدجت Glassify و6 أشكال عرض لمكتبتك بلونك المفضل.",
-        "مركز التحديثات وما الجديد 🚀" to "من الإعدادات افتح مركز التحديثات لعرض «ما الجديد» وتثبيت أي تحديث مباشر."
+        "أهلاً بك في VYRO MUSIC 5.2 TITAN 🎧" to "محرك صوت PCM حقيقي يعمل على كل المخارج (معادل 5 قنوات + Sub-Bass + 8D HRTF).",
+        "كلمات ديناميكية متزامنة 📝" to "افتح «الكلمات» من المشغل لتنزيل الكلمات المتزامنة بالملي ثانية مع كاريوكي حيّ ومدّ صوتي!",
+        "مركز البلوتوث والهولوجرام 3D 🛰️" to "اضغط أيقونة البلوتوث للتحكم بسماعتك، رؤية شحن AirPods الحقيقي، وإجبار موسيقى السيارة.",
+        "قص النغمات و14 ويدجت ✂️" to "اقص أي أغنية كنغمة بضغطة واحدة واختار من 14 شكل ويدجت Glassify."
     ) else listOf(
-        "Welcome to VYRO MUSIC 5.1 TITAN 🎧" to "Fast, ad-free music player with Crystal Audio.",
-        "Smart Bluetooth & 3D Hologram 🛰️" to "Tap the Bluetooth icon to scan earbuds, interact with 3D Holograms, read AirPods battery & force Car Music!",
-        "Widgets & Live Theme Studio 🎨" to "Pick from 14 Glassify widgets and 6 library layouts.",
-        "Update Center & What's New 🚀" to "Open Update Center from Settings to inspect What's New and install updates."
+        "Welcome to VYRO MUSIC 5.2 TITAN 🎧" to "True Software PCM Engine (5-Band EQ + Sub-Bass + 360° 8D HRTF).",
+        "Dynamic Synced Lyrics 📝" to "Open Lyrics in Player to auto-fetch millisecond-synced karaoke lyrics!",
+        "Flagship Bluetooth & 3D Hub 🛰️" to "Tap Bluetooth for real battery readings, 3D Hologram & Car Force-Music.",
+        "Ringtone Cutter & 14 Widgets ✂️" to "Trim any song into a ringtone and pick from 14 Glassify widgets."
     )
     val (title, body) = steps[step.coerceIn(0, steps.lastIndex)]
 
@@ -4395,7 +4669,7 @@ suspend fun fetchLatestRelease(): ReleaseInfo? = withContext(Dispatchers.IO) {
             connectTimeout = 10000
             readTimeout = 10000
             setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("User-Agent", "VyroMusicApp/5.1.0")
+            setRequestProperty("User-Agent", "VyroMusicApp/5.2.0")
         }
         if (conn.responseCode !in 200..299) {
             conn.disconnect()
