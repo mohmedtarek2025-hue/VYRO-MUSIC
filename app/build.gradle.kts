@@ -287,7 +287,7 @@ File(xmlDir, "vyro_widget_info.xml").writeText(
 )
 
 base {
-    archivesName.set("VYRO_MUSIC_5.0.4_TITAN")
+    archivesName.set("VYRO_MUSIC_5.1.0_TITAN")
 }
 
 android {
@@ -298,8 +298,8 @@ android {
         applicationId = "com.mohamedtarek.vyromusic"
         minSdk = 26
         targetSdk = 34
-        versionCode = 15
-        versionName = "5.0.4-TITAN"
+        versionCode = 16
+        versionName = "5.1.0-TITAN"
     }
 
     val fixedKeystore = File(projectDir, "vyro.jks")
