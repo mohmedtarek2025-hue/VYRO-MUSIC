@@ -48,7 +48,7 @@ enum class SmartTouchAction(val id: String, val labelAr: String, val labelEn: St
 
     companion object {
         fun fromId(id: String?): SmartTouchAction =
-            entries.find { it.id == id } ?: NEXT
+            values().find { it.id == id } ?: NEXT
     }
 }
 
