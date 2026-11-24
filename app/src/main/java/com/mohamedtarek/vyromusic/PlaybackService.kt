@@ -34,7 +34,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Size
-import android.view.KeyEvent
 import android.view.View
 import android.widget.RemoteViews
 import androidx.annotation.OptIn
@@ -49,6 +48,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionResult
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.abs
@@ -363,41 +363,36 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // معترض أوامر التاتش الذكي لسماعات AirPods وجميع سماعات البلوتوث
         val smartTouchCallback = object : MediaSession.Callback {
             @Suppress("DEPRECATION")
-            override fun onMediaButtonEvent(
+            override fun onPlayerCommandRequest(
                 session: MediaSession,
-                controllerInfo: MediaSession.ControllerInfo,
-                mediaButtonEvent: Intent
-            ): Boolean {
-                val keyEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    mediaButtonEvent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
-                } else {
-                    mediaButtonEvent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
-                }
-
-                if (keyEvent != null && keyEvent.action == KeyEvent.ACTION_DOWN && keyEvent.repeatCount == 0) {
+                controller: MediaSession.ControllerInfo,
+                playerCommand: Int
+            ): Int {
+                if (controller.packageName != packageName) {
                     val activeAddr = VyroBluetoothEngine.getActiveDeviceAddress(prefs)
                     if (activeAddr.isNotBlank()) {
                         val profile = VyroBluetoothEngine.loadProfile(prefs, activeAddr)
-                        when (keyEvent.keyCode) {
-                            KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                        when (playerCommand) {
+                            Player.COMMAND_SEEK_TO_NEXT,
+                            Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> {
                                 if (profile.doubleTapAction != SmartTouchAction.NEXT) {
-                                    executeSmartTouchAction(profile.doubleTapAction)
-                                    return true
+                                    mainHandler.post { executeSmartTouchAction(profile.doubleTapAction) }
+                                    return SessionResult.RESULT_ERROR_NOT_SUPPORTED
                                 }
                             }
-                            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                            Player.COMMAND_SEEK_TO_PREVIOUS,
+                            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> {
                                 if (profile.tripleTapAction != SmartTouchAction.PREV) {
-                                    executeSmartTouchAction(profile.tripleTapAction)
-                                    return true
+                                    mainHandler.post { executeSmartTouchAction(profile.tripleTapAction) }
+                                    return SessionResult.RESULT_ERROR_NOT_SUPPORTED
                                 }
                             }
                         }
                     }
                 }
-                return super.onMediaButtonEvent(session, controllerInfo, mediaButtonEvent)
+                return SessionResult.RESULT_SUCCESS
             }
         }
 
