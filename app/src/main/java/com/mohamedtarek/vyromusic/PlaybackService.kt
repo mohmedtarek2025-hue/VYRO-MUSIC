@@ -160,7 +160,7 @@ object VyroSafePrefs {
     }
 
     fun getBandGains(prefs: SharedPreferences): List<Float> {
-        val defaultGains = listOf(0.28f, 0.16f, 0.0f, 0.14f, 0.24f)
+        val defaultGains = listOf(0.20f, 0.10f, 0.0f, 0.12f, 0.20f)
         val rawStr = getString(prefs, "band_gains", "")
         if (rawStr.isBlank()) return defaultGains
         return runCatching {
@@ -192,7 +192,7 @@ object VyroSafePrefs {
     fun sanitizeOnUpgrade(prefs: SharedPreferences) {
         runCatching {
             val currentSchema = getInt(prefs, "vyro_prefs_schema", 0)
-            if (currentSchema >= 520) return
+            if (currentSchema >= 521) return
 
             val favs = getLongSet(prefs, "favorite_ids")
             val hidden = getLongSet(prefs, "hidden_ids")
@@ -202,6 +202,8 @@ object VyroSafePrefs {
             val bass = getInt(prefs, "bass_strength", 35)
             val virt = getInt(prefs, "virtualizer_strength", 30)
             val loud = getInt(prefs, "loudness_gain", 0)
+            val luxury = getInt(prefs, "luxury_tone", 0)
+            val vocal = getInt(prefs, "vocal_clarity", 0)
             val speed = getFloat(prefs, "playback_speed", 1f)
             val pitch = getFloat(prefs, "playback_pitch", 1f)
             val listenSec = getLong(prefs, "stat_listen_seconds", 0L)
@@ -221,6 +223,8 @@ object VyroSafePrefs {
                 .putInt("bass_strength", bass)
                 .putInt("virtualizer_strength", virt)
                 .putInt("loudness_gain", loud)
+                .putInt("luxury_tone", luxury)
+                .putInt("vocal_clarity", vocal)
                 .putFloat("playback_speed", speed)
                 .putFloat("playback_pitch", pitch)
                 .putLong("stat_listen_seconds", listenSec)
@@ -230,13 +234,13 @@ object VyroSafePrefs {
                 .putBoolean("lang_ar", langAr)
                 .putBoolean("spatial_8d_enabled", spatial8D)
                 .putInt("sort_mode", sortMode)
-                .putInt("vyro_prefs_schema", 520)
+                .putInt("vyro_prefs_schema", 521)
                 .apply()
         }
     }
 }
 
-// ==================== PLAYBACK SERVICE (WITH TRUE SOFTWARE PCM DSP) ====================
+// ==================== PLAYBACK SERVICE (WITH TRUE ZERO-DISTORTION PCM DSP) ====================
 
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPreferenceChangeListener {
@@ -301,10 +305,8 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
         VyroSafePrefs.sanitizeOnUpgrade(prefs)
         prefs.registerOnSharedPreferenceChangeListener(this)
 
-        // مزامنة محرك الصوت البرمجي (EQ + Sub-Bass + 8D الحقيقي) فور بدء الخدمة
         VyroDspController.syncFromPrefs(prefs)
 
-        // التقاط السماعة المتصلة فعلياً قبل فتح التطبيق لتعمل تخصيصات التاتش وبروفايل الصوت فوراً
         runCatching {
             val connectedNow = VyroBluetoothEngine.syncCurrentlyConnectedDevice(this, prefs)
             if (connectedNow != null) {
@@ -313,7 +315,6 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
             }
         }
 
-        // حقن معالج الصوت البرمجي VyroDspAudioProcessor مباشرة داخل خط صوت ExoPlayer
         val renderersFactory = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
                 context: Context,
@@ -384,7 +385,6 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // معترض أوامر التاتش الذكي لسماعات البلوتوث (يتحقق تلقائياً من السماعة المتصلة حتى لو اتصلت قبل فتح التطبيق)
         val smartTouchCallback = object : MediaSession.Callback {
             @Suppress("DEPRECATION")
             override fun onPlayerCommandRequest(
@@ -573,7 +573,8 @@ class PlaybackService : MediaSessionService(), SharedPreferences.OnSharedPrefere
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
         when (key) {
-            "band_gains", "bass_strength", "virtualizer_strength", "loudness_gain", "spatial_8d_enabled" -> {
+            "band_gains", "bass_strength", "virtualizer_strength", "loudness_gain",
+            "luxury_tone", "vocal_clarity", "spatial_8d_enabled" -> {
                 VyroDspController.syncFromPrefs(prefs)
             }
             "playback_speed", "playback_pitch" -> applyPlaybackParams()
@@ -628,7 +629,6 @@ class VyroWidgetProvider : AppWidgetProvider() {
                 val svcIntent = Intent(context, PlaybackService::class.java).apply {
                     action = intent.action
                 }
-                // تشغيل آمن يمنع كراش ForegroundServiceDidNotStartInTimeException عند الإيقاف من الويدجت
                 val started = runCatching {
                     context.startService(svcIntent)
                     true
