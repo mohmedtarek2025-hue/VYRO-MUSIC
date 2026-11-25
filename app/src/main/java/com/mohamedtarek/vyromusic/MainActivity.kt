@@ -142,6 +142,18 @@ data class WidgetPreset(
     val isCircle: Boolean = false
 )
 
+data class AudioPresetConfig(
+    val nameAr: String,
+    val nameEn: String,
+    val gains: List<Float>,
+    val bass: Int,
+    val virt: Int,
+    val amp: Int,
+    val luxury: Int,
+    val vocal: Int,
+    val enable8D: Boolean = false
+)
+
 data class ReleaseInfo(
     val tag: String,
     val name: String,
@@ -203,6 +215,21 @@ val ACCENT_PALETTE = listOf(
     Color(0xFFEC4899)
 )
 
+val AUDIO_PRESETS = listOf(
+    AudioPresetConfig("صوت فخم 👑", "Luxury Royal", listOf(0.35f, 0.20f, 0.05f, 0.25f, 0.45f), bass = 48, virt = 55, amp = 20, luxury = 90, vocal = 35),
+    AudioPresetConfig("صوت مضخم 🔊", "Mega Amp", listOf(0.42f, 0.24f, 0.15f, 0.28f, 0.36f), bass = 65, virt = 45, amp = 90, luxury = 40, vocal = 30),
+    AudioPresetConfig("بيز جبار 💥", "Deep Bass", listOf(0.78f, 0.44f, -0.05f, 0.16f, 0.28f), bass = 92, virt = 40, amp = 30, luxury = 35, vocal = 10),
+    AudioPresetConfig("فونك وحماس 🔥", "Phonk Bass", listOf(0.72f, 0.40f, 0.05f, 0.28f, 0.46f), bass = 82, virt = 55, amp = 50, luxury = 30, vocal = 15),
+    AudioPresetConfig("ملعب 8D 🏟️", "Stadium 8D", listOf(0.42f, 0.22f, 0.15f, 0.35f, 0.50f), bass = 55, virt = 90, amp = 25, luxury = 65, vocal = 25, enable8D = true),
+    AudioPresetConfig("نقاء كريستال ✨", "Crystal Clear", listOf(0.20f, 0.10f, 0.0f, 0.12f, 0.20f), bass = 35, virt = 30, amp = 0, luxury = 15, vocal = 15),
+    AudioPresetConfig("قوة السيارة 🚗", "Car Punch", listOf(0.62f, 0.34f, 0.12f, 0.28f, 0.40f), bass = 75, virt = 40, amp = 65, luxury = 45, vocal = 35),
+    AudioPresetConfig("نقاء الغناء 🎤", "Vocal Studio", listOf(-0.10f, 0.10f, 0.40f, 0.46f, 0.25f), bass = 15, virt = 25, amp = 20, luxury = 40, vocal = 92),
+    AudioPresetConfig("سينما محيطي 🎬", "Cinema 3D", listOf(0.54f, 0.28f, 0.20f, 0.32f, 0.44f), bass = 68, virt = 85, amp = 35, luxury = 75, vocal = 55),
+    AudioPresetConfig("إلكترونيك ⚡", "Electronic", listOf(0.66f, 0.30f, -0.08f, 0.36f, 0.58f), bass = 78, virt = 65, amp = 45, luxury = 45, vocal = 10),
+    AudioPresetConfig("هادي ليلي 🌙", "Night Soft", listOf(0.18f, 0.12f, 0.05f, -0.12f, -0.18f), bass = 25, virt = 25, amp = 0, luxury = 50, vocal = 30),
+    AudioPresetConfig("طبيعي Flat", "Flat", listOf(0f, 0f, 0f, 0f, 0f), bass = 0, virt = 0, amp = 0, luxury = 0, vocal = 0)
+)
+
 val WIDGET_PRESETS = listOf(
     WidgetPreset("Glassify Frost", "زجاج Glassify", "Glassify Frost", "زجاج ضبابي يتلوّن مع غلاف الأغنية", listOf(Color(0xFF163A5F), Color(0xFF0B1120)), Color(0x88FFFFFF)),
     WidgetPreset("Full Poster", "بوستر كامل", "Full Poster", "غلاف الأغنية يملأ الويدجت بالكامل", listOf(Color(0xFF2B1C3D), Color(0xFF090B12)), Color(0x66FFFFFF)),
@@ -236,8 +263,8 @@ fun VyroMusicApp() {
 
     val appVersion = remember {
         runCatching {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "5.2.0-TITAN"
-        }.getOrDefault("5.2.0-TITAN")
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "5.2.1-TITAN"
+        }.getOrDefault("5.2.1-TITAN")
     }
 
     var isArabic by remember { mutableStateOf(VyroSafePrefs.getBoolean(prefs, "lang_ar", true)) }
@@ -256,6 +283,8 @@ fun VyroMusicApp() {
     var bassStrength by remember { mutableIntStateOf(VyroSafePrefs.getInt(prefs, "bass_strength", 35).coerceIn(0, 100)) }
     var virtStrength by remember { mutableIntStateOf(VyroSafePrefs.getInt(prefs, "virtualizer_strength", 30).coerceIn(0, 100)) }
     var loudnessGain by remember { mutableIntStateOf(VyroSafePrefs.getInt(prefs, "loudness_gain", 0).coerceIn(0, 100)) }
+    var luxuryTone by remember { mutableIntStateOf(VyroSafePrefs.getInt(prefs, "luxury_tone", 0).coerceIn(0, 100)) }
+    var vocalClarity by remember { mutableIntStateOf(VyroSafePrefs.getInt(prefs, "vocal_clarity", 0).coerceIn(0, 100)) }
     var playbackSpeed by remember { mutableFloatStateOf(VyroSafePrefs.getFloat(prefs, "playback_speed", 1f).coerceIn(0.5f, 2.0f)) }
     var playbackPitch by remember { mutableFloatStateOf(VyroSafePrefs.getFloat(prefs, "playback_pitch", 1f).coerceIn(0.5f, 2.0f)) }
 
@@ -524,7 +553,7 @@ fun VyroMusicApp() {
         }
     }
 
-    fun playFromQueue(queue: List<Song>, startIndex: Int) {
+    fun playFromQueue(queue: List<Song>, startIndex: Int, startPositionMs: Long = 0L) {
         val ctrl = controller ?: return
         if (queue.isEmpty()) return
         val safeIdx = startIndex.coerceIn(0, queue.lastIndex)
@@ -548,7 +577,7 @@ fun VyroMusicApp() {
         }
         runCatching {
             ctrl.volume = 1f
-            ctrl.setMediaItems(items, safeIdx, 0L)
+            ctrl.setMediaItems(items, safeIdx, startPositionMs.coerceAtLeast(0L))
             ctrl.prepare()
             ctrl.play()
             currentSong = queue[safeIdx]
@@ -556,21 +585,141 @@ fun VyroMusicApp() {
         }
     }
 
-    fun forceCarMusicPlayNow(address: String, targetVolume: Int, openCarUi: Boolean) {
-        VyroBluetoothEngine.forceCarAudioMusicMode(context, targetVolume)
-        val ctrl = controller
-        if (ctrl != null) {
+    // إصلاح شامل: تحميل قائمة التشغيل الكاملة تلقائياً عند التشغيل أو التقليب بعد إعادة فتح التطبيق
+    fun smartTogglePlay() {
+        val ctrl = controller ?: return
+        if (ctrl.isPlaying) {
+            ctrl.pause()
+            return
+        }
+        val queue = visibleSongs.ifEmpty { allSongs }
+        val needsFullQueue = (ctrl.mediaItemCount == 0) || (ctrl.mediaItemCount <= 1 && queue.size > 1)
+        if (needsFullQueue && queue.isNotEmpty()) {
+            val targetId = currentSong?.id ?: VyroSafePrefs.getLong(prefs, "last_song_id", -1L)
+            val idx = queue.indexOfFirst { it.id == targetId }.coerceAtLeast(0)
+            val keepPos = if (ctrl.mediaItemCount > 0 && ctrl.currentMediaItem?.mediaId?.toLongOrNull() == queue[idx].id) {
+                ctrl.currentPosition.coerceAtLeast(0L)
+            } else 0L
+            playFromQueue(queue, idx, keepPos)
+        } else if (ctrl.mediaItemCount > 0) {
             runCatching {
                 ctrl.volume = 1f
-                if (ctrl.mediaItemCount > 0) {
-                    ctrl.prepare()
-                    ctrl.play()
-                } else if (visibleSongs.isNotEmpty()) {
-                    val idx = currentSong?.let { s -> visibleSongs.indexOfFirst { it.id == s.id } }?.takeIf { it >= 0 } ?: 0
-                    playFromQueue(visibleSongs, idx)
-                }
+                ctrl.prepare()
+                ctrl.play()
             }
         }
+    }
+
+    fun smartNext() {
+        val ctrl = controller ?: return
+        val queue = visibleSongs.ifEmpty { allSongs }
+        if (ctrl.mediaItemCount > 1) {
+            runCatching {
+                if (ctrl.hasNextMediaItem()) {
+                    ctrl.seekToNextMediaItem()
+                } else {
+                    ctrl.seekTo(0, 0L)
+                }
+                ctrl.volume = 1f
+                ctrl.prepare()
+                ctrl.play()
+            }
+        } else if (queue.isNotEmpty()) {
+            val targetId = currentSong?.id ?: VyroSafePrefs.getLong(prefs, "last_song_id", -1L)
+            val curIdx = queue.indexOfFirst { it.id == targetId }
+            val nextIdx = if (curIdx >= 0) (curIdx + 1) % queue.size else 0
+            playFromQueue(queue, nextIdx, 0L)
+        }
+    }
+
+    fun smartPrev() {
+        val ctrl = controller ?: return
+        val queue = visibleSongs.ifEmpty { allSongs }
+        if (ctrl.mediaItemCount > 1) {
+            runCatching {
+                if (ctrl.currentPosition > 4000L) {
+                    ctrl.seekTo(0L)
+                } else if (ctrl.hasPreviousMediaItem()) {
+                    ctrl.seekToPreviousMediaItem()
+                } else {
+                    ctrl.seekTo(ctrl.mediaItemCount - 1, 0L)
+                }
+                ctrl.volume = 1f
+                ctrl.prepare()
+                ctrl.play()
+            }
+        } else if (queue.isNotEmpty()) {
+            val targetId = currentSong?.id ?: VyroSafePrefs.getLong(prefs, "last_song_id", -1L)
+            val curIdx = queue.indexOfFirst { it.id == targetId }
+            val prevIdx = if (curIdx > 0) curIdx - 1 else queue.lastIndex
+            playFromQueue(queue, prevIdx, 0L)
+        }
+    }
+
+    // إعادة ضبط الصوت فقط (بدون لمس السمات أو الويدجت أو البلوتوث)
+    fun resetAudioDefaults() {
+        bandGains = listOf(0.20f, 0.10f, 0f, 0.12f, 0.20f)
+        bassStrength = 35
+        virtStrength = 30
+        loudnessGain = 0
+        luxuryTone = 0
+        vocalClarity = 0
+        spatial8D = false
+        playbackSpeed = 1f
+        playbackPitch = 1f
+        prefs.edit()
+            .putString("band_gains", JSONArray(bandGains).toString())
+            .putInt("bass_strength", 35)
+            .putInt("virtualizer_strength", 30)
+            .putInt("loudness_gain", 0)
+            .putInt("luxury_tone", 0)
+            .putInt("vocal_clarity", 0)
+            .putBoolean("spatial_8d_enabled", false)
+            .putFloat("playback_speed", 1f)
+            .putFloat("playback_pitch", 1f)
+            .apply()
+        VyroDspController.syncFromPrefs(prefs)
+        Toast.makeText(context, if (isArabic) "تم ضبط معادل الصوت للافتراضي ✅" else "Audio studio reset to default ✅", Toast.LENGTH_SHORT).show()
+    }
+
+    fun resetThemeDefaults() {
+        themeMode = "dark"
+        bgStyle = "aura"
+        listLayout = "medium"
+        accentIndex = 0
+        prefs.edit()
+            .putString("theme_mode", themeMode)
+            .putString("bg_style", bgStyle)
+            .putString("list_layout", listLayout)
+            .putInt("accent_color_id", 0)
+            .apply()
+        VyroWidgetProvider.updateAllWidgets(context)
+        Toast.makeText(context, if (isArabic) "تم ضبط السمات للافتراضي ✅" else "Theme reset to default ✅", Toast.LENGTH_SHORT).show()
+    }
+
+    fun resetWidgetDefaults() {
+        widgetStyle = "Glassify Frost"
+        prefs.edit().putString("widget_style", widgetStyle).apply()
+        VyroWidgetProvider.updateAllWidgets(context)
+        Toast.makeText(context, if (isArabic) "تم ضبط الويدجت للافتراضي ✅" else "Widget reset to default ✅", Toast.LENGTH_SHORT).show()
+    }
+
+    fun resetPlayerPrefsDefaults() {
+        spatial8D = false
+        vinylMode = false
+        showWaves = true
+        prefs.edit()
+            .putBoolean("spatial_8d_enabled", false)
+            .putBoolean("vinyl_disc_mode", false)
+            .putBoolean("show_waves", true)
+            .apply()
+        VyroDspController.syncFromPrefs(prefs)
+        Toast.makeText(context, if (isArabic) "تم ضبط إعدادات المشغل للافتراضي ✅" else "Player settings reset ✅", Toast.LENGTH_SHORT).show()
+    }
+
+    fun forceCarMusicPlayNow(address: String, targetVolume: Int, openCarUi: Boolean) {
+        VyroBluetoothEngine.forceCarAudioMusicMode(context, targetVolume)
+        smartTogglePlay()
         runCatching {
             val svc = Intent(context, PlaybackService::class.java).apply {
                 action = VyroBluetoothEngine.ACTION_FORCE_CAR_PLAY
@@ -713,19 +862,10 @@ fun VyroMusicApp() {
                             currentPosition = currentPosition,
                             hasAudioPerm = hasAudioPerm,
                             onRequestPerm = { permLauncher.launch(arrayOf(audioPerm)) },
-                            onPlaySong = { list, idx -> playFromQueue(list, idx) },
-                            onTogglePlay = {
-                                controller?.let { ctrl ->
-                                    if (ctrl.isPlaying) ctrl.pause()
-                                    else if (ctrl.mediaItemCount > 0) ctrl.play()
-                                    else currentSong?.let { s ->
-                                        val idx = visibleSongs.indexOfFirst { it.id == s.id }.coerceAtLeast(0)
-                                        playFromQueue(visibleSongs, idx)
-                                    }
-                                }
-                            },
-                            onNext = { controller?.seekToNext() },
-                            onPrev = { controller?.seekToPrevious() },
+                            onPlaySong = { list, idx -> playFromQueue(list, idx, 0L) },
+                            onTogglePlay = { smartTogglePlay() },
+                            onNext = { smartNext() },
+                            onPrev = { smartPrev() },
                             onOpenNowPlaying = { if (currentSong != null) showNowPlaying = true },
                             onToggleFav = { toggleFavorite(it) },
                             onHideSong = { hideSong(it) },
@@ -779,6 +919,7 @@ fun VyroMusicApp() {
                                 prefs.edit().putInt("accent_color_id", it).apply()
                                 VyroWidgetProvider.updateAllWidgets(context)
                             },
+                            onResetSection = { resetThemeDefaults() },
                             onBack = { currentScreen = AppScreen.MAIN }
                         )
                     }
@@ -804,6 +945,7 @@ fun VyroMusicApp() {
                                 ).show()
                             },
                             onPinWidget = { pinVyroWidget(context, isArabic) },
+                            onResetSection = { resetWidgetDefaults() },
                             onBack = { currentScreen = AppScreen.MAIN }
                         )
                     }
@@ -895,35 +1037,10 @@ fun VyroMusicApp() {
                                 currentScreen = AppScreen.MAIN
                             },
                             onResetDefaults = {
-                                themeMode = "dark"
-                                bgStyle = "aura"
-                                listLayout = "medium"
-                                accentIndex = 0
-                                widgetStyle = "Glassify Frost"
-                                spatial8D = false
-                                bassStrength = 35
-                                virtStrength = 30
-                                loudnessGain = 0
-                                playbackSpeed = 1f
-                                playbackPitch = 1f
-                                bandGains = listOf(0.28f, 0.16f, 0f, 0.14f, 0.24f)
-                                prefs.edit()
-                                    .putString("theme_mode", themeMode)
-                                    .putString("bg_style", bgStyle)
-                                    .putString("list_layout", listLayout)
-                                    .putInt("accent_color_id", 0)
-                                    .putString("widget_style", widgetStyle)
-                                    .putBoolean("spatial_8d_enabled", false)
-                                    .putInt("bass_strength", 35)
-                                    .putInt("virtualizer_strength", 30)
-                                    .putInt("loudness_gain", 0)
-                                    .putFloat("playback_speed", 1f)
-                                    .putFloat("playback_pitch", 1f)
-                                    .putString("band_gains", JSONArray(bandGains).toString())
-                                    .apply()
-                                VyroDspController.syncFromPrefs(prefs)
-                                VyroWidgetProvider.updateAllWidgets(context)
-                                Toast.makeText(context, if (isArabic) "تمت إعادة الضبط بنجاح" else "Defaults restored", Toast.LENGTH_SHORT).show()
+                                resetThemeDefaults()
+                                resetWidgetDefaults()
+                                resetAudioDefaults()
+                                resetPlayerPrefsDefaults()
                             },
                             onOpenAbout = { showAboutDialog = true },
                             onBack = { currentScreen = AppScreen.MAIN }
@@ -951,12 +1068,19 @@ fun VyroMusicApp() {
                             vinylMode = vinylMode,
                             showWaves = showWaves,
                             onClose = { showNowPlaying = false },
-                            onSeek = { controller?.seekTo(it) },
-                            onTogglePlay = {
-                                controller?.let { if (it.isPlaying) it.pause() else it.play() }
+                            onSeek = { pos ->
+                                val ctrl = controller
+                                if (ctrl != null && ctrl.mediaItemCount > 0) {
+                                    ctrl.seekTo(pos)
+                                } else {
+                                    val queue = visibleSongs.ifEmpty { allSongs }
+                                    val idx = queue.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
+                                    playFromQueue(queue, idx, pos)
+                                }
                             },
-                            onNext = { controller?.seekToNext() },
-                            onPrev = { controller?.seekToPrevious() },
+                            onTogglePlay = { smartTogglePlay() },
+                            onNext = { smartNext() },
+                            onPrev = { smartPrev() },
                             onToggleShuffle = {
                                 controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled }
                             },
@@ -1005,9 +1129,9 @@ fun VyroMusicApp() {
                             durationMs = totalDuration,
                             prefs = prefs,
                             onSeek = { controller?.seekTo(it) },
-                            onTogglePlay = { controller?.let { if (it.isPlaying) it.pause() else it.play() } },
-                            onNext = { controller?.seekToNext() },
-                            onPrev = { controller?.seekToPrevious() },
+                            onTogglePlay = { smartTogglePlay() },
+                            onNext = { smartNext() },
+                            onPrev = { smartPrev() },
                             onClose = { showLyricsOverlay = false }
                         )
                     }
@@ -1018,9 +1142,9 @@ fun VyroMusicApp() {
                         song = currentSong!!,
                         accent = accent,
                         isPlaying = isPlaying,
-                        onTogglePlay = { controller?.let { if (it.isPlaying) it.pause() else it.play() } },
-                        onNext = { controller?.seekToNext() },
-                        onPrev = { controller?.seekToPrevious() },
+                        onTogglePlay = { smartTogglePlay() },
+                        onNext = { smartNext() },
+                        onPrev = { smartPrev() },
                         onClose = { showCarMode = false }
                     )
                 }
@@ -1054,6 +1178,8 @@ fun VyroMusicApp() {
                     bassStrength = bassStrength,
                     virtStrength = virtStrength,
                     loudnessGain = loudnessGain,
+                    luxuryTone = luxuryTone,
+                    vocalClarity = vocalClarity,
                     speed = playbackSpeed,
                     pitch = playbackPitch,
                     onToggle8D = {
@@ -1083,6 +1209,16 @@ fun VyroMusicApp() {
                         prefs.edit().putInt("loudness_gain", it).apply()
                         VyroDspController.syncFromPrefs(prefs)
                     },
+                    onUpdateLuxury = {
+                        luxuryTone = it
+                        prefs.edit().putInt("luxury_tone", it).apply()
+                        VyroDspController.syncFromPrefs(prefs)
+                    },
+                    onUpdateVocal = {
+                        vocalClarity = it
+                        prefs.edit().putInt("vocal_clarity", it).apply()
+                        VyroDspController.syncFromPrefs(prefs)
+                    },
                     onUpdateSpeed = {
                         playbackSpeed = it
                         prefs.edit().putFloat("playback_speed", it).apply()
@@ -1091,17 +1227,26 @@ fun VyroMusicApp() {
                         playbackPitch = it
                         prefs.edit().putFloat("playback_pitch", it).apply()
                     },
-                    onApplyPreset = { gains, bass, virt ->
-                        bandGains = gains
-                        bassStrength = bass
-                        virtStrength = virt
+                    onApplyPreset = { cfg ->
+                        bandGains = cfg.gains
+                        bassStrength = cfg.bass
+                        virtStrength = cfg.virt
+                        loudnessGain = cfg.amp
+                        luxuryTone = cfg.luxury
+                        vocalClarity = cfg.vocal
+                        spatial8D = cfg.enable8D
                         prefs.edit()
-                            .putString("band_gains", JSONArray(gains).toString())
-                            .putInt("bass_strength", bass)
-                            .putInt("virtualizer_strength", virt)
+                            .putString("band_gains", JSONArray(cfg.gains).toString())
+                            .putInt("bass_strength", cfg.bass)
+                            .putInt("virtualizer_strength", cfg.virt)
+                            .putInt("loudness_gain", cfg.amp)
+                            .putInt("luxury_tone", cfg.luxury)
+                            .putInt("vocal_clarity", cfg.vocal)
+                            .putBoolean("spatial_8d_enabled", cfg.enable8D)
                             .apply()
                         VyroDspController.syncFromPrefs(prefs)
                     },
+                    onResetSection = { resetAudioDefaults() },
                     onDismiss = { showEqSheet = false }
                 )
             }
@@ -1114,10 +1259,11 @@ fun VyroMusicApp() {
                     onPreviewRange = { startMs ->
                         val idx = visibleSongs.indexOfFirst { it.id == target.id }
                         if (currentSong?.id != target.id && idx >= 0) {
-                            playFromQueue(visibleSongs, idx)
+                            playFromQueue(visibleSongs, idx, startMs)
+                        } else {
+                            controller?.seekTo(startMs)
+                            controller?.play()
                         }
-                        controller?.seekTo(startMs)
-                        controller?.play()
                     },
                     onSaved = {
                         scope.launch {
@@ -1295,6 +1441,11 @@ fun VyroMusicApp() {
                             }
                         }
                     },
+                    dismissButton = {
+                        TextButton(onClick = { resetPlayerPrefsDefaults() }) {
+                            Text(if (isArabic) "ضبط للافتراضي" else "Reset Default", color = Color(0xFFFF5252))
+                        }
+                    },
                     confirmButton = { TextButton(onClick = { showPlayerPrefsDialog = false }) { Text(if (isArabic) "تم" else "Done") } }
                 )
             }
@@ -1306,9 +1457,9 @@ fun VyroMusicApp() {
                     text = {
                         Text(
                             if (isArabic)
-                                "مشغل موسيقى احترافي متكامل بتطوير محمد طارق.\n\n• محرك صوت PCM حقيقي (معادل 5 قنوات + Sub-Bass + 8D HRTF)\n• كلمات أغاني ديناميكية متزامنة بالملي ثانية تلقائياً\n• مركز بلوتوث احترافي بدون بيانات مزيفة + هولوجرام 3D\n• أداة قص النغمات + 14 ويدجت Glassify + مركز التحديثات"
+                                "مشغل موسيقى احترافي متكامل بتطوير محمد طارق.\n\n• محرك صوت PCM بدون غروشة (بيز + صوت فخم + صوت مضخم + 8D HRTF)\n• 12 وضع صوتي احترافي + زر ضبط افتراضي لكل قسم\n• كلمات أغاني ديناميكية متزامنة بالملي ثانية تلقائياً\n• مركز بلوتوث احترافي بدون بيانات مزيفة + هولوجرام 3D\n• أداة قص النغمات + 14 ويدجت Glassify + مركز التحديثات"
                             else
-                                "Professional music player built by Mohamed Tarek.\n\n• True Software PCM Engine (5-Band EQ + Sub-Bass + 8D HRTF)\n• Dynamic Auto-Synced Karaoke Lyrics\n• Flagship Bluetooth Hub & 3D Hologram\n• Ringtone Cutter + 14 Glassify Widgets"
+                                "Professional music player built by Mohamed Tarek.\n\n• Zero-Distortion PCM Audio Engine (Bass + Luxury + Mega Amp + 8D)\n• 12 Audio Presets + Independent Section Reset\n• Dynamic Auto-Synced Karaoke Lyrics\n• Flagship Bluetooth Hub & 3D Hologram"
                         )
                     },
                     confirmButton = { TextButton(onClick = { showAboutDialog = false }) { Text(if (isArabic) "إغلاق" else "Close") } }
@@ -1318,7 +1469,7 @@ fun VyroMusicApp() {
     }
 }
 
-// ==================== FLAGSHIP SMART BLUETOOTH HUB (NO FAKE DATA + LOCKED CARDS) ====================
+// ==================== FLAGSHIP SMART BLUETOOTH HUB ====================
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -1536,6 +1687,24 @@ fun SmartBluetoothHubScreen(
         if (applyAudio) {
             onApplyProfileNow(newProfile, displayedDevice?.category == BtDeviceCategory.CAR_AUDIO)
         }
+    }
+
+    fun resetCurrentDeviceProfile() {
+        val dev = displayedDevice ?: return
+        if (showDemoStage) return
+        val def = BtDeviceProfile(
+            address = dev.address,
+            autoPlayOnConnect = true,
+            eqPreset = if (dev.category == BtDeviceCategory.CAR_AUDIO) "Car Punch" else "Keep Current",
+            enable8D = false,
+            doubleTapAction = SmartTouchAction.NEXT,
+            tripleTapAction = SmartTouchAction.PREV,
+            forceCarMusic = dev.category == BtDeviceCategory.CAR_AUDIO,
+            autoOpenCarMode = false,
+            carTargetVolumePercent = 85
+        )
+        updateProfile(def, applyAudio = false)
+        Toast.makeText(context, if (isArabic) "تم ضبط إعدادات هذا الجهاز للافتراضي ✅" else "Device profile reset ✅", Toast.LENGTH_SHORT).show()
     }
 
     val connectedDev = realActiveDevice?.takeIf { it.isConnected }
@@ -1792,7 +1961,7 @@ fun SmartBluetoothHubScreen(
                                         text = if (showDemoStage) {
                                             if (isArabic) "وضع معاينة — لا توجد سماعة متصلة لقراءة الشحن." else "Preview mode — no real device connected."
                                         } else {
-                                            if (isArabic) "افتح غطاء العلبة بالقرب من الهاتف لالتقاط شحن L / R / العلبة الحقيقي (لا يتم عرض أرقام وهمية)." else "Open case lid nearby to read real L/R/Case levels."
+                                            if (isArabic) "افتح غطاء العلبة بالقرب من الهاتف لالتقاط شحن L / R / العلبة الحقيقي." else "Open case lid nearby to read real L/R/Case levels."
                                         },
                                         color = textSecondary,
                                         fontSize = 11.sp
@@ -1981,6 +2150,24 @@ fun SmartBluetoothHubScreen(
                             textPrimary = textPrimary,
                             textSecondary = textSecondary
                         )
+
+                        if (!showDemoStage) {
+                            OutlinedButton(
+                                onClick = { resetCurrentDeviceProfile() },
+                                modifier = Modifier.fillMaxWidth().height(46.dp),
+                                border = BorderStroke(1.dp, Color(0xFFFF5252).copy(0.6f)),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Icon(Icons.Rounded.Refresh, null, tint = Color(0xFFFF5252), modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = if (isArabic) "إعادة ضبط إعدادات هذا الجهاز للافتراضي" else "Reset This Device to Default",
+                                    color = Color(0xFFFF5252),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -2032,6 +2219,17 @@ fun SmartBluetoothHubScreen(
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Text(if (isArabic) "تفعيل 8D الحقيقي تلقائياً لهذه السماعة" else "Auto-Enable True 8D", color = textPrimary, fontSize = 13.sp, modifier = Modifier.weight(1f))
                                 Switch(checked = activeProfile.enable8D, onCheckedChange = { updateProfile(activeProfile.copy(enable8D = it), applyAudio = true) })
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedButton(
+                                onClick = { resetCurrentDeviceProfile() },
+                                modifier = Modifier.fillMaxWidth().height(44.dp),
+                                border = BorderStroke(1.dp, Color(0xFFFF5252).copy(0.6f)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Rounded.Refresh, null, tint = Color(0xFFFF5252), modifier = Modifier.size(17.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (isArabic) "ضبط بروفايل هذا الجهاز للافتراضي" else "Reset Device Profile", color = Color(0xFFFF5252), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -2432,11 +2630,8 @@ fun UpdateCenterScreen(
     val whatsNewText = remember(release, isArabic) {
         val remoteNotes = release?.notes?.trim().orEmpty()
         if (remoteNotes.isNotBlank()) remoteNotes
-        else if (isArabic) {
-            "• محرك صوت PCM حقيقي (معادل 5 قنوات + Sub-Bass + صوت 8D HRTF حقيقي).\n• كلمات أغاني ديناميكية متزامنة بالملي ثانية تلقائياً مع شاشة تحميل وتأثير مدّ صوتي.\n• مركز بلوتوث احترافي بدون بيانات مزيفة + كروت مميزات مقفولة 🔒.\n• عودة أداة قص النغمات والأغاني + إصلاح مزامنة الشريط المصغر."
-        } else {
-            "• True Software PCM Audio Engine (5-Band EQ + Sub-Bass + 8D HRTF).\n• Auto-Synced Dynamic Karaoke Lyrics.\n• Flagship Bluetooth Hub with real readings & Locked Feature Cards.\n• Restored Ringtone Cutter."
-        }
+        else if (isArabic) "إصلاح الأخطاء"
+        else "Bug fixes"
     }
 
     Column(
@@ -3390,6 +3585,7 @@ fun GlassifyWidgetStudioScreen(
     currentSongArtist: String,
     onSelectWidgetStyle: (String) -> Unit,
     onPinWidget: () -> Unit,
+    onResetSection: () -> Unit,
     onBack: () -> Unit
 ) {
     BackHandler(enabled = true) { onBack() }
@@ -3416,6 +3612,9 @@ fun GlassifyWidgetStudioScreen(
                     fontSize = 12.sp,
                     color = textSecondary
                 )
+            }
+            TextButton(onClick = onResetSection) {
+                Text(if (isArabic) "افتراضي" else "Reset", color = Color(0xFFFF5252), fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -3554,14 +3753,18 @@ fun ThemeStudioScreen(
     onSelectBgStyle: (String) -> Unit,
     onSelectThemeMode: (String) -> Unit,
     onSelectAccent: (Int) -> Unit,
+    onResetSection: () -> Unit,
     onBack: () -> Unit
 ) {
     BackHandler(enabled = true) { onBack() }
 
     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, null, tint = textPrimary) }
-            Text(if (isArabic) "استوديو السمات الحي" else "Live Theme Studio", fontWeight = FontWeight.Black, fontSize = 20.sp, color = textPrimary)
+            Text(if (isArabic) "استوديو السمات الحي" else "Live Theme Studio", fontWeight = FontWeight.Black, fontSize = 20.sp, color = textPrimary, modifier = Modifier.weight(1f))
+            TextButton(onClick = onResetSection) {
+                Text(if (isArabic) "افتراضي" else "Reset", color = Color(0xFFFF5252), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
         }
         Spacer(Modifier.height(14.dp))
 
@@ -3913,7 +4116,7 @@ fun NowPlayingOverlay(
                     ) {
                         Text(formatMs(position), color = Color.White.copy(0.78f), fontSize = 12.sp, maxLines = 1)
                         Text(
-                            text = if (spatial8D) "VYRO 8D STUDIO ENGINE" else "VYRO PCM CRYSTAL AUDIO",
+                            text = if (spatial8D) "VYRO 8D STUDIO ENGINE" else "VYRO ZERO-DISTORTION PCM",
                             color = accent,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
@@ -4228,8 +4431,8 @@ fun SettingsScreen(
             SettingsRow(
                 icon = Icons.Rounded.Refresh,
                 tint = Color(0xFFFF5252),
-                title = if (isArabic) "إعادة ضبط الإعدادات الافتراضية" else "Reset Default Settings",
-                subtitle = null,
+                title = if (isArabic) "إعادة ضبط جميع إعدادات التطبيق" else "Reset All App Settings",
+                subtitle = if (isArabic) "يمكنك أيضاً ضبط كل قسم بمفرده من داخله" else "You can also reset each section independently",
                 trailing = "",
                 textPrimary = Color(0xFFFF5252),
                 textSecondary = textSecondary,
@@ -4249,7 +4452,7 @@ fun SettingsScreen(
     }
 }
 
-// ==================== DIALOGS & AUXILIARY UI ====================
+// ==================== PRO AUDIO STUDIO DIALOG (12 PRESETS + LUXURY + MEGA AMP + RESET) ====================
 
 @Composable
 fun AudioStudioDialog(
@@ -4260,6 +4463,8 @@ fun AudioStudioDialog(
     bassStrength: Int,
     virtStrength: Int,
     loudnessGain: Int,
+    luxuryTone: Int,
+    vocalClarity: Int,
     speed: Float,
     pitch: Float,
     onToggle8D: (Boolean) -> Unit,
@@ -4267,56 +4472,143 @@ fun AudioStudioDialog(
     onUpdateBass: (Int) -> Unit,
     onUpdateVirt: (Int) -> Unit,
     onUpdateLoudness: (Int) -> Unit,
+    onUpdateLuxury: (Int) -> Unit,
+    onUpdateVocal: (Int) -> Unit,
     onUpdateSpeed: (Float) -> Unit,
     onUpdatePitch: (Float) -> Unit,
-    onApplyPreset: (List<Float>, Int, Int) -> Unit,
+    onApplyPreset: (AudioPresetConfig) -> Unit,
+    onResetSection: () -> Unit,
     onDismiss: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
             modifier = Modifier
-                .fillMaxWidth(0.94f)
+                .fillMaxWidth(0.95f)
+                .fillMaxHeight(0.88f)
                 .clip(RoundedCornerShape(24.dp))
-                .background(Color(0xFF0E131F))
-                .border(1.dp, accent.copy(0.4f), RoundedCornerShape(24.dp))
+                .background(Color(0xFF0D121E))
+                .border(1.2.dp, accent.copy(0.45f), RoundedCornerShape(24.dp))
                 .verticalScroll(rememberScrollState())
                 .padding(18.dp)
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Equalizer, null, tint = accent)
                 Spacer(Modifier.width(8.dp))
-                Text(if (isArabic) "استوديو الصوت PCM والـ 8D الحقيقي" else "PCM Audio & True 8D Studio", color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = if (isArabic) "استوديو الصوت الاحترافي" else "VYRO Pro Audio Studio",
+                        color = Color.White,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 16.sp
+                    )
+                    Text(
+                        text = if (isArabic) "حماية ذكية ضد الغروشة والتشويه 100%" else "Zero-Distortion Dynamic Limiter Active",
+                        color = Color(0xFF00E676),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
                 IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, null, tint = Color.White) }
             }
+
+            Spacer(Modifier.height(8.dp))
 
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(accent.copy(0.14f)).padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(if (isArabic) "تفعيل الصوت المحيطي 8D الحقيقي" else "Enable True 8D Surround", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text(if (isArabic) "يدور 360° ويعمل على جميع السماعات والمخارج" else "360° HRTF + Hall Reverb on all outputs", color = Color.White.copy(0.65f), fontSize = 10.sp)
+                    Text(if (isArabic) "الصوت المحيطي 8D الحقيقي" else "True 8D Surround", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text(if (isArabic) "يدور 360° ويعمل على جميع السماعات والمخارج" else "360° HRTF + Clean Hall Reverb", color = Color.White.copy(0.65f), fontSize = 10.sp)
                 }
                 Switch(checked = spatial8D, onCheckedChange = onToggle8D)
             }
 
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                listOf(
-                    "Phonk Bass" to Triple(listOf(0.75f, 0.45f, 0.05f, 0.28f, 0.50f), 78, 50),
-                    "Crystal Clear" to Triple(listOf(0.28f, 0.16f, 0.0f, 0.14f, 0.24f), 35, 30),
-                    "Stadium 8D" to Triple(listOf(0.50f, 0.25f, 0.20f, 0.40f, 0.60f), 55, 92),
-                    "Car Punch" to Triple(listOf(0.65f, 0.35f, 0.15f, 0.30f, 0.42f), 72, 40),
-                    "Flat" to Triple(listOf(0f, 0f, 0f, 0f, 0f), 0, 0)
-                ).forEach { (name, cfg) ->
-                    AssistChip(
-                        onClick = { onApplyPreset(cfg.first, cfg.second, cfg.third) },
-                        label = { Text(name, color = Color.White, fontSize = 11.sp) }
-                    )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = if (isArabic) "الأوضاع الصوتية الجاهزة (12 وضع):" else "Pro Audio Presets (12 Modes):",
+                color = accent,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Black
+            )
+            Spacer(Modifier.height(8.dp))
+
+            // شبكة أوضاع منظمة بصفوف قابلة للتمرير السريع
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                AUDIO_PRESETS.chunked(3).forEach { rowItems ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        rowItems.forEach { preset ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.White.copy(0.07f))
+                                    .border(1.dp, Color.White.copy(0.14f), RoundedCornerShape(12.dp))
+                                    .clickable { onApplyPreset(preset) }
+                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (isArabic) preset.nameAr else preset.nameEn,
+                                    color = Color.White,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = if (isArabic) "مؤثرات القوة والفخامة (بدون غروشة):" else "Power & Tone Enhancements:",
+                color = Color(0xFFFFC857),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Black
+            )
+            Spacer(Modifier.height(6.dp))
+
+            AudioBoostSliderRow(
+                label = if (isArabic) "البيز العميق (Sub-Bass)" else "Deep Sub-Bass",
+                value = bassStrength,
+                color = accent,
+                onChange = onUpdateBass
+            )
+            AudioBoostSliderRow(
+                label = if (isArabic) "الصوت الفخم (Luxury Tone)" else "Luxury Royal Tone",
+                value = luxuryTone,
+                color = Color(0xFFFFC857),
+                onChange = onUpdateLuxury
+            )
+            AudioBoostSliderRow(
+                label = if (isArabic) "الصوت المضخم (Mega Amp)" else "Mega Amplifier",
+                value = loudnessGain,
+                color = Color(0xFFFF6B35),
+                onChange = onUpdateLoudness
+            )
+            AudioBoostSliderRow(
+                label = if (isArabic) "نقاء الصوت البشري (Vocals)" else "Vocal Clarity",
+                value = vocalClarity,
+                color = Color(0xFF00E676),
+                onChange = onUpdateVocal
+            )
+            AudioBoostSliderRow(
+                label = if (isArabic) "توسيع المسرح الصوتي (3D Stage)" else "3D Soundstage",
+                value = virtStrength,
+                color = Color(0xFF8B5CF6),
+                onChange = onUpdateVirt
+            )
+
             Spacer(Modifier.height(10.dp))
+            Text(
+                text = if (isArabic) "معادل الترددات (5 قنوات):" else "5-Band Equalizer:",
+                color = accent,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Black
+            )
             val labels = listOf("60Hz", "230Hz", "910Hz", "3.6kHz", "14kHz")
             labels.forEachIndexed { idx, hz ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -4331,15 +4623,7 @@ fun AudioStudioDialog(
                 }
             }
 
-            Text("SUB-BASS POWER ($bassStrength%)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Slider(value = bassStrength.toFloat(), onValueChange = { onUpdateBass(it.toInt()) }, valueRange = 0f..100f)
-
-            Text("3D STAGE ($virtStrength%)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Slider(value = virtStrength.toFloat(), onValueChange = { onUpdateVirt(it.toInt()) }, valueRange = 0f..100f)
-
-            Text("EXTRA GAIN ($loudnessGain%)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Slider(value = loudnessGain.toFloat(), onValueChange = { onUpdateLoudness(it.toInt()) }, valueRange = 0f..100f)
-
+            Spacer(Modifier.height(6.dp))
             Text(
                 String.format(Locale.US, "SPEED %.2fx • PITCH %.2fx", speed, pitch),
                 color = accent,
@@ -4348,7 +4632,45 @@ fun AudioStudioDialog(
             )
             Slider(value = speed, onValueChange = onUpdateSpeed, valueRange = 0.5f..2.0f)
             Slider(value = pitch, onValueChange = onUpdatePitch, valueRange = 0.5f..2.0f)
+
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = onResetSection,
+                modifier = Modifier.fillMaxWidth().height(46.dp),
+                border = BorderStroke(1.2.dp, Color(0xFFFF5252).copy(0.75f)),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(Icons.Rounded.Refresh, null, tint = Color(0xFFFF5252), modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = if (isArabic) "إعادة ضبط معادل الصوت فقط للافتراضي" else "Reset Audio Studio to Default",
+                    color = Color(0xFFFF5252),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun AudioBoostSliderRow(
+    label: String,
+    value: Int,
+    color: Color,
+    onChange: (Int) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("$value%", color = color, fontSize = 12.sp, fontWeight = FontWeight.Black)
+        }
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { onChange(it.toInt()) },
+            valueRange = 0f..100f,
+            colors = SliderDefaults.colors(thumbColor = color, activeTrackColor = color)
+        )
     }
 }
 
@@ -4413,12 +4735,12 @@ fun OnboardingTourOverlay(
     BackHandler(enabled = true) { onSkip() }
 
     val steps = if (isArabic) listOf(
-        "أهلاً بك في VYRO MUSIC 5.2 TITAN 🎧" to "محرك صوت PCM حقيقي يعمل على كل المخارج (معادل 5 قنوات + Sub-Bass + 8D HRTF).",
+        "أهلاً بك في VYRO MUSIC 5.2 TITAN 🎧" to "محرك صوت PCM بدون غروشة يعمل على كل المخارج مع 12 وضع صوتي (فخم، مضخم، بيز جبار، و8D).",
         "كلمات ديناميكية متزامنة 📝" to "افتح «الكلمات» من المشغل لتنزيل الكلمات المتزامنة بالملي ثانية مع كاريوكي حيّ ومدّ صوتي!",
         "مركز البلوتوث والهولوجرام 3D 🛰️" to "اضغط أيقونة البلوتوث للتحكم بسماعتك، رؤية شحن AirPods الحقيقي، وإجبار موسيقى السيارة.",
         "قص النغمات و14 ويدجت ✂️" to "اقص أي أغنية كنغمة بضغطة واحدة واختار من 14 شكل ويدجت Glassify."
     ) else listOf(
-        "Welcome to VYRO MUSIC 5.2 TITAN 🎧" to "True Software PCM Engine (5-Band EQ + Sub-Bass + 360° 8D HRTF).",
+        "Welcome to VYRO MUSIC 5.2 TITAN 🎧" to "Zero-Distortion PCM Audio Engine with 12 presets & True 8D.",
         "Dynamic Synced Lyrics 📝" to "Open Lyrics in Player to auto-fetch millisecond-synced karaoke lyrics!",
         "Flagship Bluetooth & 3D Hub 🛰️" to "Tap Bluetooth for real battery readings, 3D Hologram & Car Force-Music.",
         "Ringtone Cutter & 14 Widgets ✂️" to "Trim any song into a ringtone and pick from 14 Glassify widgets."
@@ -4652,7 +4974,7 @@ suspend fun fetchLatestRelease(): ReleaseInfo? = withContext(Dispatchers.IO) {
             connectTimeout = 10000
             readTimeout = 10000
             setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("User-Agent", "VyroMusicApp/5.2.0")
+            setRequestProperty("User-Agent", "VyroMusicApp/5.2.1")
         }
         if (conn.responseCode !in 200..299) {
             conn.disconnect()
